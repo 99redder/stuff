@@ -2699,7 +2699,7 @@ function tpUpdateResults(tp) {
     <div class="card-body" style="padding:0 1.25rem">
       ${sec('Gross Income')}
       ${row('W-2 & Retirement', r.wages, 'in')}
-      ${row('Business Income (FMG + ESAI)', r.businessInc, r.businessInc >= 0 ? 'in' : 'in amount-expense')}
+      ${Math.abs(r.businessInc) >= 0.005 ? `<div class="tp-row ${r.businessInc >= 0 ? 'in' : 'in amount-expense'}"><span>Business Income (FMG + ESAI)</span><span>${r.businessInc < 0 ? '−' : ''}${fmt(r.businessInc)}</span></div>` : ''}
       ${r.rentalNet !== 0 ? row('Rental Net', r.rentalNet, 'in') : ''}
       ${r.rentalDepr > 0 ? row('Less Depreciation', r.rentalDepr, 'in', true) : ''}
       ${row('Interest & Dividends', r.interest + r.dividends + r.cryptoInc, 'in')}
