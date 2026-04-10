@@ -543,9 +543,9 @@ const state = {
   currentProperty: '6AL',
   currentView: 'current-year',
   data: {
-    '6AL':   { transactions: null, summaries: null, defaults: null },
-    '95EB':  { transactions: null, summaries: null, defaults: null },
-    '446BB': { transactions: null, summaries: null, defaults: null }
+    '6AL':   { transactions: null, summaries: null, defaults: null, depreciation: null },
+    '95EB':  { transactions: null, summaries: null, defaults: null, depreciation: null },
+    '446BB': { transactions: null, summaries: null, defaults: null, depreciation: null }
   },
   pendingDefaultPrompt: null  // { category, amount } after a save
 };
@@ -571,11 +571,16 @@ async function ensureLoaded(property, key) {
   const actionMap = {
     transactions: 'get_transactions',
     summaries:    'get_summaries',
-    defaults:     'get_defaults'
+    defaults:     'get_defaults',
+    depreciation: 'get_depreciation'
   };
 
   const result = await callApi({ action: actionMap[key], property });
-  state.data[property][key] = result[key] || (key === 'transactions' ? [] : {});
+  if (key === 'depreciation') {
+    state.data[property][key] = result.config || null; // null means not configured
+  } else {
+    state.data[property][key] = result[key] || (key === 'transactions' ? [] : {});
+  }
 }
 
 // ── Formatting ────────────────────────────────────────────────────────────────
@@ -758,9 +763,192 @@ async function confirmDelete(id) {
 
 // ── View: Historical ──────────────────────────────────────────────────────────
 
+// ── Depreciation Calculation ──────────────────────────────────────────────────
+
+function calcDepreciationSchedule(costBasis, placedInService) {
+  // MACRS GDS: 27.5-year straight-line, mid-month convention
+  const date = new Date(placedInService + 'T00:00:00');
+  const startYear = date.getFullYear();
+  const startMonth = date.getMonth() + 1; // 1–12
+
+  const annualAmount = costBasis / 27.5;
+  // Mid-month convention: treated as placed in service at mid-month of start month
+  // Months allowed in first year = (12 - startMonth) + 0.5
+  const firstYearMonths = (12 - startMonth) + 0.5;
+  const firstYearAmount = (firstYearMonths / 12) * annualAmount;
+
+  const schedule = [];
+  let cumulative = 0;
+
+  for (let year = startYear; year <= CURRENT_YEAR; year++) {
+    const annual = year === startYear ? firstYearAmount : annualAmount;
+    cumulative += annual;
+    schedule.push({ year, annual, cumulative });
+  }
+
+  return schedule;
+}
+
+function renderDepreciationSection(prop) {
+  const config = state.data[prop].depreciation; // null if not configured
+
+  if (!config) {
+    return `
+      <div class="card mt-2" id="depr-card">
+        <div class="card-header">
+          <div class="card-title">Depreciation Schedule — ${prop}</div>
+        </div>
+        <div class="card-body">
+          <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:1rem">
+            Configure depreciation to track MACRS 27.5-year straight-line deductions.
+          </p>
+          <div class="form-grid" style="max-width:480px">
+            <div class="form-group">
+              <label>Structure Cost Basis ($)</label>
+              <input type="number" id="depr-basis" step="0.01" min="1" placeholder="e.g. 44030">
+            </div>
+            <div class="form-group">
+              <label>Date Placed In Service</label>
+              <input type="date" id="depr-start">
+            </div>
+            <div class="form-group">
+              <label>Date of Purchase (optional)</label>
+              <input type="date" id="depr-purchase">
+            </div>
+          </div>
+          <div class="form-actions mt-2">
+            <button class="btn btn-primary" onclick="saveDepreciationConfig()">Save Depreciation Info</button>
+          </div>
+          <div id="depr-error" class="error-msg mt-1 hidden"></div>
+        </div>
+      </div>`;
+  }
+
+  const schedule = calcDepreciationSchedule(config.costBasis, config.placedInService);
+  const totalDepr = schedule.length ? schedule[schedule.length - 1].cumulative : 0;
+  const annualAmount = config.costBasis / 27.5;
+  const remainingBasis = Math.max(0, config.costBasis - totalDepr);
+
+  const rows = schedule.map(({ year, annual, cumulative }) => `
+    <tr>
+      <td>${year}</td>
+      <td class="text-right">${fmt(annual)}</td>
+      <td class="text-right" style="color:var(--text-muted)">${fmt(cumulative)}</td>
+    </tr>`).join('');
+
+  const purchaseLine = config.purchaseDate
+    ? `<span>Purchase Date: <strong>${fmtDate(config.purchaseDate)}</strong></span>`
+    : '';
+
+  return `
+    <div class="card mt-2" id="depr-card">
+      <div class="card-header">
+        <div class="card-title">Depreciation Schedule (MACRS 27.5yr) — ${prop}</div>
+        <button class="btn btn-ghost btn-sm no-print" onclick="openDepreciationEdit()">Edit</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+        <div class="table-wrap" style="max-height:360px;overflow-y:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Year</th>
+                <th class="text-right">Annual Deduction</th>
+                <th class="text-right">Cumulative</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+            <tfoot>
+              <tr style="background:var(--surface2);font-weight:700;border-top:2px solid var(--border)">
+                <td>Total</td>
+                <td></td>
+                <td class="text-right">${fmt(totalDepr)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <div class="card-body" style="border-left:1px solid var(--border)">
+          <div class="tax-row"><span>Structure Cost Basis</span><span>${fmt(config.costBasis)}</span></div>
+          <div class="tax-row"><span>Placed In Service</span><span>${fmtDate(config.placedInService)}</span></div>
+          ${config.purchaseDate ? `<div class="tax-row"><span>Purchase Date</span><span>${fmtDate(config.purchaseDate)}</span></div>` : ''}
+          <div class="tax-row"><span>Annual Deduction</span><span>${fmt(annualAmount)}</span></div>
+          <div class="tax-row"><span>Years Completed</span><span>${schedule.length}</span></div>
+          <div class="tax-row subtotal"><span>Total Depreciation Taken</span><span>${fmt(totalDepr)}</span></div>
+          <div class="tax-row" style="margin-top:0.5rem"><span>Remaining Depreciable Basis</span><span>${fmt(remainingBasis)}</span></div>
+        </div>
+      </div>
+
+      <!-- Edit form (hidden) -->
+      <div class="card-body hidden" id="depr-edit-form" style="border-top:1px solid var(--border)">
+        <div class="form-grid" style="max-width:480px">
+          <div class="form-group">
+            <label>Structure Cost Basis ($)</label>
+            <input type="number" id="depr-basis" step="0.01" min="1" value="${config.costBasis}">
+          </div>
+          <div class="form-group">
+            <label>Date Placed In Service</label>
+            <input type="date" id="depr-start" value="${config.placedInService}">
+          </div>
+          <div class="form-group">
+            <label>Date of Purchase (optional)</label>
+            <input type="date" id="depr-purchase" value="${config.purchaseDate || ''}">
+          </div>
+        </div>
+        <div class="form-actions mt-2">
+          <button class="btn btn-primary" onclick="saveDepreciationConfig()">Save</button>
+          <button class="btn btn-ghost" onclick="closeDepreciationEdit()">Cancel</button>
+        </div>
+        <div id="depr-error" class="error-msg mt-1 hidden"></div>
+      </div>
+    </div>`;
+}
+
+async function saveDepreciationConfig() {
+  const prop = state.currentProperty;
+  const basisEl    = document.getElementById('depr-basis');
+  const startEl    = document.getElementById('depr-start');
+  const purchaseEl = document.getElementById('depr-purchase');
+  const errEl      = document.getElementById('depr-error');
+
+  const costBasis = parseFloat(basisEl?.value);
+  const placedInService = startEl?.value;
+  const purchaseDate = purchaseEl?.value || null;
+
+  if (!costBasis || costBasis <= 0) {
+    if (errEl) { errEl.textContent = 'Enter a valid cost basis.'; errEl.classList.remove('hidden'); }
+    return;
+  }
+  if (!placedInService) {
+    if (errEl) { errEl.textContent = 'Enter the date placed in service.'; errEl.classList.remove('hidden'); }
+    return;
+  }
+
+  try {
+    const result = await callApi({
+      action: 'save_depreciation',
+      property: prop,
+      config: { costBasis, placedInService, purchaseDate }
+    });
+    state.data[prop].depreciation = result.config;
+    renderHistorical();
+  } catch (e) {
+    if (errEl) { errEl.textContent = 'Save failed: ' + e.message; errEl.classList.remove('hidden'); }
+  }
+}
+
+function openDepreciationEdit() {
+  document.getElementById('depr-edit-form')?.classList.remove('hidden');
+}
+
+function closeDepreciationEdit() {
+  document.getElementById('depr-edit-form')?.classList.add('hidden');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function renderHistorical() {
   const prop = state.currentProperty;
   await ensureLoaded(prop, 'summaries');
+  await ensureLoaded(prop, 'depreciation');
 
   const summaries = state.data[prop].summaries;
   const years = Object.keys(summaries).sort((a, b) => b - a);
@@ -847,6 +1035,8 @@ async function renderHistorical() {
         <div id="year-form-error" class="error-msg mt-1 hidden"></div>
       </div>
     </div>
+
+    ${renderDepreciationSection(prop)}
   `;
 }
 
@@ -1237,10 +1427,13 @@ window.openEditYear        = openEditYear;
 window.closeYearForm       = closeYearForm;
 window.saveYearForm        = saveYearForm;
 window.deleteYear          = deleteYear;
-window.useDefaultAmount    = useDefaultAmount;
-window.saveEntry           = saveEntry;
-window.saveAsDefault       = saveAsDefault;
-window.dismissDefaultPrompt = dismissDefaultPrompt;
+window.useDefaultAmount       = useDefaultAmount;
+window.saveEntry              = saveEntry;
+window.saveAsDefault          = saveAsDefault;
+window.dismissDefaultPrompt   = dismissDefaultPrompt;
+window.saveDepreciationConfig = saveDepreciationConfig;
+window.openDepreciationEdit   = openDepreciationEdit;
+window.closeDepreciationEdit  = closeDepreciationEdit;
 
 renderView();
 </script>

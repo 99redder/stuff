@@ -1,6 +1,6 @@
 // rentals-api — Cloudflare Worker for Rental Property Manager
 // All amounts stored and returned in DOLLARS (never cents).
-// KV keys: transactions:{property}, summaries:{property}, defaults:{property}
+// KV keys: transactions:{property}, summaries:{property}, defaults:{property}, depreciation:{property}
 
 const VALID_PROPERTIES = ['6AL', '95EB', '446BB'];
 
@@ -71,6 +71,12 @@ async function handleDataApi(request, env) {
 
     case 'save_defaults':
       return handleSaveDefaults(env, property, body.defaults);
+
+    case 'get_depreciation':
+      return handleGetDepreciation(env, property);
+
+    case 'save_depreciation':
+      return handleSaveDepreciation(env, property, body.config);
 
     default:
       return jsonResponse({ error: 'Invalid action' }, 400);
@@ -203,6 +209,37 @@ async function handleSaveDefaults(env, property, newDefaults) {
 
   await env.RENTALS.put(`defaults:${property}`, JSON.stringify(existing));
   return jsonResponse({ success: true });
+}
+
+// ── Depreciation ──────────────────────────────────────────────────────────────
+
+async function handleGetDepreciation(env, property) {
+  const config = await env.RENTALS.get(`depreciation:${property}`, 'json') || null;
+  return jsonResponse({ config });
+}
+
+async function handleSaveDepreciation(env, property, config) {
+  if (!config || typeof config !== 'object') {
+    return jsonResponse({ error: 'Missing config object' }, 400);
+  }
+
+  const { costBasis, placedInService, purchaseDate } = config;
+
+  if (typeof costBasis !== 'number' || !isFinite(costBasis) || costBasis <= 0) {
+    return jsonResponse({ error: 'costBasis must be a positive number' }, 400);
+  }
+  if (!placedInService || !/^\d{4}-\d{2}-\d{2}$/.test(placedInService)) {
+    return jsonResponse({ error: 'placedInService must be YYYY-MM-DD' }, 400);
+  }
+
+  const saved = {
+    costBasis,
+    placedInService,
+    purchaseDate: purchaseDate || null
+  };
+
+  await env.RENTALS.put(`depreciation:${property}`, JSON.stringify(saved));
+  return jsonResponse({ success: true, config: saved });
 }
 
 // ── Helper ────────────────────────────────────────────────────────────────────
