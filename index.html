@@ -849,7 +849,9 @@ function calcMarylandTax(tp, agi) {
   // per MD Form 502SU code "u" — NOT 100% exempt
   const exemptCap = tp.navy_age_55 ? 20000 : 12500;
   const navyExempt = Math.min(tpN(tp.navy_gross), exemptCap);
-  const mdAgi = Math.max(0, agi - navyExempt);
+  // MD 529 (College Investment Plan) contributions are deductible on MD return
+  const md529 = tpN(tp.md_529);
+  const mdAgi = Math.max(0, agi - navyExempt - md529);
   // Standard deduction: 15% of MD AGI, clamped to min/max
   const mdStdDed = Math.min(MD_STD_DED_MAX, Math.max(MD_STD_DED_MIN, mdAgi * 0.15));
   // Personal exemptions: MFJ (2) + 2 dependents = 4 × $3,200
@@ -866,7 +868,7 @@ function calcMarylandTax(tp, agi) {
   const totalTax   = stateTax + countyTax;
   const withheld   = tpN(tp.navy_state) + tpN(tp.wife_state);
   const owed       = totalTax - withheld;
-  return { county, countyRate, exemptCap, navyExempt, mdAgi, mdStdDed, mdExemptAmt, mdTaxInc, stateTax, countyTax, totalTax, withheld, owed };
+  return { county, countyRate, exemptCap, navyExempt, md529, mdAgi, mdStdDed, mdExemptAmt, mdTaxInc, stateTax, countyTax, totalTax, withheld, owed };
 }
 
 const FMG_API = 'https://florencemaegifts.com';
@@ -2316,6 +2318,7 @@ function tpToggleLock(who) {
     : who === 'wife' ? ['tp-wife-gross','tp-wife-fed','tp-wife-state']
     : who === 'treasury' ? ['tp-treasury-int']
     : who === 'fmg_sp' ? ['tp-fmg-sp']
+    : who === 'md_529' ? ['tp-md-529']
     : ['tp-ira'];
 
   const locked = tp[key];
@@ -2365,6 +2368,9 @@ async function renderTaxPlanning() {
   if (tp.fmg_sp_locked === undefined) tp.fmg_sp_locked = true;
   // Default county to Wicomico
   if (!tp.md_county) tp.md_county = 'Wicomico';
+  // Seed 529 deduction default
+  if (tp.md_529 === undefined) tp.md_529 = 4800;
+  if (tp.md_529_locked === undefined) tp.md_529_locked = true;
 
   const rentalTableRows = rentalRows.map(p => `
     <tr>
@@ -2595,8 +2601,18 @@ async function renderTaxPlanning() {
             </label>
           </div>
         </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:.75rem">
+          <div class="tp-group" style="flex:1;margin-bottom:0">MD 529 Plan Contributions (deductible)</div>
+          <button class="btn btn-ghost btn-sm" style="margin-left:.5rem;font-size:.8rem" onclick="tpToggleLock('md_529')" id="tp-md-529-lock-btn">
+            ${tp.md_529_locked ? '🔒 Locked' : '🔓 Lock'}
+          </button>
+        </div>
+        <div style="margin-top:.5rem;margin-bottom:.75rem">
+          ${tpFld('tp-md-529','Contribution Amount ($)',tp.md_529 ?? 4800,tp.md_529_locked)}
+        </div>
         <div class="tp-note">
           ✓ Navy retirement exemption: <strong>$12,500</strong> (under 55) or <strong>$20,000</strong> (age 55+) per MD Form 502SU code "u".<br>
+          ✓ 529 contributions deducted from MD AGI (MD College Investment Plan).<br>
           ✓ Standard deduction: 15% of MD AGI (min $3,100 / max $4,700, MFJ).<br>
           ✓ Personal exemptions: 4 × $3,200 = $12,800 (MFJ + 2 dependents).<br>
           ✓ County locked to Wicomico (3.20%). State withholding from W-2 &amp; Retirement section above.
@@ -2638,6 +2654,7 @@ function tpReadForm() {
   tp.use_qbi = gc('tp-use-qbi');
   const countyEl = document.getElementById('tp-md-county');
   if (countyEl) tp.md_county = countyEl.value || 'Wicomico';
+  if (!tp.md_529_locked) tp.md_529 = g('tp-md-529');
   return tp;
 }
 
@@ -2711,6 +2728,7 @@ function tpUpdateResults(tp) {
 
       ${sec('Maryland State & Local Tax')}
       ${md.navyExempt > 0 ? row(`Less Navy Retirement (exempt, cap $${md.exemptCap.toLocaleString()})`, md.navyExempt, 'in', true) : ''}
+      ${md.md529 > 0 ? row('Less 529 Contributions', md.md529, 'in', true) : ''}
       ${row('Maryland AGI', md.mdAgi, 'in')}
       ${row('MD Standard Deduction', md.mdStdDed, 'in', true)}
       ${row('Personal Exemptions (4×$3,200)', md.mdExemptAmt, 'in', true)}
