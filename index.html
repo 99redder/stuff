@@ -2266,9 +2266,9 @@ function tpToggleLock(who) {
   tp[key] = !tp[key];
   tpSave(tp);
 
-  const ids = who === 'navy'
-    ? ['tp-navy-gross','tp-navy-fed','tp-navy-state']
-    : ['tp-wife-gross','tp-wife-fed','tp-wife-state'];
+  const ids = who === 'navy' ? ['tp-navy-gross','tp-navy-fed','tp-navy-state']
+    : who === 'wife' ? ['tp-wife-gross','tp-wife-fed','tp-wife-state']
+    : ['tp-ira'];
 
   const locked = tp[key];
   ids.forEach(id => {
@@ -2465,9 +2465,14 @@ async function renderTaxPlanning() {
     <div class="card tp-card">
       <div class="card-header"><div class="card-title">Adjustments &amp; Deductions</div></div>
       <div class="card-body">
-        <div class="tp-group">Above-the-Line Adjustments</div>
-        <div class="tp-grid-2" style="margin-bottom:.75rem">
-          ${tpFld('tp-ira','Traditional IRA Contribution',tp.ira)}
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div class="tp-group" style="flex:1;margin-bottom:0">Above-the-Line Adjustments</div>
+          <button class="btn btn-ghost btn-sm" style="margin-left:.5rem;font-size:.8rem" onclick="tpToggleLock('ira')" id="tp-ira-lock-btn">
+            ${tp.ira_locked ? '🔒 Locked' : '🔓 Lock IRA'}
+          </button>
+        </div>
+        <div class="tp-grid-2" style="margin-top:.5rem;margin-bottom:.75rem">
+          ${tpFld('tp-ira','Traditional IRA Contribution',tp.ira,tp.ira_locked)}
           <div class="form-group">
             <label class="tp-lbl">½ SE Tax (auto-calculated)</label>
             <input type="number" id="tp-half-se" disabled style="background:var(--bg);cursor:not-allowed" value="0">
@@ -2544,7 +2549,8 @@ function tpReadForm() {
   tp.crypto_income = g('tp-crypto-income');
   tp.crypto_st = g('tp-crypto-st'); tp.rh_st = g('tp-rh-st'); tp.ibkr_st = g('tp-ibkr-st');
   tp.crypto_lt = g('tp-crypto-lt'); tp.rh_lt = g('tp-rh-lt'); tp.ibkr_lt = g('tp-ibkr-lt');
-  tp.ira = g('tp-ira'); tp.std_ded = g('tp-std-ded') || TP_STD_DEDUCTION;
+  if (!tp.ira_locked) tp.ira = g('tp-ira');
+  tp.std_ded = g('tp-std-ded') || TP_STD_DEDUCTION;
   tp.rental_depr = g('tp-rental-depr');
   tp.use_qbi = gc('tp-use-qbi');
   tp.state_rate = g('tp-state-rate'); tp.state_ded = g('tp-state-ded');
