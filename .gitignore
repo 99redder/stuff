@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Wrangler build & cache
+cloudflare/.wrangler/
+.wrangler/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.swp
+*.swo

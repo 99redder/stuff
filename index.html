@@ -1,0 +1,1248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rental Property Manager</title>
+  <style>
+    /* ── Reset & Variables ──────────────────────────────────────────────── */
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-light: #eff6ff;
+      --success: #16a34a;
+      --success-light: #f0fdf4;
+      --danger: #dc2626;
+      --danger-light: #fef2f2;
+      --warning: #d97706;
+      --warning-light: #fffbeb;
+      --bg: #f1f5f9;
+      --surface: #ffffff;
+      --surface2: #f8fafc;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --radius: 8px;
+      --radius-lg: 12px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-lg: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.05);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      font-size: 15px;
+    }
+
+    /* ── Layout ─────────────────────────────────────────────────────────── */
+    .app-header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 1.5rem;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      box-shadow: var(--shadow);
+    }
+
+    .header-top {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.875rem 0 0;
+    }
+
+    .app-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.3px;
+      white-space: nowrap;
+    }
+
+    .app-title span { color: var(--primary); }
+
+    .property-tabs {
+      display: flex;
+      gap: 0.25rem;
+      padding: 0.5rem 0;
+      border-bottom: 2px solid var(--border);
+      margin-bottom: -2px;
+    }
+
+    .prop-tab {
+      padding: 0.5rem 1.25rem;
+      border: none;
+      background: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 600;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: color 0.15s, border-color 0.15s;
+      border-radius: var(--radius) var(--radius) 0 0;
+    }
+
+    .prop-tab:hover { color: var(--text); background: var(--bg); }
+    .prop-tab.active { color: var(--primary); border-bottom-color: var(--primary); background: none; }
+
+    .view-nav {
+      display: flex;
+      gap: 0;
+      padding: 0.625rem 0 0;
+      overflow-x: auto;
+    }
+
+    .view-btn {
+      padding: 0.5rem 1rem;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: all 0.15s;
+      white-space: nowrap;
+      border-right: none;
+    }
+
+    .view-btn:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+    .view-btn:last-child { border-radius: 0 var(--radius) var(--radius) 0; border-right: 1px solid var(--border); }
+    .view-btn:hover { background: var(--border); color: var(--text); }
+    .view-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+    .page {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1.5rem 1.25rem;
+    }
+
+    /* ── Cards & Sections ───────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface2);
+    }
+
+    .card-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+    }
+
+    .card-body { padding: 1.25rem; }
+
+    /* ── Stat Cards ─────────────────────────────────────────────────────── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 1.1rem 1.25rem;
+      box-shadow: var(--shadow);
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 0.375rem;
+    }
+
+    .stat-value {
+      font-size: 1.6rem;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+
+    .stat-value.income { color: var(--success); }
+    .stat-value.expense { color: var(--danger); }
+    .stat-value.neutral { color: var(--text); }
+    .stat-value.positive { color: var(--success); }
+    .stat-value.negative { color: var(--danger); }
+
+    .stat-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.2rem;
+    }
+
+    /* ── Tables ─────────────────────────────────────────────────────────── */
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    th {
+      padding: 0.625rem 1rem;
+      text-align: left;
+      background: var(--surface2);
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 0.7rem 1rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: var(--surface2); }
+
+    .amount-income { color: var(--success); font-weight: 600; }
+    .amount-expense { color: var(--danger); font-weight: 600; }
+
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+    .nowrap { white-space: nowrap; }
+
+    /* ── Buttons ────────────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: all 0.15s;
+      line-height: 1;
+    }
+
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-success { background: var(--success); color: white; }
+    .btn-success:hover { background: #15803d; }
+    .btn-danger { background: var(--danger); color: white; }
+    .btn-danger:hover { background: #b91c1c; }
+    .btn-ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--bg); color: var(--text); }
+    .btn-sm { padding: 0.3rem 0.6rem; font-size: 0.8rem; }
+    .btn-default-amt {
+      background: var(--primary-light);
+      color: var(--primary);
+      border: 1px solid #bfdbfe;
+      font-size: 0.825rem;
+      padding: 0.4rem 0.75rem;
+    }
+    .btn-default-amt:hover { background: #dbeafe; }
+
+    /* ── Forms ──────────────────────────────────────────────────────────── */
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    .form-group { display: flex; flex-direction: column; gap: 0.3rem; }
+    .form-group.full { grid-column: 1 / -1; }
+
+    label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    input, select, textarea {
+      padding: 0.55rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 0.95rem;
+      color: var(--text);
+      background: var(--surface);
+      transition: border-color 0.15s, box-shadow 0.15s;
+      width: 100%;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+    }
+
+    .amount-row {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .amount-row input { flex: 1; }
+
+    .form-actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+
+    .inline-prompt {
+      background: var(--warning-light);
+      border: 1px solid #fde68a;
+      border-radius: var(--radius);
+      padding: 0.625rem 0.875rem;
+      font-size: 0.875rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-top: 0.75rem;
+    }
+
+    .inline-prompt span { flex: 1; color: var(--text); }
+
+    /* ── Badges & Tags ──────────────────────────────────────────────────── */
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .badge-income { background: var(--success-light); color: var(--success); }
+    .badge-expense { background: var(--danger-light); color: var(--danger); }
+
+    /* ── Empty / Loading States ─────────────────────────────────────────── */
+    .empty-state {
+      text-align: center;
+      padding: 3rem 1.5rem;
+      color: var(--text-muted);
+    }
+
+    .empty-state p { margin-top: 0.5rem; font-size: 0.9rem; }
+
+    .loading {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 1.1rem;
+      height: 1.1rem;
+      border: 2px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 0.4rem;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-msg {
+      background: var(--danger-light);
+      border: 1px solid #fca5a5;
+      border-radius: var(--radius);
+      padding: 0.75rem 1rem;
+      color: var(--danger);
+      font-size: 0.875rem;
+      margin-bottom: 1rem;
+    }
+
+    /* ── Historical Table ───────────────────────────────────────────────── */
+    .hist-table th, .hist-table td { padding: 0.55rem 0.75rem; font-size: 0.82rem; }
+    .hist-table td.year-cell { font-weight: 700; color: var(--text); }
+    .hist-table tr.total-row td { font-weight: 700; background: var(--surface2); border-top: 2px solid var(--border); }
+
+    /* ── Tax Summary ────────────────────────────────────────────────────── */
+    .tax-section { margin-bottom: 1.5rem; }
+    .tax-section-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+      padding-bottom: 0.35rem;
+      border-bottom: 2px solid var(--border);
+    }
+
+    .tax-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.45rem 0;
+      font-size: 0.9rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tax-row:last-child { border-bottom: none; }
+    .tax-row.subtotal { font-weight: 700; border-top: 2px solid var(--border); border-bottom: none; padding-top: 0.6rem; margin-top: 0.25rem; }
+    .tax-row.net { font-size: 1.05rem; font-weight: 700; border-top: 3px double var(--border); padding-top: 0.75rem; margin-top: 0.5rem; }
+    .tax-row.net .tax-amt.positive { color: var(--success); }
+    .tax-row.net .tax-amt.negative { color: var(--danger); }
+
+    /* ── Delete confirm inline ──────────────────────────────────────────── */
+    .delete-confirm {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.8rem;
+    }
+
+    .delete-confirm span { color: var(--text-muted); white-space: nowrap; }
+
+    /* ── Add Year form ──────────────────────────────────────────────────── */
+    .year-form-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem;
+    }
+
+    .section-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--text-muted);
+      grid-column: 1 / -1;
+      margin-top: 0.25rem;
+    }
+
+    /* ── Utilities ──────────────────────────────────────────────────────── */
+    .mt-1 { margin-top: 0.5rem; }
+    .mt-2 { margin-top: 1rem; }
+    .mt-3 { margin-top: 1.5rem; }
+    .mb-1 { margin-bottom: 0.5rem; }
+    .flex { display: flex; }
+    .gap-1 { gap: 0.5rem; }
+    .items-center { align-items: center; }
+    .justify-between { justify-content: space-between; }
+    .hidden { display: none !important; }
+
+    /* ── Responsive ─────────────────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      .stats-row { grid-template-columns: 1fr 1fr; }
+      .form-grid { grid-template-columns: 1fr; }
+      .form-group.full { grid-column: 1; }
+      .year-form-grid { grid-template-columns: 1fr 1fr; }
+      .page { padding: 1rem 0.875rem; }
+      .app-header { padding: 0 0.875rem; }
+    }
+
+    @media (max-width: 480px) {
+      .stats-row { grid-template-columns: 1fr; }
+      .stat-value { font-size: 1.35rem; }
+    }
+
+    /* ── Print Styles ───────────────────────────────────────────────────── */
+    @media print {
+      .app-header, .view-nav, #print-btn, .btn, .no-print { display: none !important; }
+      body { background: white; font-size: 12pt; }
+      .card { box-shadow: none; border: 1px solid #ccc; }
+      .tax-row { padding: 4pt 0; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="header-top">
+    <div class="app-title">Rental <span>Property Manager</span></div>
+    <div class="property-tabs" id="property-tabs">
+      <button class="prop-tab active" data-prop="6AL">6AL</button>
+      <button class="prop-tab" data-prop="95EB">95EB</button>
+      <button class="prop-tab" data-prop="446BB">446BB</button>
+    </div>
+  </div>
+  <div class="view-nav" id="view-nav">
+    <button class="view-btn active" data-view="current-year">Current Year</button>
+    <button class="view-btn" data-view="historical">Historical</button>
+    <button class="view-btn" data-view="tax-summary">Tax Summary</button>
+    <button class="view-btn" data-view="add-entry">+ Add Entry</button>
+  </div>
+</header>
+
+<main class="page" id="app">
+  <div class="loading"><span class="spinner"></span> Loading…</div>
+</main>
+
+<script>
+'use strict';
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const API = 'https://rentals-api.99redder.workers.dev';
+const PROPERTIES = ['6AL', '95EB', '446BB'];
+const CURRENT_YEAR = new Date().getFullYear();
+
+const CATEGORIES = {
+  income: [
+    { code: 'rent',         name: 'Rent Received' },
+    { code: 'deposit',      name: 'Security Deposit' },
+    { code: 'late_fee',     name: 'Late Fees' },
+    { code: 'other_income', name: 'Other Income' },
+  ],
+  expense: [
+    { code: 'mortgage',      name: 'Mortgage / PITI' },
+    { code: 'taxes',         name: 'Property Taxes' },
+    { code: 'insurance',     name: 'Insurance' },
+    { code: 'repairs',       name: 'Repairs & Maintenance' },
+    { code: 'utilities',     name: 'Utilities' },
+    { code: 'hoa',           name: 'HOA Fees' },
+    { code: 'management',    name: 'Property Manager Commission' },
+    { code: 'legal',         name: 'Legal & Professional' },
+    { code: 'marketing',     name: 'Advertising / Marketing' },
+    { code: 'other_expense', name: 'Other Expenses' },
+  ]
+};
+
+const ALL_CATS = [...CATEGORIES.income, ...CATEGORIES.expense];
+const CAT_MAP  = Object.fromEntries(ALL_CATS.map(c => [c.code, c.name]));
+const CAT_TYPE = Object.fromEntries([
+  ...CATEGORIES.income.map(c  => [c.code, 'income']),
+  ...CATEGORIES.expense.map(c => [c.code, 'expense'])
+]);
+
+// ── State ─────────────────────────────────────────────────────────────────────
+
+const state = {
+  currentProperty: '6AL',
+  currentView: 'current-year',
+  data: {
+    '6AL':   { transactions: null, summaries: null, defaults: null },
+    '95EB':  { transactions: null, summaries: null, defaults: null },
+    '446BB': { transactions: null, summaries: null, defaults: null }
+  },
+  pendingDefaultPrompt: null  // { category, amount } after a save
+};
+
+// ── API ───────────────────────────────────────────────────────────────────────
+
+async function callApi(body) {
+  const res = await fetch(`${API}/api/data`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+async function ensureLoaded(property, key) {
+  if (state.data[property][key] !== null) return;
+
+  const actionMap = {
+    transactions: 'get_transactions',
+    summaries:    'get_summaries',
+    defaults:     'get_defaults'
+  };
+
+  const result = await callApi({ action: actionMap[key], property });
+  state.data[property][key] = result[key] || (key === 'transactions' ? [] : {});
+}
+
+// ── Formatting ────────────────────────────────────────────────────────────────
+
+function fmt(amount) {
+  // amounts are always stored in dollars
+  const abs = Math.abs(amount);
+  return '$' + abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtShort(amount) {
+  const abs = Math.abs(amount);
+  if (abs >= 1000) return '$' + (abs / 1000).toFixed(1) + 'k';
+  return '$' + abs.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[parseInt(m, 10) - 1]} ${parseInt(d, 10)}, ${y}`;
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+
+function switchProperty(prop) {
+  state.currentProperty = prop;
+  document.querySelectorAll('.prop-tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.prop === prop);
+  });
+  renderView();
+}
+
+function switchView(view) {
+  state.currentView = view;
+  state.pendingDefaultPrompt = null;
+  document.querySelectorAll('.view-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.view === view);
+  });
+  renderView();
+}
+
+async function renderView() {
+  const app = document.getElementById('app');
+  app.innerHTML = '<div class="loading"><span class="spinner"></span> Loading…</div>';
+
+  try {
+    switch (state.currentView) {
+      case 'current-year': await renderCurrentYear(); break;
+      case 'historical':   await renderHistorical();   break;
+      case 'tax-summary':  await renderTaxSummary();   break;
+      case 'add-entry':    await renderAddEntry();      break;
+    }
+  } catch (e) {
+    app.innerHTML = `<div class="error-msg">Failed to load: ${escHtml(e.message)}</div>`;
+  }
+}
+
+// ── View: Current Year ────────────────────────────────────────────────────────
+
+async function renderCurrentYear() {
+  const prop = state.currentProperty;
+  await ensureLoaded(prop, 'transactions');
+
+  const txns = state.data[prop].transactions;
+  const yearTxns = txns.filter(t => t.date.startsWith(String(CURRENT_YEAR)));
+  yearTxns.sort((a, b) => b.date.localeCompare(a.date));
+
+  let ytdRent = 0, totalIncome = 0, totalExpenses = 0;
+  for (const t of yearTxns) {
+    if (t.type === 'income') {
+      totalIncome += t.amount;
+      if (t.category === 'rent') ytdRent += t.amount;
+    } else {
+      totalExpenses += t.amount;
+    }
+  }
+  const net = totalIncome - totalExpenses;
+
+  const netClass = net > 0 ? 'positive' : net < 0 ? 'negative' : 'neutral';
+
+  const rows = yearTxns.length === 0
+    ? `<tr><td colspan="5" class="empty-state" style="padding:2.5rem">
+         No transactions recorded for ${CURRENT_YEAR} yet.
+         <p><button class="btn btn-primary mt-1" onclick="switchView('add-entry')">Add First Entry</button></p>
+       </td></tr>`
+    : yearTxns.map(t => {
+        const isIncome = t.type === 'income';
+        return `
+          <tr data-id="${escAttr(t.id)}">
+            <td class="nowrap">${fmtDate(t.date)}</td>
+            <td>
+              <span class="badge badge-${t.type}">${isIncome ? 'Income' : 'Expense'}</span>
+            </td>
+            <td>${escHtml(CAT_MAP[t.category] || t.category)}</td>
+            <td class="text-right nowrap ${isIncome ? 'amount-income' : 'amount-expense'}">
+              ${isIncome ? '' : '−'}${fmt(t.amount)}
+            </td>
+            <td class="text-right" style="color:var(--text-muted);font-size:0.82rem">${escHtml(t.description)}</td>
+            <td class="text-right">
+              <div class="delete-confirm hidden" id="del-${escAttr(t.id)}">
+                <span>Delete?</span>
+                <button class="btn btn-danger btn-sm" onclick="confirmDelete('${escAttr(t.id)}')">Yes</button>
+                <button class="btn btn-ghost btn-sm" onclick="cancelDelete('${escAttr(t.id)}')">No</button>
+              </div>
+              <button class="btn btn-ghost btn-sm" id="delbtn-${escAttr(t.id)}"
+                onclick="showDeleteConfirm('${escAttr(t.id)}')">Delete</button>
+            </td>
+          </tr>`;
+      }).join('');
+
+  document.getElementById('app').innerHTML = `
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">YTD Rent</div>
+        <div class="stat-value income">${fmt(ytdRent)}</div>
+        <div class="stat-sub">${CURRENT_YEAR}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Income</div>
+        <div class="stat-value income">${fmt(totalIncome)}</div>
+        <div class="stat-sub">Year to Date</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Expenses</div>
+        <div class="stat-value expense">${fmt(totalExpenses)}</div>
+        <div class="stat-sub">Year to Date</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Net Income</div>
+        <div class="stat-value ${netClass}">${net < 0 ? '−' : ''}${fmt(net)}</div>
+        <div class="stat-sub">Year to Date</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">${CURRENT_YEAR} Transactions — ${prop}</div>
+        <button class="btn btn-primary btn-sm" onclick="switchView('add-entry')">+ Add Entry</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Type</th>
+              <th>Category</th>
+              <th class="text-right">Amount</th>
+              <th class="text-right">Notes</th>
+              <th class="text-right no-print">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="txn-body">${rows}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function showDeleteConfirm(id) {
+  document.getElementById(`delbtn-${id}`).classList.add('hidden');
+  document.getElementById(`del-${id}`).classList.remove('hidden');
+}
+
+function cancelDelete(id) {
+  document.getElementById(`del-${id}`).classList.add('hidden');
+  document.getElementById(`delbtn-${id}`).classList.remove('hidden');
+}
+
+async function confirmDelete(id) {
+  const prop = state.currentProperty;
+  try {
+    await callApi({ action: 'delete_transaction', property: prop, id });
+    state.data[prop].transactions = state.data[prop].transactions.filter(t => t.id !== id);
+    renderCurrentYear();
+  } catch (e) {
+    alert('Delete failed: ' + e.message);
+  }
+}
+
+// ── View: Historical ──────────────────────────────────────────────────────────
+
+async function renderHistorical() {
+  const prop = state.currentProperty;
+  await ensureLoaded(prop, 'summaries');
+
+  const summaries = state.data[prop].summaries;
+  const years = Object.keys(summaries).sort((a, b) => b - a);
+
+  // Build column list: only show cats that have any non-zero data
+  const incomeCats  = CATEGORIES.income.filter(c  => years.some(y => (summaries[y][c.code] || 0) !== 0));
+  const expenseCats = CATEGORIES.expense.filter(c => years.some(y => (summaries[y][c.code] || 0) !== 0));
+  // Show at least the main ones if empty
+  const showIncome  = incomeCats.length  ? incomeCats  : CATEGORIES.income.slice(0, 2);
+  const showExpense = expenseCats.length ? expenseCats : CATEGORIES.expense.slice(0, 4);
+  const allShow     = [...showIncome, ...showExpense];
+
+  const headerCols = allShow.map(c => `<th class="text-right">${escHtml(c.name)}</th>`).join('');
+  const totalIncomeIdx = showIncome.length;
+
+  const yearRows = years.map(y => {
+    const d = summaries[y];
+    const inc = showIncome.reduce((s, c)  => s + (d[c.code] || 0), 0);
+    const exp = showExpense.reduce((s, c) => s + (d[c.code] || 0), 0);
+    const net = inc - exp;
+    const netClass = net > 0 ? 'amount-income' : net < 0 ? 'amount-expense' : '';
+    const cols = allShow.map(c => {
+      const v = d[c.code] || 0;
+      return `<td class="text-right ${v === 0 ? '' : CAT_TYPE[c.code] === 'income' ? 'amount-income' : 'amount-expense'}">${v === 0 ? '—' : fmtShort(v)}</td>`;
+    }).join('');
+
+    return `
+      <tr>
+        <td class="year-cell">${y}</td>
+        ${cols}
+        <td class="text-right amount-income">${fmtShort(inc)}</td>
+        <td class="text-right amount-expense">${fmtShort(exp)}</td>
+        <td class="text-right ${netClass}">${net < 0 ? '−' : ''}${fmtShort(Math.abs(net))}</td>
+        <td class="text-right no-print">
+          <button class="btn btn-ghost btn-sm" onclick="openEditYear('${y}')">Edit</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteYear('${y}')">×</button>
+        </td>
+      </tr>`;
+  }).join('');
+
+  const emptyMsg = years.length === 0
+    ? `<tr><td colspan="${allShow.length + 4}" class="empty-state" style="padding:2rem">
+         No historical data yet. Click <strong>+ Add Year</strong> to enter a year summary.
+       </td></tr>`
+    : '';
+
+  document.getElementById('app').innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Historical Annual Summaries — ${prop}</div>
+        <button class="btn btn-primary btn-sm no-print" onclick="openAddYear()">+ Add Year</button>
+      </div>
+      <div class="table-wrap">
+        <table class="hist-table">
+          <thead>
+            <tr>
+              <th>Year</th>
+              ${headerCols}
+              <th class="text-right">Total Income</th>
+              <th class="text-right">Total Expenses</th>
+              <th class="text-right">Net</th>
+              <th class="text-right no-print">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="hist-body">${emptyMsg}${yearRows}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Add/Edit Year Form (hidden by default) -->
+    <div class="card mt-2 hidden" id="year-form-card">
+      <div class="card-header">
+        <div class="card-title" id="year-form-title">Add Year Summary</div>
+        <button class="btn btn-ghost btn-sm" onclick="closeYearForm()">Cancel</button>
+      </div>
+      <div class="card-body">
+        <div class="year-form-grid" id="year-form-grid">
+          <!-- injected by openAddYear / openEditYear -->
+        </div>
+        <div class="form-actions mt-2">
+          <button class="btn btn-primary" onclick="saveYearForm()">Save Summary</button>
+          <button class="btn btn-ghost" onclick="closeYearForm()">Cancel</button>
+        </div>
+        <div id="year-form-error" class="error-msg mt-1 hidden"></div>
+      </div>
+    </div>
+  `;
+}
+
+function buildYearFormGrid(year = '', data = {}) {
+  const yearField = year
+    ? `<input type="number" id="yf-year" value="${year}" readonly style="background:var(--bg);cursor:not-allowed">`
+    : `<input type="number" id="yf-year" placeholder="e.g. 2024" min="2000" max="2099" required>`;
+
+  const incomeFields = CATEGORIES.income.map(c => `
+    <div class="form-group">
+      <label>${escHtml(c.name)}</label>
+      <input type="number" id="yf-${c.code}" step="0.01" min="0" placeholder="0"
+             value="${data[c.code] || ''}">
+    </div>`).join('');
+
+  const expenseFields = CATEGORIES.expense.map(c => `
+    <div class="form-group">
+      <label>${escHtml(c.name)}</label>
+      <input type="number" id="yf-${c.code}" step="0.01" min="0" placeholder="0"
+             value="${data[c.code] || ''}">
+    </div>`).join('');
+
+  document.getElementById('year-form-grid').innerHTML = `
+    <div class="form-group">
+      <label>Year</label>
+      ${yearField}
+    </div>
+    <div class="section-label" style="grid-column:1/-1">Income</div>
+    ${incomeFields}
+    <div class="section-label" style="grid-column:1/-1">Expenses</div>
+    ${expenseFields}
+  `;
+}
+
+function openAddYear() {
+  document.getElementById('year-form-title').textContent = 'Add Year Summary';
+  buildYearFormGrid();
+  document.getElementById('year-form-card').classList.remove('hidden');
+  document.getElementById('yf-year').focus();
+}
+
+function openEditYear(year) {
+  const prop = state.currentProperty;
+  const data = state.data[prop].summaries[year] || {};
+  document.getElementById('year-form-title').textContent = `Edit ${year} Summary`;
+  buildYearFormGrid(year, data);
+  document.getElementById('year-form-card').classList.remove('hidden');
+}
+
+function closeYearForm() {
+  document.getElementById('year-form-card').classList.add('hidden');
+}
+
+async function saveYearForm() {
+  const prop = state.currentProperty;
+  const yearEl = document.getElementById('yf-year');
+  const year = String(yearEl.value).trim();
+  const errEl = document.getElementById('year-form-error');
+
+  if (!year || !/^\d{4}$/.test(year)) {
+    errEl.textContent = 'Please enter a valid 4-digit year.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  const data = {};
+  for (const c of ALL_CATS) {
+    const el = document.getElementById(`yf-${c.code}`);
+    data[c.code] = el && el.value !== '' ? parseFloat(el.value) || 0 : 0;
+  }
+
+  try {
+    await callApi({ action: 'save_summary', property: prop, year, data });
+    if (!state.data[prop].summaries) state.data[prop].summaries = {};
+    state.data[prop].summaries[year] = data;
+    closeYearForm();
+    renderHistorical();
+  } catch (e) {
+    errEl.textContent = 'Save failed: ' + e.message;
+    errEl.classList.remove('hidden');
+  }
+}
+
+async function deleteYear(year) {
+  if (!confirm(`Delete the ${year} summary? This cannot be undone.`)) return;
+  const prop = state.currentProperty;
+  try {
+    await callApi({ action: 'delete_summary', property: prop, year });
+    delete state.data[prop].summaries[year];
+    renderHistorical();
+  } catch (e) {
+    alert('Delete failed: ' + e.message);
+  }
+}
+
+// ── View: Tax Summary ─────────────────────────────────────────────────────────
+
+async function renderTaxSummary() {
+  const prop = state.currentProperty;
+  await ensureLoaded(prop, 'transactions');
+
+  const yearTxns = state.data[prop].transactions.filter(t => t.date.startsWith(String(CURRENT_YEAR)));
+
+  // Group by category
+  const totals = {};
+  for (const t of yearTxns) {
+    totals[t.category] = (totals[t.category] || 0) + t.amount;
+  }
+
+  const incomeRows = CATEGORIES.income
+    .filter(c => totals[c.code])
+    .map(c => `<div class="tax-row"><span>${escHtml(c.name)}</span><span class="tax-amt amount-income">${fmt(totals[c.code])}</span></div>`)
+    .join('');
+
+  const expenseRows = CATEGORIES.expense
+    .filter(c => totals[c.code])
+    .map(c => `<div class="tax-row"><span>${escHtml(c.name)}</span><span class="tax-amt amount-expense">${fmt(totals[c.code])}</span></div>`)
+    .join('');
+
+  const totalIncome   = CATEGORIES.income.reduce((s, c)  => s + (totals[c.code] || 0), 0);
+  const totalExpenses = CATEGORIES.expense.reduce((s, c) => s + (totals[c.code] || 0), 0);
+  const net = totalIncome - totalExpenses;
+  const netClass = net >= 0 ? 'positive' : 'negative';
+
+  const emptyNote = yearTxns.length === 0
+    ? `<div class="error-msg mb-1">No transactions recorded for ${CURRENT_YEAR}. Add entries first.</div>`
+    : '';
+
+  document.getElementById('app').innerHTML = `
+    ${emptyNote}
+    <div class="card" style="max-width:560px">
+      <div class="card-header">
+        <div class="card-title">Tax Summary — ${prop} — ${CURRENT_YEAR}</div>
+        <button class="btn btn-ghost btn-sm no-print" id="print-btn" onclick="window.print()">Print</button>
+      </div>
+      <div class="card-body">
+        <div class="tax-section">
+          <div class="tax-section-title">Income</div>
+          ${incomeRows || '<div class="tax-row" style="color:var(--text-muted)">No income recorded</div>'}
+          <div class="tax-row subtotal">
+            <span>Total Income</span>
+            <span class="tax-amt amount-income">${fmt(totalIncome)}</span>
+          </div>
+        </div>
+
+        <div class="tax-section">
+          <div class="tax-section-title">Expenses</div>
+          ${expenseRows || '<div class="tax-row" style="color:var(--text-muted)">No expenses recorded</div>'}
+          <div class="tax-row subtotal">
+            <span>Total Expenses</span>
+            <span class="tax-amt amount-expense">${fmt(totalExpenses)}</span>
+          </div>
+        </div>
+
+        <div class="tax-row net">
+          <span>Net Income</span>
+          <span class="tax-amt ${netClass}">${net < 0 ? '−' : ''}${fmt(Math.abs(net))}</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ── View: Add Entry ───────────────────────────────────────────────────────────
+
+async function renderAddEntry() {
+  const prop = state.currentProperty;
+  await ensureLoaded(prop, 'defaults');
+
+  const today = new Date().toISOString().slice(0, 10);
+  const defaults = state.data[prop].defaults || {};
+
+  // Build category options for Income (default type)
+  const incomeCatOptions = CATEGORIES.income.map(c =>
+    `<option value="${c.code}">${escHtml(c.name)}</option>`).join('');
+
+  document.getElementById('app').innerHTML = `
+    <div class="card" style="max-width:560px">
+      <div class="card-header">
+        <div class="card-title">Add Transaction — ${prop}</div>
+      </div>
+      <div class="card-body">
+        <div id="entry-error" class="error-msg hidden"></div>
+        <div id="entry-success" class="inline-prompt hidden" style="background:var(--success-light);border-color:#86efac">
+          <span id="entry-success-msg"></span>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="entry-type">Type</label>
+            <select id="entry-type">
+              <option value="income">Income</option>
+              <option value="expense">Expense</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="entry-cat">Category</label>
+            <select id="entry-cat">${incomeCatOptions}</select>
+          </div>
+
+          <div class="form-group">
+            <label for="entry-date">Date</label>
+            <input type="date" id="entry-date" value="${today}" required>
+          </div>
+
+          <div class="form-group">
+            <label>Amount ($)</label>
+            <div class="amount-row">
+              <input type="number" id="entry-amount" step="0.01" min="0.01" placeholder="0.00" required>
+              <button type="button" class="btn btn-default-amt hidden" id="use-default-btn"
+                onclick="useDefaultAmount()">—</button>
+            </div>
+          </div>
+
+          <div class="form-group full">
+            <label for="entry-notes">Notes</label>
+            <input type="text" id="entry-notes" placeholder="Optional description">
+          </div>
+        </div>
+
+        <div class="form-actions mt-2">
+          <button class="btn btn-success" onclick="saveEntry()">Save Transaction</button>
+        </div>
+
+        <!-- Post-save default prompt -->
+        <div class="inline-prompt hidden" id="default-prompt">
+          <span id="default-prompt-msg"></span>
+          <button class="btn btn-ghost btn-sm" onclick="saveAsDefault()">Yes, save default</button>
+          <button class="btn btn-ghost btn-sm" onclick="dismissDefaultPrompt()">No</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Wire up type and category change handlers
+  const typeEl = document.getElementById('entry-type');
+  const catEl  = document.getElementById('entry-cat');
+
+  typeEl.addEventListener('change', () => {
+    const cats = CATEGORIES[typeEl.value];
+    catEl.innerHTML = cats.map(c => `<option value="${c.code}">${escHtml(c.name)}</option>`).join('');
+    catEl.dispatchEvent(new Event('change'));
+  });
+
+  catEl.addEventListener('change', () => {
+    const def = (state.data[prop].defaults || {})[catEl.value];
+    const btn = document.getElementById('use-default-btn');
+    if (def != null && def > 0) {
+      btn.textContent = `Use Default ${fmt(def)}`;
+      btn.classList.remove('hidden');
+    } else {
+      btn.classList.add('hidden');
+    }
+  });
+
+  // Trigger initial default check
+  catEl.dispatchEvent(new Event('change'));
+}
+
+function useDefaultAmount() {
+  const prop = state.currentProperty;
+  const cat  = document.getElementById('entry-cat').value;
+  const def  = (state.data[prop].defaults || {})[cat];
+  if (def != null) {
+    document.getElementById('entry-amount').value = def;
+    document.getElementById('entry-date').focus();
+  }
+}
+
+async function saveEntry() {
+  const prop    = state.currentProperty;
+  const type    = document.getElementById('entry-type').value;
+  const cat     = document.getElementById('entry-cat').value;
+  const date    = document.getElementById('entry-date').value;
+  const amtRaw  = document.getElementById('entry-amount').value;
+  const notes   = document.getElementById('entry-notes').value.trim();
+  const errEl   = document.getElementById('entry-error');
+  const sucEl   = document.getElementById('entry-success');
+  const sucMsg  = document.getElementById('entry-success-msg');
+
+  errEl.classList.add('hidden');
+  sucEl.classList.add('hidden');
+
+  // Validate
+  if (!date) { showEntryError('Please enter a date.'); return; }
+  const amount = parseFloat(amtRaw);
+  if (isNaN(amount) || amount <= 0) { showEntryError('Please enter a valid amount greater than $0.'); return; }
+
+  try {
+    const result = await callApi({
+      action: 'add_transaction',
+      property: prop,
+      transaction: { type, category: cat, date, amount, description: notes }
+    });
+
+    // Update cache
+    if (!state.data[prop].transactions) state.data[prop].transactions = [];
+    state.data[prop].transactions.push(result.transaction);
+
+    // Show success
+    sucMsg.textContent = `Saved: ${CAT_MAP[cat]} ${fmt(amount)} on ${fmtDate(date)}`;
+    sucEl.classList.remove('hidden');
+
+    // Reset form (keep type/category, clear amount/notes, reset date to today)
+    document.getElementById('entry-amount').value = '';
+    document.getElementById('entry-notes').value = '';
+    document.getElementById('entry-date').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('entry-amount').focus();
+
+    // Show "save as default?" prompt
+    state.pendingDefaultPrompt = { category: cat, amount };
+    const curDef = (state.data[prop].defaults || {})[cat];
+    if (curDef !== amount) {
+      const promptEl = document.getElementById('default-prompt');
+      document.getElementById('default-prompt-msg').textContent =
+        `Save ${fmt(amount)} as the default for "${CAT_MAP[cat]}"?`;
+      promptEl.classList.remove('hidden');
+    }
+
+  } catch (e) {
+    showEntryError('Save failed: ' + e.message);
+  }
+}
+
+function showEntryError(msg) {
+  const errEl = document.getElementById('entry-error');
+  errEl.textContent = msg;
+  errEl.classList.remove('hidden');
+}
+
+async function saveAsDefault() {
+  const prop = state.currentProperty;
+  const { category, amount } = state.pendingDefaultPrompt || {};
+  if (!category || !amount) return;
+
+  try {
+    await callApi({ action: 'save_defaults', property: prop, defaults: { [category]: amount } });
+    if (!state.data[prop].defaults) state.data[prop].defaults = {};
+    state.data[prop].defaults[category] = amount;
+  } catch (e) {
+    // silently ignore — non-critical
+  }
+
+  dismissDefaultPrompt();
+}
+
+function dismissDefaultPrompt() {
+  state.pendingDefaultPrompt = null;
+  const el = document.getElementById('default-prompt');
+  if (el) el.classList.add('hidden');
+}
+
+// ── Security Helpers ──────────────────────────────────────────────────────────
+
+function escHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function escAttr(str) {
+  return String(str ?? '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+document.getElementById('property-tabs').addEventListener('click', e => {
+  const btn = e.target.closest('.prop-tab');
+  if (btn) switchProperty(btn.dataset.prop);
+});
+
+document.getElementById('view-nav').addEventListener('click', e => {
+  const btn = e.target.closest('.view-btn');
+  if (btn) switchView(btn.dataset.view);
+});
+
+// Expose functions called from inline handlers
+window.switchView          = switchView;
+window.showDeleteConfirm   = showDeleteConfirm;
+window.cancelDelete        = cancelDelete;
+window.confirmDelete       = confirmDelete;
+window.openAddYear         = openAddYear;
+window.openEditYear        = openEditYear;
+window.closeYearForm       = closeYearForm;
+window.saveYearForm        = saveYearForm;
+window.deleteYear          = deleteYear;
+window.useDefaultAmount    = useDefaultAmount;
+window.saveEntry           = saveEntry;
+window.saveAsDefault       = saveAsDefault;
+window.dismissDefaultPrompt = dismissDefaultPrompt;
+
+renderView();
+</script>
+</body>
+</html>
