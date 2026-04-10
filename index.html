@@ -824,8 +824,31 @@ const TP_KEY = `rentals_tax_${CURRENT_YEAR}`;
 // Session-only (never persisted): admin passwords for FMG/ESAI fetch
 const TP_SESSION = { fmg_pw: '', esai_pw: '' };
 
-function tpLoad() { try { return JSON.parse(localStorage.getItem(TP_KEY) || '{}'); } catch { return {}; } }
-function tpSave(tp) { const { fmg_pw, esai_pw, ...d } = tp; localStorage.setItem(TP_KEY, JSON.stringify(d)); }
+function tpLoadLocal() { try { return JSON.parse(localStorage.getItem(TP_KEY) || '{}'); } catch { return {}; } }
+
+async function tpLoadFromAPI() {
+  try {
+    const result = await callApi({ action: 'get_tax_planning', year: String(CURRENT_YEAR) });
+    const data = result.data || {};
+    localStorage.setItem(TP_KEY, JSON.stringify(data)); // keep local cache in sync
+    return data;
+  } catch {
+    return tpLoadLocal(); // fallback to cache if API unreachable
+  }
+}
+
+let _tpSaveTimer = null;
+function tpSave(tp) {
+  // Write to localStorage immediately so the UI never lags
+  localStorage.setItem(TP_KEY, JSON.stringify(tp));
+  // Debounced API save — fires 800ms after the last change
+  clearTimeout(_tpSaveTimer);
+  _tpSaveTimer = setTimeout(async () => {
+    try { await callApi({ action: 'save_tax_planning', year: String(CURRENT_YEAR), data: tp }); }
+    catch { /* silently ignore — localStorage is the backup */ }
+  }, 800);
+}
+
 function tpN(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -2286,7 +2309,7 @@ async function renderTaxPlanning() {
   });
   window._tpRentalRows = rentalRows;
 
-  const tp = tpLoad();
+  const tp = await tpLoadFromAPI();
   const autoDepr = rentalRows.reduce((s, p) => s + p.deprAmt, 0);
   if (tp.rental_depr === undefined) tp.rental_depr = autoDepr;
 
@@ -2507,7 +2530,7 @@ async function renderTaxPlanning() {
 }
 
 function tpReadForm() {
-  const tp = tpLoad(); // get existing (preserves estimated_payments)
+  const tp = tpLoadLocal(); // get existing (preserves estimated_payments)
   const g = id => { const el = document.getElementById(id); return el && el.value !== '' ? parseFloat(el.value) || 0 : 0; };
   const gc = id => { const el = document.getElementById(id); return el ? el.checked : true; };
   if (!tp.navy_locked) { tp.navy_gross = g('tp-navy-gross'); tp.navy_fed = g('tp-navy-fed'); tp.navy_state = g('tp-navy-state'); }

@@ -60,6 +60,10 @@ async function handleDataApi(request, env) {
     return jsonResponse({ error: 'Unauthorized' }, 401);
   }
 
+  // Non-property actions
+  if (action === 'get_tax_planning') return handleGetTaxPlanning(env, body.year);
+  if (action === 'save_tax_planning') return handleSaveTaxPlanning(env, body.year, body.data);
+
   const { property } = body;
 
   if (!property || !VALID_PROPERTIES.includes(property)) {
@@ -259,6 +263,27 @@ async function handleSaveDepreciation(env, property, config) {
 
   await env.RENTALS.put(`depreciation:${property}`, JSON.stringify(saved));
   return jsonResponse({ success: true, config: saved });
+}
+
+// ── Tax Planning ─────────────────────────────────────────────────────────────
+
+async function handleGetTaxPlanning(env, year) {
+  if (!year || !/^\d{4}$/.test(String(year))) {
+    return jsonResponse({ error: 'Invalid year' }, 400);
+  }
+  const data = await env.RENTALS.get(`tax_planning:${year}`, 'json') || {};
+  return jsonResponse({ data });
+}
+
+async function handleSaveTaxPlanning(env, year, data) {
+  if (!year || !/^\d{4}$/.test(String(year))) {
+    return jsonResponse({ error: 'Invalid year' }, 400);
+  }
+  if (!data || typeof data !== 'object') {
+    return jsonResponse({ error: 'Missing data object' }, 400);
+  }
+  await env.RENTALS.put(`tax_planning:${year}`, JSON.stringify(data));
+  return jsonResponse({ success: true });
 }
 
 // ── Helper ────────────────────────────────────────────────────────────────────
