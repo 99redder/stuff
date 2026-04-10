@@ -117,13 +117,14 @@ If any API call returns 401, the user is immediately sent back to the login scre
 { code: 'other_income', name: 'Other Income' }
 
 // Expense
-{ code: 'mortgage',      name: 'Mortgage / PITI' }
 { code: 'taxes',         name: 'Property Taxes' }
 { code: 'insurance',     name: 'Insurance' }
 { code: 'repairs',       name: 'Repairs & Maintenance' }
+{ code: 'improvements',  name: 'Improvements' }
 { code: 'utilities',     name: 'Utilities' }
 { code: 'hoa',           name: 'HOA Fees' }
 { code: 'management',    name: 'Property Manager Commission' }
+{ code: 'auto',          name: 'Auto' }
 { code: 'legal',         name: 'Legal & Professional' }
 { code: 'marketing',     name: 'Advertising / Marketing' }
 { code: 'other_expense', name: 'Other Expenses' }
@@ -195,7 +196,7 @@ All calls: `POST /api/data` with JSON body `{ action, property, ...payload }`.
 ### KV Key Scheme
 ```
 transactions:{property}    →  Array of transaction objects
-summaries:{property}       →  { "2023": { rent: X, mortgage: Y, ... }, ... }
+summaries:{property}       →  { "2023": { rent: X, taxes: Y, ... }, ... }
 defaults:{property}        →  { rent: X, management: Y, ... }
 depreciation:{property}    →  { costBasis, placedInService, purchaseDate }
 ```
