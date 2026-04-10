@@ -707,6 +707,16 @@ const CAT_TYPE = Object.fromEntries([
   ...CATEGORIES.expense.map(c => [c.code, 'expense'])
 ]);
 
+// Normal Month config: management % and fixed HOA entries per property
+const NORMAL_MONTH_CONFIG = {
+  '6AL':   { mgmtPct: 0,    hoa: [] },
+  '95EB':  { mgmtPct: 0.15, hoa: [{ amount: 370, description: 'Condo fee' }] },
+  '446BB': { mgmtPct: 0.10, hoa: [
+    { amount: 373, description: 'Condo fee' },
+    { amount: 230, description: 'Special assessment' }
+  ]}
+};
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 const state = {
@@ -1721,12 +1731,48 @@ async function renderAddEntry() {
 
   const today = new Date().toISOString().slice(0, 10);
   const defaults = state.data[prop].defaults || {};
+  const nmCfg = NORMAL_MONTH_CONFIG[prop];
+
+  // Build Normal Month preview rows
+  const rentAmt = defaults.rent || 0;
+  const mgmtAmt = nmCfg.mgmtPct > 0 ? Math.round(rentAmt * nmCfg.mgmtPct * 100) / 100 : 0;
+
+  const nmRows = [];
+  if (rentAmt > 0) nmRows.push({ label: 'Rent Received', amount: rentAmt, type: 'income' });
+  if (mgmtAmt > 0) nmRows.push({ label: 'Property Manager Commission', amount: mgmtAmt, type: 'expense' });
+  for (const h of nmCfg.hoa) nmRows.push({ label: 'HOA Fees' + (h.description ? ` (${h.description})` : ''), amount: h.amount, type: 'expense' });
+
+  const nmPreviewHtml = nmRows.length
+    ? nmRows.map(r => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:.3rem 0;border-bottom:1px solid var(--border);font-size:.9rem">
+          <span style="color:${r.type === 'income' ? 'var(--success)' : 'var(--danger)'}">${escHtml(r.label)}</span>
+          <span style="font-weight:600">${fmt(r.amount)}</span>
+        </div>`).join('')
+    : `<div style="font-size:.875rem;color:var(--text-muted)">No defaults set — enter rent default first.</div>`;
 
   // Build category options for Income (default type)
   const incomeCatOptions = CATEGORIES.income.map(c =>
     `<option value="${c.code}">${escHtml(c.name)}</option>`).join('');
 
   document.getElementById('app').innerHTML = `
+    <div class="card" style="max-width:560px;margin-bottom:1.25rem">
+      <div class="card-header">
+        <div class="card-title">Normal Month — ${prop}</div>
+      </div>
+      <div class="card-body">
+        <div id="nm-error" class="error-msg hidden"></div>
+        <div id="nm-success" class="inline-prompt hidden" style="background:var(--success-light);border-color:#86efac">
+          <span id="nm-success-msg"></span>
+        </div>
+        <div class="form-group" style="margin-bottom:1rem;max-width:200px">
+          <label for="nm-date">Date</label>
+          <input type="date" id="nm-date" value="${today}">
+        </div>
+        <div style="margin-bottom:1rem">${nmPreviewHtml}</div>
+        <button class="btn btn-primary" onclick="postNormalMonth()" ${nmRows.length === 0 ? 'disabled' : ''}>Post Normal Month</button>
+      </div>
+    </div>
+
     <div class="card" style="max-width:560px">
       <div class="card-header">
         <div class="card-title">Add Transaction — ${prop}</div>
@@ -1901,6 +1947,57 @@ function dismissDefaultPrompt() {
   state.pendingDefaultPrompt = null;
   const el = document.getElementById('default-prompt');
   if (el) el.classList.add('hidden');
+}
+
+async function postNormalMonth() {
+  const prop  = state.currentProperty;
+  const date  = document.getElementById('nm-date').value;
+  const errEl = document.getElementById('nm-error');
+  const sucEl = document.getElementById('nm-success');
+  const sucMsg = document.getElementById('nm-success-msg');
+
+  errEl.classList.add('hidden');
+  sucEl.classList.add('hidden');
+
+  if (!date) { errEl.textContent = 'Please select a date.'; errEl.classList.remove('hidden'); return; }
+
+  const defaults = state.data[prop].defaults || {};
+  const nmCfg = NORMAL_MONTH_CONFIG[prop];
+  const rentAmt = defaults.rent || 0;
+  const mgmtAmt = nmCfg.mgmtPct > 0 ? Math.round(rentAmt * nmCfg.mgmtPct * 100) / 100 : 0;
+
+  const toPost = [];
+  if (rentAmt > 0) toPost.push({ type: 'income',  category: 'rent',       amount: rentAmt, description: 'Normal month' });
+  if (mgmtAmt > 0) toPost.push({ type: 'expense', category: 'management', amount: mgmtAmt, description: 'Normal month' });
+  for (const h of nmCfg.hoa) toPost.push({ type: 'expense', category: 'hoa', amount: h.amount, description: h.description });
+
+  if (toPost.length === 0) {
+    errEl.textContent = 'No transactions to post — set a rent default first.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  const btn = document.querySelector('#nm-success')?.previousElementSibling;
+  try {
+    document.querySelectorAll('[onclick="postNormalMonth()"]').forEach(b => { b.disabled = true; b.textContent = 'Posting…'; });
+
+    const results = await Promise.all(toPost.map(t =>
+      callApi({ action: 'add_transaction', property: prop, transaction: { ...t, date } })
+    ));
+
+    // Update cache
+    if (!state.data[prop].transactions) state.data[prop].transactions = [];
+    results.forEach(r => state.data[prop].transactions.push(r.transaction));
+
+    const lines = toPost.map(t => `${CAT_MAP[t.category]} ${fmt(t.amount)}`).join(', ');
+    sucMsg.textContent = `Posted for ${fmtDate(date)}: ${lines}`;
+    sucEl.classList.remove('hidden');
+  } catch (e) {
+    errEl.textContent = 'Failed to post: ' + e.message;
+    errEl.classList.remove('hidden');
+  } finally {
+    document.querySelectorAll('[onclick="postNormalMonth()"]').forEach(b => { b.disabled = false; b.textContent = 'Post Normal Month'; });
+  }
 }
 
 // ── Security Helpers ──────────────────────────────────────────────────────────
