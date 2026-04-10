@@ -2268,6 +2268,7 @@ function tpToggleLock(who) {
 
   const ids = who === 'navy' ? ['tp-navy-gross','tp-navy-fed','tp-navy-state']
     : who === 'wife' ? ['tp-wife-gross','tp-wife-fed','tp-wife-state']
+    : who === 'treasury' ? ['tp-treasury-int']
     : ['tp-ira'];
 
   const locked = tp[key];
@@ -2430,8 +2431,13 @@ async function renderTaxPlanning() {
     <div class="card tp-card">
       <div class="card-header"><div class="card-title">Interest, Dividends &amp; Other Income</div></div>
       <div class="card-body">
+        <div style="display:flex;align-items:flex-end;gap:.5rem;margin-bottom:.75rem">
+          ${tpFld('tp-treasury-int','Treasury Bond Interest',tp.treasury_int,tp.treasury_locked)}
+          <button class="btn btn-ghost btn-sm" style="font-size:.8rem;flex-shrink:0;margin-bottom:1px" onclick="tpToggleLock('treasury')" id="tp-treasury-lock-btn">
+            ${tp.treasury_locked ? '🔒 Locked' : '🔓 Lock'}
+          </button>
+        </div>
         <div class="tp-grid-3">
-          ${tpFld('tp-treasury-int','Treasury Bond Interest',tp.treasury_int)}
           ${tpFld('tp-rh-div','RH Dividends',tp.rh_div)}
           ${tpFld('tp-rh-int','RH Interest',tp.rh_int)}
           ${tpFld('tp-ibkr-int','IBKR Interest',tp.ibkr_int)}
@@ -2544,7 +2550,8 @@ function tpReadForm() {
   if (!tp.navy_locked) { tp.navy_gross = g('tp-navy-gross'); tp.navy_fed = g('tp-navy-fed'); tp.navy_state = g('tp-navy-state'); }
   if (!tp.wife_locked) { tp.wife_gross = g('tp-wife-gross'); tp.wife_fed = g('tp-wife-fed'); tp.wife_state = g('tp-wife-state'); }
   tp.fmg = g('tp-fmg'); tp.esai = g('tp-esai');
-  tp.treasury_int = g('tp-treasury-int'); tp.rh_div = g('tp-rh-div'); tp.rh_int = g('tp-rh-int');
+  if (!tp.treasury_locked) tp.treasury_int = g('tp-treasury-int');
+  tp.rh_div = g('tp-rh-div'); tp.rh_int = g('tp-rh-int');
   tp.ibkr_int = g('tp-ibkr-int'); tp.ally_int = g('tp-ally-int'); tp.vio_int = g('tp-vio-int');
   tp.crypto_income = g('tp-crypto-income');
   tp.crypto_st = g('tp-crypto-st'); tp.rh_st = g('tp-rh-st'); tp.ibkr_st = g('tp-ibkr-st');
