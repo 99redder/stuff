@@ -817,6 +817,56 @@ const TP_IRA_LIMIT = 7000;
 const TP_CTC_PER_CHILD = 2000;
 const TP_CTC_PHASEOUT = 400000;    // MFJ phase-out start
 
+// ── Maryland Tax Constants (2025) ─────────────────────────────────────────────
+const MD_BRACKETS_MFJ = [
+  { limit: 1000,     rate: 0.02   },
+  { limit: 2000,     rate: 0.03   },
+  { limit: 3000,     rate: 0.04   },
+  { limit: 100000,   rate: 0.0475 },
+  { limit: 125000,   rate: 0.05   },
+  { limit: 150000,   rate: 0.0525 },
+  { limit: 250000,   rate: 0.055  },
+  { limit: Infinity, rate: 0.0575 },
+];
+const MD_STD_DED_MIN = 3100;   // MFJ
+const MD_STD_DED_MAX = 4700;   // MFJ
+const MD_EXEMPTION   = 3200;   // per exemption
+const MD_COUNTY_RATES = {
+  'Allegany':         0.0305, 'Anne Arundel':    0.0281, 'Baltimore City':  0.0320,
+  'Baltimore County': 0.0283, 'Calvert':         0.0300, 'Caroline':        0.0320,
+  'Carroll':          0.0303, 'Cecil':           0.0280, 'Charles':         0.0303,
+  'Dorchester':       0.0320, 'Frederick':       0.0296, 'Garrett':         0.0265,
+  'Harford':          0.0306, 'Howard':          0.0320, 'Kent':            0.0320,
+  'Montgomery':       0.0320, "Prince George's": 0.0320, "Queen Anne's":    0.0320,
+  "St. Mary's":       0.0300, 'Somerset':        0.0320, 'Talbot':          0.0240,
+  'Washington':       0.0280, 'Wicomico':        0.0320, 'Worcester':       0.0125,
+};
+
+function calcMarylandTax(tp, agi) {
+  const county = tp.md_county || '';
+  const countyRate = MD_COUNTY_RATES[county] || 0;
+  // Navy retirement is 100% exempt from Maryland income tax (fully phased in as of 2024)
+  const navyExempt = tpN(tp.navy_gross);
+  const mdAgi = Math.max(0, agi - navyExempt);
+  // Standard deduction: 15% of MD AGI, clamped to min/max
+  const mdStdDed = Math.min(MD_STD_DED_MAX, Math.max(MD_STD_DED_MIN, mdAgi * 0.15));
+  // Personal exemptions: MFJ (2) + 2 dependents = 4 × $3,200
+  const mdExemptAmt = 4 * MD_EXEMPTION;
+  const mdTaxInc = Math.max(0, mdAgi - mdStdDed - mdExemptAmt);
+  // State tax
+  let stateTax = 0, prev = 0;
+  for (const b of MD_BRACKETS_MFJ) {
+    if (mdTaxInc <= prev) break;
+    stateTax += (Math.min(mdTaxInc, b.limit) - prev) * b.rate;
+    prev = b.limit;
+  }
+  const countyTax  = mdTaxInc * countyRate;
+  const totalTax   = stateTax + countyTax;
+  const withheld   = tpN(tp.navy_state) + tpN(tp.wife_state);
+  const owed       = totalTax - withheld;
+  return { county, countyRate, navyExempt, mdAgi, mdStdDed, mdExemptAmt, mdTaxInc, stateTax, countyTax, totalTax, withheld, owed };
+}
+
 const FMG_API = 'https://florencemaegifts.com';
 const ESAI_API = 'https://eastern-shore-ai-contact.99redder.workers.dev';
 const TP_KEY = `rentals_tax_${CURRENT_YEAR}`;
@@ -2234,12 +2284,7 @@ function tpCalc(tp, rentalRows) {
   const fedOwed     = netFedTax - totFedPaid;
 
   // State tax
-  const stateWithheld = tpN(tp.navy_state) + tpN(tp.wife_state);
-  const stateRate     = tpN(tp.state_rate) / 100;
-  const stateDed      = tpN(tp.state_ded);
-  const stateTaxInc   = Math.max(0, agi - stateDed);
-  const stateTax      = stateTaxInc * stateRate;
-  const stateOwed     = stateTax - stateWithheld;
+  const md = calcMarylandTax(tp, agi);
 
   return {
     wages, businessInc, rentalNet, rentalDepr, rentalTaxInc,
@@ -2247,8 +2292,7 @@ function tpCalc(tp, rentalRows) {
     seTax, halfSeTax, grossIncome, iraAdj, adjustments, agi,
     stdDed, qbiDed, totDed, taxInc, ordinaryTaxable, ltcgTaxable,
     ordTax, ltcgTax, niit, grossFedTax, ctc, netFedTax,
-    fedWithheld, estPmts, totFedPaid, fedOwed,
-    stateTax, stateWithheld, stateOwed
+    fedWithheld, estPmts, totFedPaid, fedOwed, md
   };
 }
 
@@ -2511,23 +2555,25 @@ async function renderTaxPlanning() {
       </div>
     </div>
 
-    <!-- State Tax -->
+    <!-- Maryland State Tax -->
     <div class="card">
-      <div class="card-header"><div class="card-title">State Income Tax</div></div>
+      <div class="card-header"><div class="card-title">Maryland State &amp; Local Income Tax (2025)</div></div>
       <div class="card-body">
-        <div class="tp-grid-2">
-          <div class="form-group">
-            <label class="tp-lbl">State Tax Rate (%)</label>
-            <input type="number" id="tp-state-rate" step="0.001" min="0" max="20" placeholder="e.g. 5.75"
-                   value="${tp.state_rate||''}" oninput="tpChanged()">
-          </div>
-          <div class="form-group">
-            <label class="tp-lbl">State Standard Deduction ($)</label>
-            <input type="number" id="tp-state-ded" step="1" min="0" placeholder="0"
-                   value="${tp.state_ded||''}" oninput="tpChanged()">
-          </div>
+        <div class="form-group" style="max-width:260px">
+          <label class="tp-lbl">County</label>
+          <select id="tp-md-county" onchange="tpChanged()">
+            <option value="">— Select county —</option>
+            ${Object.keys(MD_COUNTY_RATES).map(c =>
+              `<option value="${escAttr(c)}" ${tp.md_county===c?'selected':''}>${escHtml(c)}</option>`
+            ).join('')}
+          </select>
         </div>
-        <div class="tp-note" style="margin-top:.5rem">State withholding is pulled from Navy Retirement and Wife's Job fields above.</div>
+        <div class="tp-note" style="margin-top:.75rem">
+          ✓ Navy retirement income is <strong>100% exempt</strong> from Maryland income tax (fully phased in 2024+).<br>
+          ✓ Standard deduction: 15% of MD AGI (min $3,100 / max $4,700, MFJ).<br>
+          ✓ Personal exemptions: 4 × $3,200 = $12,800 (MFJ + 2 dependents).<br>
+          ✓ State withholding pulled from W-2 &amp; Retirement section above.
+        </div>
       </div>
     </div>
 
@@ -2560,7 +2606,8 @@ function tpReadForm() {
   tp.std_ded = g('tp-std-ded') || TP_STD_DEDUCTION;
   tp.rental_depr = g('tp-rental-depr');
   tp.use_qbi = gc('tp-use-qbi');
-  tp.state_rate = g('tp-state-rate'); tp.state_ded = g('tp-state-ded');
+  const countyEl = document.getElementById('tp-md-county');
+  if (countyEl) tp.md_county = countyEl.value;
   return tp;
 }
 
@@ -2588,8 +2635,8 @@ function tpUpdateResults(tp) {
   const sec = lbl => `<div class="tp-row sec">${escHtml(lbl)}</div>`;
 
   const fedPos = r.fedOwed > 0.005;
-  const statePos = r.stateOwed > 0.005;
-  const hasState = tpN(tp.state_rate) > 0;
+  const md = r.md;
+  const hasCounty = !!md.county;
 
   el.innerHTML = `
     <div class="card-header"><div class="card-title">${CURRENT_YEAR} Estimate — MFJ</div></div>
@@ -2633,15 +2680,22 @@ function tpUpdateResults(tp) {
         <span>${fmt(Math.abs(r.fedOwed))}</span>
       </div>
 
-      ${hasState ? `
-        ${sec('State Tax')}
-        ${row('State Tax', r.stateTax, 'in')}
-        ${r.stateWithheld > 0 ? row('State Withholding', r.stateWithheld, 'in', true) : ''}
-        <div class="tp-row ${statePos ? 'owed' : 'refund'}">
-          <span>${statePos ? 'Amount Owed — State' : 'Refund — State'}</span>
-          <span>${fmt(Math.abs(r.stateOwed))}</span>
+      ${hasCounty ? `
+        ${sec('Maryland State & Local Tax')}
+        ${md.navyExempt > 0 ? row('Less Navy Retirement (exempt)', md.navyExempt, 'in', true) : ''}
+        ${row('Maryland AGI', md.mdAgi, 'in')}
+        ${row('MD Standard Deduction', md.mdStdDed, 'in', true)}
+        ${row('Personal Exemptions (4×$3,200)', md.mdExemptAmt, 'in', true)}
+        ${row('MD Taxable Income', md.mdTaxInc, 'sub')}
+        ${row('State Tax', md.stateTax, 'in')}
+        ${row(md.county + ' County (' + (md.countyRate*100).toFixed(2) + '%)', md.countyTax, 'in')}
+        ${row('Total MD Tax', md.totalTax, 'sub')}
+        ${md.withheld > 0 ? row('State Withholding', md.withheld, 'in', true) : ''}
+        <div class="tp-row ${md.owed > 0.005 ? 'owed' : 'refund'}">
+          <span>${md.owed > 0.005 ? 'Amount Owed — Maryland' : 'Refund — Maryland'}</span>
+          <span>${fmt(Math.abs(md.owed))}</span>
         </div>
-      ` : '<div class="tp-row in" style="padding:.5rem 0">Enter state tax rate for state estimate</div>'}
+      ` : '<div class="tp-row in" style="padding:.5rem 0">Select a county for Maryland tax estimate</div>'}
     </div>`;
 }
 
