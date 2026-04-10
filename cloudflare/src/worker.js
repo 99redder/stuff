@@ -101,6 +101,21 @@ async function handleDataApi(request, env) {
     case 'save_depreciation':
       return handleSaveDepreciation(env, property, body.config);
 
+    case 'get_maintenance':
+      return handleGetMaintenance(env, property);
+
+    case 'save_maintenance':
+      return handleSaveMaintenance(env, property, body.entries);
+
+    case 'add_maintenance_entry':
+      return handleAddMaintenanceEntry(env, property, body.entry);
+
+    case 'update_maintenance_entry':
+      return handleUpdateMaintenanceEntry(env, property, body.id, body.entry);
+
+    case 'delete_maintenance_entry':
+      return handleDeleteMaintenanceEntry(env, property, body.id);
+
     default:
       return jsonResponse({ error: 'Invalid action' }, 400);
   }
@@ -265,6 +280,71 @@ async function handleSaveDepreciation(env, property, config) {
 
   await env.RENTALS.put(`depreciation:${property}`, JSON.stringify(saved));
   return jsonResponse({ success: true, config: saved });
+}
+
+// ── Maintenance Log ───────────────────────────────────────────────────────────
+
+async function handleGetMaintenance(env, property) {
+  const entries = await env.RENTALS.get(`maintenance:${property}`, 'json') || [];
+  return jsonResponse({ entries });
+}
+
+async function handleSaveMaintenance(env, property, entries) {
+  if (!Array.isArray(entries)) {
+    return jsonResponse({ error: 'entries must be an array' }, 400);
+  }
+  const saved = entries.map(e => ({
+    id: e.id || crypto.randomUUID(),
+    date: e.date || '',
+    description: String(e.description || '').trim(),
+    cost: typeof e.cost === 'number' && isFinite(e.cost) ? e.cost : 0,
+    performedBy: String(e.performedBy || '').trim()
+  }));
+  await env.RENTALS.put(`maintenance:${property}`, JSON.stringify(saved));
+  return jsonResponse({ entries: saved });
+}
+
+async function handleAddMaintenanceEntry(env, property, entry) {
+  if (!entry || typeof entry !== 'object') {
+    return jsonResponse({ error: 'Missing entry object' }, 400);
+  }
+  const newEntry = {
+    id: crypto.randomUUID(),
+    date: entry.date || '',
+    description: String(entry.description || '').trim(),
+    cost: typeof entry.cost === 'number' && isFinite(entry.cost) ? entry.cost : 0,
+    performedBy: String(entry.performedBy || '').trim()
+  };
+  const entries = await env.RENTALS.get(`maintenance:${property}`, 'json') || [];
+  entries.push(newEntry);
+  await env.RENTALS.put(`maintenance:${property}`, JSON.stringify(entries));
+  return jsonResponse({ entry: newEntry });
+}
+
+async function handleUpdateMaintenanceEntry(env, property, id, entry) {
+  if (!id) return jsonResponse({ error: 'Missing id' }, 400);
+  if (!entry || typeof entry !== 'object') return jsonResponse({ error: 'Missing entry' }, 400);
+  const entries = await env.RENTALS.get(`maintenance:${property}`, 'json') || [];
+  const idx = entries.findIndex(e => e.id === id);
+  if (idx === -1) return jsonResponse({ error: 'Entry not found' }, 404);
+  entries[idx] = {
+    id,
+    date: entry.date || entries[idx].date,
+    description: String(entry.description || '').trim(),
+    cost: typeof entry.cost === 'number' && isFinite(entry.cost) ? entry.cost : entries[idx].cost,
+    performedBy: String(entry.performedBy || '').trim()
+  };
+  await env.RENTALS.put(`maintenance:${property}`, JSON.stringify(entries));
+  return jsonResponse({ entry: entries[idx] });
+}
+
+async function handleDeleteMaintenanceEntry(env, property, id) {
+  if (!id) return jsonResponse({ error: 'Missing id' }, 400);
+  const entries = await env.RENTALS.get(`maintenance:${property}`, 'json') || [];
+  const filtered = entries.filter(e => e.id !== id);
+  if (filtered.length === entries.length) return jsonResponse({ error: 'Entry not found' }, 404);
+  await env.RENTALS.put(`maintenance:${property}`, JSON.stringify(filtered));
+  return jsonResponse({ success: true });
 }
 
 // ── Tax Planning ─────────────────────────────────────────────────────────────

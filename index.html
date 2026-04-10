@@ -905,6 +905,193 @@ function tpSave(tp) {
 
 function tpN(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
 
+// ── Maintenance Seed Data (pre-loaded from CSV logs) ─────────────────────────
+
+const MAINT_SEED = {
+  '6AL': [
+    {date:'2009-08-12',description:'Exterior, shutters, and trim painted',cost:895.00,performedBy:'Eric Chasse'},
+    {date:'2009-08-17',description:'Exterior end pieces nailed in place. Bottom board of front replaced with piece from the back. Back piece replaced with similar cut of wood.',cost:200.00,performedBy:'Eric Chasse'},
+    {date:'2009-08-27',description:'Chimney caulked. White trim wood under front door replaced.',cost:75.00,performedBy:'Eric Chasse'},
+    {date:'2010-06-10',description:'Deck installed in backyard with composite flooring',cost:3500.00,performedBy:'Eric Chasse'},
+    {date:'2011-07-03',description:'Blue paint touched up around house',cost:0.00,performedBy:'DIY'},
+    {date:'2011-07-05',description:'Deck stained',cost:100.00,performedBy:'DIY'},
+    {date:'2011-07-09',description:'Under deck stained',cost:100.00,performedBy:'Eric Chasse'},
+    {date:'2011-08-19',description:'Pellet stove installed (Enviromaxx w/ auto cleaner)',cost:3389.00,performedBy:'Nordic Stove Shoppe'},
+    {date:'2011-08-19',description:'Installation costs for pellet stove',cost:849.00,performedBy:'Victorian Stove Installers (Jeff Horton)'},
+    {date:'2011-08-20',description:'All 9 windows replaced',cost:3750.00,performedBy:'Window World'},
+    {date:'2011-11-16',description:'Attic fan replaced',cost:270.00,performedBy:'Paul Houde'},
+    {date:'2011-12-10',description:'Ceilings painted white with Kilz in living room, kitchen, bedrooms, and stairs area. Insulation in attic repositioned to better insulate ceiling areas.',cost:450.00,performedBy:'Dale Dupuis (D&D Painting)'},
+    {date:'2012-08-30',description:'Washer replaced',cost:434.00,performedBy:'Strafford Appliance'},
+    {date:'2012-10-25',description:'Painting of living room, stairway, and downstairs. Fixed drywall holes and other trouble areas.',cost:600.00,performedBy:'Eric Chasse'},
+    {date:'2013-01-28',description:'Bought new dishwasher',cost:649.00,performedBy:'Strafford Appliance'},
+    {date:'2013-01-31',description:'Removed kitchen cabinet and installed dishwasher',cost:493.00,performedBy:'K&P Home Improvements'},
+    {date:'2013-02-08',description:'Replaced kitchen faucet',cost:252.50,performedBy:'K&P Home Improvements'},
+    {date:'2013-02-08',description:'New garage door (door to the garage)',cost:366.00,performedBy:'K&P Home Improvements'},
+    {date:'2013-02-18',description:'Painted downstairs bedroom, stained and fixed trim',cost:425.50,performedBy:'K&P Home Improvements'},
+    {date:'2013-03-12',description:'Repaired attic vents',cost:542.00,performedBy:'K&P Home Improvements'},
+    {date:'2013-03-29',description:'Cleaned ceiling stain and repainted',cost:85.00,performedBy:'K&P Home Improvements'},
+    {date:'2013-09-15',description:'Replaced screen door (door to the deck)',cost:397.00,performedBy:'K&P Home Improvements'},
+    {date:'2013-10-19',description:'Replaced dryer',cost:444.00,performedBy:'Strafford Appliance'},
+    {date:'2013-11-09',description:'Electric work for outside light fixtures, thermostat in downstairs bedroom, and installation of two CO2 detectors',cost:330.00,performedBy:'Powerhouse Electric (Paul Houde)'},
+    {date:'2014-01-20',description:'Front and back door replaced, rotted wood replaced, 2 heating vents installed upstairs',cost:1576.00,performedBy:'K&P Home Improvements'},
+    {date:'2014-06-08',description:'Garage walls painted and treated',cost:1315.00,performedBy:'K&P Home Improvements'},
+    {date:'2014-08-21',description:'Rain diverters installed on roof, painted front and back doors',cost:495.00,performedBy:'K&P Home Improvements'},
+    {date:'2014-09-14',description:'Replaced garage door frame',cost:465.50,performedBy:'K&P Home Improvements'},
+    {date:'2014-09-14',description:'Replaced blinds, cut branches touching the house, placed hangers in garage, cut down basketball hoop',cost:347.00,performedBy:'K&P Home Improvements'},
+    {date:'2014-09-17',description:'Replaced front storm door',cost:470.00,performedBy:'K&P Home Improvements'},
+    {date:'2015-05-21',description:'Replaced water heater',cost:1065.00,performedBy:'Martel HVAC'},
+    {date:'2015-07-24',description:'Deck washed, shutters touched up with black paint',cost:20.00,performedBy:'DIY'},
+    {date:'2015-07-28',description:'Rocks placed around exposed foundation base',cost:45.00,performedBy:'DIY'},
+    {date:'2015-07-28',description:'Restained deck',cost:10.00,performedBy:'DIY'},
+    {date:'2015-10-21',description:'Basement sheetrock added to finish walls, electrical box installed around electrical panel, frame put around pellet stove, dryer vent and hose replaced with 90 degree elbow',cost:1312.00,performedBy:'K&P Home Improvements'},
+    {date:'2015-10-21',description:'Gutter extended across entire deck and sealed',cost:187.50,performedBy:'K&P Home Improvements'},
+    {date:'2016-05-25',description:'Clearing of back yard',cost:800.00,performedBy:'John Shatinski'},
+    {date:'2016-08-26',description:'Removed stove fan hood and replaced with over-the-range microwave with fan (microwave $279 + labor $375)',cost:654.00,performedBy:'K&P Home Improvements'},
+    {date:'2018-01-05',description:'Pellet stove sensor replaced and entire unit cleaned',cost:179.00,performedBy:'Nordic Stove Shoppe'},
+    {date:'2018-01-05',description:'Pellet stove auger motor replaced',cost:252.00,performedBy:'Nordic Stove Shoppe'},
+    {date:'2018-01-16',description:'Garage door springs, cables, pulleys, and bottom rollers replaced',cost:182.00,performedBy:'Overhead Door Company'},
+    {date:'2018-02-21',description:'Bathroom and kitchen wallpaper removal, wall treatment and repair, and two coats of paint',cost:1702.96,performedBy:'Kate Shattuck Wall Coverings and Painting'},
+    {date:'2018-03-26',description:'Sealed crack inside and out in garage foundation',cost:10.00,performedBy:'DIY'},
+    {date:'2021-10-02',description:'Power washed deck, sanded deck posts, and restained the deck',cost:0.00,performedBy:'DIY'},
+    {date:'2024-04-03',description:'Replaced roof and installed IKO roofing system with ridge vent',cost:7164.00,performedBy:'MRC Construction Corp'},
+    {date:'2024-04-04',description:'Removed old insulation in attic and replaced',cost:5184.00,performedBy:'MRC Construction Corp'},
+    {date:'2024-04-09',description:'Replaced rotted plywood under the siding',cost:650.00,performedBy:'MRC Construction Corp'},
+    {date:'2024-04-16',description:'Removed old siding, installed Tyvek moisture barrier, installed vinyl siding and vinyl trim',cost:21348.00,performedBy:'MRC Construction Corp'},
+    {date:'2024-04-19',description:'Installed new black shutters',cost:420.00,performedBy:'MRC Construction Corp'},
+    {date:'2025-04-02',description:'Power washed house and deck',cost:400.00,performedBy:'Portsmouth Power Washing LLC'},
+    {date:'2025-08-13',description:'Garden landscaping',cost:250.00,performedBy:'JPC Powerwashing and Landscaping'},
+    {date:'2025-09-19',description:'Garden landscaping',cost:350.00,performedBy:'JPC Powerwashing and Landscaping'},
+    {date:'2025-09-23',description:'Garden landscaping',cost:210.00,performedBy:'JPC Powerwashing and Landscaping'},
+    {date:'2025-11-19',description:'Hot water heater replaced',cost:3000.00,performedBy:"Jay's Plumbing"},
+    {date:'2025-11-19',description:'Sewage line snaked and cleared with hydro jett',cost:2800.00,performedBy:"Jay's Plumbing"},
+  ],
+  '95EB': [
+    {date:'2009-11-06',description:'Closing',cost:0.00,performedBy:'Envoy MTG'},
+    {date:'2009-11-07',description:'Painted living room, kitchen',cost:200.00,performedBy:'Chris Gorham'},
+    {date:'2009-11-14',description:'Trim and door painted white in living room, kitchen',cost:375.00,performedBy:'RES Painting LLC'},
+    {date:'2009-11-27',description:'Refrigerator evaporator motor replaced',cost:317.49,performedBy:'Sears Home Repair'},
+    {date:'2009-11-28',description:'Tub recaulked',cost:4.95,performedBy:'Chris Gorham'},
+    {date:'2009-12-19',description:'Track lighting in kitchen, recessed light above sink, and recessed shower light installed. 15A GFI circuit breaker added.',cost:221.00,performedBy:'Sanford Electrical Contractor (Doug Sanford)'},
+    {date:'2009-12-29',description:'New mailbox lock installed',cost:120.00,performedBy:"Bob's Locksmith Shop"},
+    {date:'2010-01-29',description:'Purged water heating system in bathroom. Valve re-aligned. Heating fixed.',cost:95.00,performedBy:'Rick Wenzel Oil Company LLC'},
+    {date:'2011-04-02',description:'Brick backsplash installed in kitchen',cost:881.00,performedBy:'A+ Handyman (Ron Bailey)'},
+    {date:'2011-05-15',description:'Painted kitchen wall red',cost:0.00,performedBy:'Chris Gorham'},
+    {date:'2011-05-15',description:'Finished painting doors white',cost:0.00,performedBy:'Chris Gorham'},
+    {date:'2011-07-29',description:'Cabinet handles installed, shower re-caulked, door knobs installed on closets, area around track lighting smoothed and painted. Cracks in 2nd bedroom sealed.',cost:483.00,performedBy:'A+ Handyman (Ron Bailey)'},
+    {date:'2012-08-20',description:'Fixed screen door and washer door',cost:80.00,performedBy:'Affordable Property Management'},
+    {date:'2013-04-11',description:'Locksmith replaced door knobs and mailbox lock',cost:323.00,performedBy:'NH Locksmith'},
+    {date:'2013-04-13',description:'Maid service to clean entire condo',cost:225.00,performedBy:'My Maids'},
+    {date:'2013-05-13',description:'Painted entire condo, repaired screen door and screen window, unclogged sink drain, replaced door handles, replaced washer and dryer',cost:2872.24,performedBy:'Lachance Appliance / Rick Mitchell Handyman / Idena Price'},
+    {date:'2013-10-01',description:'Installed vent for washer and dryer',cost:95.98,performedBy:'Idena Price'},
+    {date:'2014-06-18',description:'Unit cleaned and maintenance person hired to fix little things around the house',cost:325.99,performedBy:'Idena Price'},
+    {date:'2015-06-18',description:'Unit cleaned and paint touched up',cost:175.00,performedBy:'Idena Price'},
+    {date:'2015-09-01',description:'Granite countertop repaired',cost:275.00,performedBy:'ER Marble'},
+    {date:'2015-09-01',description:'Shower head replaced',cost:43.33,performedBy:'Idena Price'},
+    {date:'2016-01-10',description:'Kitchen faucet repaired',cost:129.80,performedBy:'Idena Price'},
+    {date:'2017-12-01',description:'Thermostat repaired',cost:82.96,performedBy:'Idena Price'},
+    {date:'2019-02-01',description:'Plumbing repaired to restart heating to the unit (cost split with Condo Association — paid $486.25)',cost:972.50,performedBy:'Paquette Plumbing'},
+    {date:'2019-02-01',description:'Cleaning services',cost:150.00,performedBy:'Idena Price'},
+    {date:'2019-08-20',description:'Purchased new Whirlpool Electric Stacked Laundry Center (1.6 cu ft washer / 3.4 cu ft dryer)',cost:1118.00,performedBy:'Chris Gorham'},
+    {date:'2019-08-28',description:'New dryer installed',cost:418.63,performedBy:'Idena Price'},
+    {date:'2020-10-08',description:'Repaired leaking garbage disposal',cost:280.00,performedBy:'Royal Flush Plumbing LLC'},
+    {date:'2021-05-18',description:'Condo painted and cleaned',cost:1173.86,performedBy:'Love to Paint'},
+    {date:'2021-11-09',description:'Replaced dishwasher',cost:1090.85,performedBy:'Idena Price'},
+    {date:'2024-02-26',description:'Toilet replaced',cost:599.00,performedBy:'Derry Plumbing'},
+    {date:'2024-03-01',description:'Microwave replaced',cost:730.00,performedBy:'Desefano Electrical'},
+    {date:'2024-04-27',description:'Bathroom drywall and tiling repaired, shower re-caulked (insurance claim for sewage leak)',cost:2392.74,performedBy:'Insurcomm'},
+    {date:'2024-07-05',description:'Closet fixed and storage system installed',cost:791.01,performedBy:'NH Fixwrights'},
+    {date:'2024-09-15',description:'Ceiling fan repaired, two kitchen drawers repaired, tub drain repaired',cost:479.97,performedBy:'NH Fixwrights'},
+    {date:'2024-09-15',description:'Condo completely painted, 3 doors replaced and painted, hall light replaced',cost:2659.39,performedBy:'NH Fixwrights'},
+    {date:'2024-09-15',description:'Cleaning services',cost:270.00,performedBy:'Ana Paula Sotirakos'},
+    {date:'2025-08-15',description:'Replaced glass on slider door',cost:1300.00,performedBy:'Sentry Glass Company Inc'},
+    {date:'2025-10-15',description:'Toilet wax ring leaking fixed',cost:395.00,performedBy:'Granite Peak Plumbing and Heating'},
+    {date:'2026-02-10',description:'Bathroom ceiling repair from water damage',cost:585.00,performedBy:'NHFixwrights'},
+  ],
+  '446BB': [
+    {date:'2015-08-06',description:'Locks changed on front door',cost:87.50,performedBy:'Key West Lock & Safe'},
+    {date:'2015-08-15',description:'Purchased modern hardware for cabinets',cost:155.00,performedBy:'Home Depot'},
+    {date:'2015-08-17',description:'Cabinets painted white and modern hardware installed',cost:1085.00,performedBy:'Ken Lane Painting'},
+    {date:'2015-08-26',description:'Large artwork hung',cost:125.00,performedBy:"Bob's Jobs"},
+    {date:'2015-08-26',description:'Purchased parts for electrical work (track lighting, recessed lights, under cabinet lighting)',cost:420.00,performedBy:"Lowe's"},
+    {date:'2015-08-28',description:'Track lighting installed with dimmer, living room and kitchen switches replaced, under cabinet lighting installed, six 4" LED recessed lights installed, old chandelier removed',cost:4201.00,performedBy:'Mister Sparky'},
+    {date:'2015-08-28',description:'Two valves under sink replaced',cost:212.00,performedBy:'Allied Contracting'},
+    {date:'2015-09-01',description:'Cabinets leveled',cost:75.00,performedBy:"Rick's Home Improvement"},
+    {date:'2015-09-01',description:'Front screen door replaced',cost:400.00,performedBy:'Home Depot'},
+    {date:'2015-10-08',description:'Granite countertops plus installation',cost:4000.00,performedBy:'Trindco'},
+    {date:'2015-10-09',description:'Ceiling stain in 2nd bedroom repaired',cost:0.00,performedBy:'Condo Association'},
+    {date:'2015-10-09',description:'Kitchen plumbing hooked up and new faucet installed',cost:0.00,performedBy:'Allied Contracting'},
+    {date:'2015-10-21',description:'Kitchen backsplash installed',cost:854.27,performedBy:"Lowe's"},
+    {date:'2015-10-21',description:'Kitchen floor tiled',cost:1169.65,performedBy:"Lowe's"},
+    {date:'2015-10-28',description:'Master bath shower heads and faucets replaced',cost:150.00,performedBy:"Bob's Jobs"},
+    {date:'2015-10-28',description:'Closet door shortened and re-installed, trim around granite countertops raised, dishwasher mounted and secured to granite countertop',cost:200.00,performedBy:"Bob's Jobs"},
+    {date:'2015-11-08',description:'Peninsula spackled and painted',cost:75.00,performedBy:'Chris Gorham'},
+    {date:'2016-07-26',description:'Replaced HVAC air filter',cost:40.00,performedBy:'Chris Gorham'},
+    {date:'2016-07-26',description:'HVAC inspection (no issues found)',cost:100.00,performedBy:'C&S Services'},
+    {date:'2016-10-26',description:'Purchased Kenmore 1.7 cu ft Over the Range Microwave (stainless steel)',cost:254.39,performedBy:'Sears'},
+    {date:'2016-10-28',description:'Installed OTR microwave',cost:100.00,performedBy:"Bob's Jobs"},
+    {date:'2016-10-29',description:'Wired and installed outlet above microwave',cost:10.00,performedBy:'Todd Starks'},
+    {date:'2016-10-29',description:'Purchased engineered 3/8" x 3-7/8" Natural Strand Bamboo Flooring (16 boxes, 340 sq ft, 30 yr warranty)',cost:680.69,performedBy:'Lumber Liquidators'},
+    {date:'2016-10-29',description:'Purchased stove (Amana AER6303MFS) and refrigerator (Kenmore 51793) with delivery and installation',cost:1525.29,performedBy:'Sears'},
+    {date:'2016-10-30',description:'Purchased Bellawood Premium Underlayment (400 sq ft)',cost:272.48,performedBy:'Lumber Liquidators'},
+    {date:'2016-11-04',description:'Replaced water/ice hose',cost:11.64,performedBy:'Sears'},
+    {date:'2016-11-05',description:'Purchased engineered bamboo flooring (1 box, 21 sq ft)',cost:40.40,performedBy:'Lumber Liquidators'},
+    {date:'2016-11-17',description:'Bamboo flooring installed with T-moldings and perimeter molding',cost:812.00,performedBy:'Biernot Flooring'},
+    {date:'2016-11-27',description:'Nest thermostat installed',cost:199.00,performedBy:'Chris Gorham'},
+    {date:'2016-12-01',description:'Kwikset electronic keypad deadbolt installed',cost:28.22,performedBy:'Chris Gorham'},
+    {date:'2016-12-03',description:'Gooseneck shower extension arm and 12" rainfall shower head installed',cost:82.99,performedBy:'Chris Gorham'},
+    {date:'2016-12-10',description:'Removed medicine cabinet in main bedroom vanity area, replaced hole with drywall and repainted',cost:50.00,performedBy:'Chris Gorham'},
+    {date:'2016-12-10',description:'Installed new mirror in main bedroom and painted wall',cost:59.99,performedBy:'Chris Gorham'},
+    {date:'2016-12-10',description:'Replaced light fixture above vanity in main bedroom',cost:69.99,performedBy:'Chris Gorham'},
+    {date:'2017-01-04',description:'Reglazed both bathroom vanities',cost:600.00,performedBy:'Miracle Method'},
+    {date:'2017-01-04',description:'Replaced all door knobs with Satin Nickel finish Copper Creek door knobs',cost:50.00,performedBy:'Chris Gorham'},
+    {date:'2017-01-04',description:'Skylight replaced',cost:367.00,performedBy:'Condo Association'},
+    {date:'2017-01-28',description:'Primed and painted 2nd bathroom vanity doors and vanity, installed new hardware',cost:20.00,performedBy:'Chris Gorham'},
+    {date:'2017-04-24',description:'Replaced light fixture above vanity in 2nd bathroom',cost:69.99,performedBy:'Chris Gorham'},
+    {date:'2017-05-06',description:'Painted 2nd bathroom and changed all outlets and outlet covers',cost:35.00,performedBy:'Chris Gorham'},
+    {date:'2017-05-06',description:'Changed all outlets and outlet covers in 2nd bedroom',cost:35.00,performedBy:'Chris Gorham'},
+    {date:'2017-05-23',description:'Replaced broken angle stop and supply tube in 2nd bathroom and rebuilt toilet tank. Caused water damage to condo.',cost:405.00,performedBy:'RotoRooter'},
+    {date:'2017-05-23',description:'Deductible for water damage to the condo (Traveler\'s Insurance Claim # SPJ3137)',cost:500.00,performedBy:'RotoRooter'},
+    {date:'2017-06-15',description:'Replaced smoke detectors with Nest 2nd Gen smoke and CO2 detectors (1 hard wired, 2 battery)',cost:378.42,performedBy:'Chris Gorham'},
+    {date:'2017-06-22',description:'Removed shower step, added backerboard and moisture membrane, retiled floor with Marazzi porcelain tile, replaced baseboards, repainted bathroom',cost:670.73,performedBy:'Romanoff Contracting / Chris Gorham / Todd Starks'},
+    {date:'2017-06-24',description:'Replaced toilet and water line with Kohler toilet and stainless steel hose in master bathroom',cost:180.65,performedBy:'Todd Starks / Chris Gorham'},
+    {date:'2017-07-03',description:'Replaced carpet in master bedroom and office with dense rebond pad and Nomadic Play Nice carpet',cost:1373.36,performedBy:'Empire Today'},
+    {date:'2017-07-04',description:'Repainted entire office',cost:65.00,performedBy:'Chris Gorham'},
+    {date:'2017-08-04',description:'Replaced bamboo flooring throughout with Morning Star Midnight Ultra Strand 9/16" x 5 1/8" bamboo flooring, replaced baseboards with 4 1/4" from Home Depot',cost:1876.89,performedBy:'Lumber Liquidators / Home Depot / Chris Gorham'},
+    {date:'2017-08-04',description:'Removed vinyl flooring in 2nd bathroom, retiled with Marazzi porcelain tile, installed new Kohler toilet',cost:255.45,performedBy:'Home Depot / Chris Gorham'},
+    {date:'2017-08-28',description:'Replaced bathroom fan and light, installed two recessed lights over the shower',cost:660.92,performedBy:'Mr. Electric'},
+    {date:'2017-10-06',description:'Ceiling areas treated, re-popcorn, and repainted',cost:0.00,performedBy:'Condo Association'},
+    {date:'2018-04-06',description:'Mounted and installed safe in master bedroom closet',cost:0.00,performedBy:'Todd Starks'},
+    {date:'2018-12-24',description:'Scrubbed mold and algae off patio deck surface',cost:35.00,performedBy:'Chris Gorham'},
+    {date:'2018-12-26',description:'HVAC heating and cooling side tune up & cleaning',cost:155.00,performedBy:"Russell's Heating and Cooling"},
+    {date:'2019-02-14',description:'Deck boards replaced with composite deck boards',cost:1389.04,performedBy:'Mr. Handyman'},
+    {date:'2019-03-05',description:'Carpets cleaned',cost:130.00,performedBy:'Chem Dry'},
+    {date:'2019-03-05',description:'Dryer vent cleaned',cost:95.00,performedBy:'Beach Chimney Sweeps'},
+    {date:'2019-03-05',description:'Chimney inspected (no cleaning required)',cost:25.00,performedBy:'Beach Chimney Sweeps'},
+    {date:'2019-03-06',description:'Packout completed',cost:0.00,performedBy:'Reliant Moving'},
+    {date:'2019-05-22',description:'HVAC 3 lbs of 410A refrigerant added and filter replaced',cost:250.00,performedBy:'Fair Mechanical LLC'},
+    {date:'2019-12-01',description:'Carpets cleaned (paid from security deposit)',cost:0.00,performedBy:'United Floor Care'},
+    {date:'2019-12-01',description:'General cleaning (paid from security deposit)',cost:0.00,performedBy:"AGA's Cleaning Service"},
+    {date:'2019-12-01',description:'Air filter replaced (paid from security deposit)',cost:0.00,performedBy:"Rocky's Handyman Services"},
+    {date:'2020-06-12',description:'Smoke alarms inspected',cost:55.00,performedBy:'Taurus Property Inspections'},
+    {date:'2020-07-20',description:'Ceiling areas treated, re-popcorn, and repainted',cost:0.00,performedBy:'Condo Association'},
+    {date:'2021-01-04',description:'Hot water heater limits adjusted and garbage disposal fixed (glass in the blades)',cost:125.00,performedBy:'Stevens Enterprise'},
+    {date:'2021-02-15',description:'Hot water heater thermostat replaced',cost:225.00,performedBy:'Tim Baker Contractor'},
+    {date:'2021-02-25',description:'Garbage disposal replaced',cost:235.00,performedBy:'Stevens Enterprise'},
+    {date:'2021-04-01',description:'Smoke alarms inspected',cost:55.00,performedBy:'Taurus Property Inspections'},
+    {date:'2021-05-04',description:'Blinds replaced in living room',cost:150.00,performedBy:"Rocky's Handyman Services"},
+    {date:'2021-08-03',description:'Replaced GFCI exterior outlet that was causing a short',cost:135.00,performedBy:'Tim Baker Contractor'},
+    {date:'2021-11-10',description:'Replaced HVAC evap coil pan (was leaking)',cost:510.00,performedBy:'Fair Mechanical LLC'},
+    {date:'2022-07-02',description:'HVAC 3.5 lbs of R410A refrigerant added and filter replaced',cost:430.00,performedBy:'Quality Contracting Inc'},
+    {date:'2023-01-24',description:'Repaired wires to garbage disposal and removed screw from electrical outlet (tenant paid)',cost:0.00,performedBy:'The Repair Guy'},
+    {date:'2023-02-08',description:'HVAC heating element (unit) replaced',cost:1020.00,performedBy:'Fair Mechanical LLC'},
+    {date:'2023-05-15',description:'Replaced condensation pump, re-did electrical connections, relocated pump to floor, extended drain PVC piping',cost:395.00,performedBy:'Quality Contracting Inc'},
+    {date:'2023-06-13',description:'Caulked toilet and flush cleaned sink p-trap',cost:100.00,performedBy:'Stevens Enterprise'},
+    {date:'2024-06-01',description:'Smoke alarms inspected',cost:65.00,performedBy:'Taurus Property Inspections'},
+    {date:'2024-11-18',description:'Bathroom exhaust fan installed, ceiling repaired and repainted',cost:1863.30,performedBy:'Inlet Realty Maintenance'},
+    {date:'2025-11-10',description:'Water heater replaced',cost:1500.00,performedBy:'Claude Stevens'},
+  ]
+};
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 const state = {
@@ -912,11 +1099,12 @@ const state = {
   currentView: 'current-year',
   password: '',
   data: {
-    '6AL':   { transactions: null, summaries: null, defaults: null, depreciation: null },
-    '95EB':  { transactions: null, summaries: null, defaults: null, depreciation: null },
-    '446BB': { transactions: null, summaries: null, defaults: null, depreciation: null }
+    '6AL':   { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null },
+    '95EB':  { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null },
+    '446BB': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null }
   },
-  pendingDefaultPrompt: null  // { category, amount } after a save
+  pendingDefaultPrompt: null,  // { category, amount } after a save
+  pendingMaintPrompt: null     // { date, amount, description, category } after expense save
 };
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -951,12 +1139,15 @@ async function ensureLoaded(property, key) {
     transactions: 'get_transactions',
     summaries:    'get_summaries',
     defaults:     'get_defaults',
-    depreciation: 'get_depreciation'
+    depreciation: 'get_depreciation',
+    maintenance:  'get_maintenance'
   };
 
   const result = await callApi({ action: actionMap[key], property });
   if (key === 'depreciation') {
     state.data[property][key] = result.config || null; // null means not configured
+  } else if (key === 'maintenance') {
+    state.data[property][key] = result.entries || [];
   } else {
     state.data[property][key] = result[key] || (key === 'transactions' ? [] : {});
   }
@@ -996,6 +1187,7 @@ function switchProperty(prop) {
 function switchView(view) {
   state.currentView = view;
   state.pendingDefaultPrompt = null;
+  state.pendingMaintPrompt = null;
   document.querySelectorAll('.view-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.view === view);
   });
@@ -1459,6 +1651,7 @@ async function renderHistorical() {
   const prop = state.currentProperty;
   await ensureLoaded(prop, 'summaries');
   await ensureLoaded(prop, 'depreciation');
+  await ensureLoaded(prop, 'maintenance');
 
   const summaries = state.data[prop].summaries;
   const years = Object.keys(summaries).sort((a, b) => b - a);
@@ -1554,6 +1747,7 @@ async function renderHistorical() {
     </div>
 
     ${renderDepreciationSection(prop)}
+    ${renderMaintenanceSection(prop)}
   `;
 }
 
@@ -1661,6 +1855,197 @@ async function deleteYear(year) {
     renderHistorical();
   } catch (e) {
     alert('Delete failed: ' + e.message);
+  }
+}
+
+// ── View: Maintenance Log ─────────────────────────────────────────────────────
+
+function renderMaintenanceSection(prop) {
+  const entries = (state.data[prop].maintenance || []).slice().sort((a, b) => b.date.localeCompare(a.date));
+  const total = entries.reduce((s, e) => s + (e.cost || 0), 0);
+  const hasSeed = !!(MAINT_SEED[prop] && MAINT_SEED[prop].length);
+  const isEmpty = entries.length === 0;
+
+  const rows = entries.map(e => `
+    <tr>
+      <td style="white-space:nowrap;padding:.4rem .5rem">${fmtDate(e.date)}</td>
+      <td style="padding:.4rem .5rem">${escHtml(e.description)}</td>
+      <td class="text-right" style="white-space:nowrap;padding:.4rem .5rem">${e.cost > 0 ? fmt(e.cost) : '—'}</td>
+      <td style="padding:.4rem .5rem;color:var(--text-muted);font-size:.85rem">${escHtml(e.performedBy)}</td>
+      <td class="text-right no-print" style="padding:.4rem .5rem;white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" style="padding:.15rem .4rem"
+                onclick="editMaintEntry('${escAttr(e.id)}')">Edit</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger);padding:.15rem .4rem"
+                onclick="deleteMaintEntry('${escAttr(e.id)}')">×</button>
+      </td>
+    </tr>`).join('');
+
+  const seedBtn = isEmpty && hasSeed
+    ? `<button class="btn btn-ghost btn-sm" onclick="seedMaintData('${escAttr(prop)}')">Load Historical Records</button>`
+    : '';
+
+  return `
+    <div class="card mt-2">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Maintenance Log — ${escHtml(prop)}</div>
+          ${entries.length > 0 ? `<div style="font-size:.8rem;color:var(--text-muted);margin-top:.1rem">Total spent: ${fmt(total)} across ${entries.length} entries</div>` : ''}
+        </div>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          ${seedBtn}
+          <button class="btn btn-primary btn-sm no-print" onclick="openAddMaint()">+ Add Entry</button>
+        </div>
+      </div>
+      ${isEmpty
+        ? `<div class="card-body"><div class="empty-state" style="padding:1.5rem;text-align:center">No maintenance entries yet.${hasSeed ? ' Click "Load Historical Records" to import from CSV data.' : ' Click "+ Add Entry" to log the first entry.'}</div></div>`
+        : `<div class="table-wrap"><table class="hist-table">
+            <thead><tr>
+              <th>Date</th><th>Work Done</th>
+              <th class="text-right">Cost</th><th>Performed By</th>
+              <th class="no-print"></th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table></div>`}
+    </div>
+
+    <!-- Add / Edit Maintenance Entry Form -->
+    <div class="card mt-2 hidden" id="maint-form-card">
+      <div class="card-header">
+        <div class="card-title" id="maint-form-title">Add Maintenance Entry</div>
+        <button class="btn btn-ghost btn-sm" onclick="closeMaintForm()">Cancel</button>
+      </div>
+      <div class="card-body">
+        <input type="hidden" id="mf-edit-id">
+        <div class="year-form-grid">
+          <div class="form-group" style="grid-column:1/-1">
+            <label>Work Done / Description</label>
+            <input type="text" id="mf-description" placeholder="Describe the work done">
+          </div>
+          <div class="form-group">
+            <label>Date</label>
+            <input type="date" id="mf-date" value="${new Date().toISOString().slice(0,10)}">
+          </div>
+          <div class="form-group">
+            <label>Cost ($)</label>
+            <input type="number" id="mf-cost" step="0.01" min="0" placeholder="0.00">
+          </div>
+          <div class="form-group">
+            <label>Performed By</label>
+            <input type="text" id="mf-performed-by" placeholder="Contractor or DIY">
+          </div>
+        </div>
+        <div class="form-actions mt-2">
+          <button class="btn btn-primary" id="maint-form-submit" onclick="saveMaintEntry()">Save Entry</button>
+          <button class="btn btn-ghost" onclick="closeMaintForm()">Cancel</button>
+        </div>
+        <div id="maint-form-error" class="error-msg mt-1 hidden"></div>
+      </div>
+    </div>`;
+}
+
+function openAddMaint() {
+  const card = document.getElementById('maint-form-card');
+  if (card) { card.classList.remove('hidden'); document.getElementById('mf-description').focus(); }
+}
+
+function closeMaintForm() {
+  const card = document.getElementById('maint-form-card');
+  if (card) card.classList.add('hidden');
+  const editId = document.getElementById('mf-edit-id');
+  if (editId) editId.value = '';
+  const title = document.getElementById('maint-form-title');
+  if (title) title.textContent = 'Add Maintenance Entry';
+  const submit = document.getElementById('maint-form-submit');
+  if (submit) submit.textContent = 'Save Entry';
+}
+
+function editMaintEntry(id) {
+  const prop = state.currentProperty;
+  const entry = (state.data[prop].maintenance || []).find(e => e.id === id);
+  if (!entry) return;
+  document.getElementById('mf-edit-id').value = id;
+  document.getElementById('mf-description').value = entry.description;
+  document.getElementById('mf-date').value = entry.date;
+  document.getElementById('mf-cost').value = entry.cost || 0;
+  document.getElementById('mf-performed-by').value = entry.performedBy || '';
+  document.getElementById('maint-form-title').textContent = 'Edit Maintenance Entry';
+  document.getElementById('maint-form-submit').textContent = 'Update Entry';
+  openAddMaint();
+  document.getElementById('maint-form-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function saveMaintEntry() {
+  const prop = state.currentProperty;
+  const editId = document.getElementById('mf-edit-id').value;
+  const description = document.getElementById('mf-description').value.trim();
+  const date = document.getElementById('mf-date').value;
+  const cost = parseFloat(document.getElementById('mf-cost').value) || 0;
+  const performedBy = document.getElementById('mf-performed-by').value.trim();
+  const errEl = document.getElementById('maint-form-error');
+
+  if (!description) { errEl.textContent = 'Description is required.'; errEl.classList.remove('hidden'); return; }
+  if (!date) { errEl.textContent = 'Date is required.'; errEl.classList.remove('hidden'); return; }
+
+  try {
+    if (editId) {
+      const result = await callApi({ action: 'update_maintenance_entry', property: prop, id: editId, entry: { date, description, cost, performedBy } });
+      const idx = state.data[prop].maintenance.findIndex(e => e.id === editId);
+      if (idx !== -1) state.data[prop].maintenance[idx] = result.entry;
+    } else {
+      const result = await callApi({ action: 'add_maintenance_entry', property: prop, entry: { date, description, cost, performedBy } });
+      state.data[prop].maintenance.push(result.entry);
+    }
+    closeMaintForm();
+    renderHistorical();
+  } catch (e) {
+    errEl.textContent = 'Save failed: ' + e.message;
+    errEl.classList.remove('hidden');
+  }
+}
+
+async function addToMaintLog() {
+  const prop = state.currentProperty;
+  const { date, amount, description, category } = state.pendingMaintPrompt || {};
+  if (!date) { dismissMaintPrompt(); return; }
+  try {
+    const desc = description || CAT_MAP[category] || category;
+    const result = await callApi({ action: 'add_maintenance_entry', property: prop, entry: { date, description: desc, cost: amount, performedBy: '' } });
+    // Update cache only if maintenance data is already loaded
+    if (state.data[prop].maintenance !== null) {
+      state.data[prop].maintenance.push(result.entry);
+    }
+  } catch (e) { /* non-critical */ }
+  dismissMaintPrompt();
+}
+
+function dismissMaintPrompt() {
+  state.pendingMaintPrompt = null;
+  const el = document.getElementById('maint-prompt');
+  if (el) el.classList.add('hidden');
+}
+
+async function deleteMaintEntry(id) {
+  const prop = state.currentProperty;
+  if (!confirm('Delete this maintenance entry?')) return;
+  try {
+    await callApi({ action: 'delete_maintenance_entry', property: prop, id });
+    state.data[prop].maintenance = state.data[prop].maintenance.filter(e => e.id !== id);
+    renderHistorical();
+  } catch (e) {
+    alert('Delete failed: ' + e.message);
+  }
+}
+
+async function seedMaintData(prop) {
+  const entries = MAINT_SEED[prop];
+  if (!entries || !entries.length) return;
+  if (!confirm(`Load ${entries.length} historical maintenance records for ${prop}? This cannot be undone if the log already has data.`)) return;
+  try {
+    const result = await callApi({ action: 'save_maintenance', property: prop, entries });
+    state.data[prop].maintenance = result.entries;
+    renderHistorical();
+  } catch (e) {
+    alert('Load failed: ' + e.message);
   }
 }
 
@@ -2044,6 +2429,13 @@ async function renderAddEntry() {
           <button class="btn btn-ghost btn-sm" onclick="saveAsDefault()">Yes, save default</button>
           <button class="btn btn-ghost btn-sm" onclick="dismissDefaultPrompt()">No</button>
         </div>
+
+        <!-- Post-save maintenance log prompt (expenses only) -->
+        <div class="inline-prompt hidden" id="maint-prompt">
+          <span id="maint-prompt-msg"></span>
+          <button class="btn btn-ghost btn-sm" onclick="addToMaintLog()">Yes, add to log</button>
+          <button class="btn btn-ghost btn-sm" onclick="dismissMaintPrompt()">No</button>
+        </div>
       </div>
     </div>
   `;
@@ -2131,6 +2523,14 @@ async function saveEntry() {
       document.getElementById('default-prompt-msg').textContent =
         `Save ${fmt(amount)} as the default for "${CAT_MAP[cat]}"?`;
       promptEl.classList.remove('hidden');
+    }
+
+    // Show "add to maintenance log?" prompt for expenses
+    if (type === 'expense') {
+      state.pendingMaintPrompt = { date, amount, description: notes, category: cat };
+      document.getElementById('maint-prompt-msg').textContent =
+        `Also add ${fmt(amount)} — ${CAT_MAP[cat]} to the maintenance log?`;
+      document.getElementById('maint-prompt').classList.remove('hidden');
     }
 
   } catch (e) {
