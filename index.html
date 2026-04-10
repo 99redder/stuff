@@ -2229,11 +2229,35 @@ function tpCalc(tp, rentalRows) {
   };
 }
 
-function tpFld(id, label, val) {
+function tpFld(id, label, val, locked) {
+  const dis = locked ? 'disabled style="background:var(--bg);cursor:not-allowed"' : '';
   return `<div class="form-group">
     <label class="tp-lbl">${escHtml(label)}</label>
-    <input type="number" id="${id}" step="0.01" min="0" placeholder="0" value="${val || ''}" oninput="tpChanged()">
+    <input type="number" id="${id}" step="0.01" min="0" placeholder="0" value="${val || ''}" oninput="tpChanged()" ${dis}>
   </div>`;
+}
+
+function tpToggleLock(who) {
+  const tp = tpReadForm();
+  const key = `${who}_locked`;
+  tp[key] = !tp[key];
+  tpSave(tp);
+
+  const ids = who === 'navy'
+    ? ['tp-navy-gross','tp-navy-fed','tp-navy-state']
+    : ['tp-wife-gross','tp-wife-fed','tp-wife-state'];
+
+  const locked = tp[key];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.disabled = locked;
+    el.style.background = locked ? 'var(--bg)' : '';
+    el.style.cursor = locked ? 'not-allowed' : '';
+  });
+
+  const btn = document.getElementById(`tp-${who}-lock-btn`);
+  if (btn) btn.textContent = locked ? '🔒 Locked' : '🔓 Lock';
 }
 
 function tpBuildPayments(payments) {
@@ -2289,17 +2313,27 @@ async function renderTaxPlanning() {
     <div class="card tp-card">
       <div class="card-header"><div class="card-title">W-2 &amp; Retirement Income</div></div>
       <div class="card-body">
-        <div class="tp-group">Navy Retirement</div>
-        <div class="tp-grid-3" style="margin-bottom:.75rem">
-          ${tpFld('tp-navy-gross','Gross Income',tp.navy_gross)}
-          ${tpFld('tp-navy-fed','Federal Withheld',tp.navy_fed)}
-          ${tpFld('tp-navy-state','State Withheld',tp.navy_state)}
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div class="tp-group" style="flex:1;margin-bottom:0">Navy Retirement</div>
+          <button class="btn btn-ghost btn-sm" style="margin-left:.5rem;font-size:.8rem" onclick="tpToggleLock('navy')" id="tp-navy-lock-btn">
+            ${tp.navy_locked ? '🔒 Locked' : '🔓 Lock'}
+          </button>
         </div>
-        <div class="tp-group">Wife's Job</div>
-        <div class="tp-grid-3">
-          ${tpFld('tp-wife-gross','Gross Income',tp.wife_gross)}
-          ${tpFld('tp-wife-fed','Federal Withheld',tp.wife_fed)}
-          ${tpFld('tp-wife-state','State Withheld',tp.wife_state)}
+        <div class="tp-grid-3" style="margin-top:.5rem;margin-bottom:.75rem">
+          ${tpFld('tp-navy-gross','Gross Income',tp.navy_gross,tp.navy_locked)}
+          ${tpFld('tp-navy-fed','Federal Withheld',tp.navy_fed,tp.navy_locked)}
+          ${tpFld('tp-navy-state','State Withheld',tp.navy_state,tp.navy_locked)}
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div class="tp-group" style="flex:1;margin-bottom:0">Wife's Job</div>
+          <button class="btn btn-ghost btn-sm" style="margin-left:.5rem;font-size:.8rem" onclick="tpToggleLock('wife')" id="tp-wife-lock-btn">
+            ${tp.wife_locked ? '🔒 Locked' : '🔓 Lock'}
+          </button>
+        </div>
+        <div class="tp-grid-3" style="margin-top:.5rem">
+          ${tpFld('tp-wife-gross','Gross Income',tp.wife_gross,tp.wife_locked)}
+          ${tpFld('tp-wife-fed','Federal Withheld',tp.wife_fed,tp.wife_locked)}
+          ${tpFld('tp-wife-state','State Withheld',tp.wife_state,tp.wife_locked)}
         </div>
       </div>
     </div>
@@ -2476,8 +2510,8 @@ function tpReadForm() {
   const tp = tpLoad(); // get existing (preserves estimated_payments)
   const g = id => { const el = document.getElementById(id); return el && el.value !== '' ? parseFloat(el.value) || 0 : 0; };
   const gc = id => { const el = document.getElementById(id); return el ? el.checked : true; };
-  tp.navy_gross = g('tp-navy-gross'); tp.navy_fed = g('tp-navy-fed'); tp.navy_state = g('tp-navy-state');
-  tp.wife_gross = g('tp-wife-gross'); tp.wife_fed = g('tp-wife-fed'); tp.wife_state = g('tp-wife-state');
+  if (!tp.navy_locked) { tp.navy_gross = g('tp-navy-gross'); tp.navy_fed = g('tp-navy-fed'); tp.navy_state = g('tp-navy-state'); }
+  if (!tp.wife_locked) { tp.wife_gross = g('tp-wife-gross'); tp.wife_fed = g('tp-wife-fed'); tp.wife_state = g('tp-wife-state'); }
   tp.fmg = g('tp-fmg'); tp.esai = g('tp-esai');
   tp.treasury_int = g('tp-treasury-int'); tp.rh_div = g('tp-rh-div'); tp.rh_int = g('tp-rh-int');
   tp.ibkr_int = g('tp-ibkr-int'); tp.ally_int = g('tp-ally-int'); tp.vio_int = g('tp-vio-int');
@@ -2774,6 +2808,7 @@ window.closeEditModal          = closeEditModal;
 window.toggleTheme             = toggleTheme;
 window.postNormalMonth         = postNormalMonth;
 window.tpChanged               = tpChanged;
+window.tpToggleLock            = tpToggleLock;
 window.tpFetchFMG              = tpFetchFMG;
 window.tpFetchESAI             = tpFetchESAI;
 window.tpAddPayment            = tpAddPayment;
