@@ -41,7 +41,25 @@ async function handleDataApi(request, env) {
     return jsonResponse({ error: 'Invalid JSON body' }, 400);
   }
 
-  const { action, property } = body;
+  const { action } = body;
+
+  // Password check — verify_password action handled separately (no auth required)
+  if (action === 'verify_password') {
+    const { password } = body;
+    const stored = env.ADMIN_PASSWORD;
+    if (!stored) return jsonResponse({ error: 'Password not configured on server' }, 500);
+    const ok = password === stored;
+    return jsonResponse({ ok });
+  }
+
+  // All other actions require the password header
+  const provided = request.headers.get('X-Password') || '';
+  const stored   = env.ADMIN_PASSWORD || '';
+  if (!stored || provided !== stored) {
+    return jsonResponse({ error: 'Unauthorized' }, 401);
+  }
+
+  const { property } = body;
 
   if (!property || !VALID_PROPERTIES.includes(property)) {
     return jsonResponse({ error: 'Invalid or missing property' }, 400);

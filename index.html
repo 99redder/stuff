@@ -493,6 +493,7 @@
     <button class="view-btn" data-view="historical">Historical</button>
     <button class="view-btn" data-view="tax-summary">Tax Summary</button>
     <button class="view-btn" data-view="add-entry">+ Add Entry</button>
+    <button class="view-btn" data-view="portfolio">All Properties</button>
   </div>
 </header>
 
@@ -542,6 +543,7 @@ const CAT_TYPE = Object.fromEntries([
 const state = {
   currentProperty: '6AL',
   currentView: 'current-year',
+  password: '',
   data: {
     '6AL':   { transactions: null, summaries: null, defaults: null, depreciation: null },
     '95EB':  { transactions: null, summaries: null, defaults: null, depreciation: null },
@@ -555,9 +557,19 @@ const state = {
 async function callApi(body) {
   const res = await fetch(`${API}/api/data`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Password': state.password
+    },
     body: JSON.stringify(body)
   });
+  if (res.status === 401) {
+    // Session expired or wrong password — kick back to gate
+    sessionStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem('rentals_pw');
+    showPasswordGate();
+    throw new Error('Unauthorized');
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `HTTP ${res.status}`);
@@ -620,6 +632,9 @@ function switchView(view) {
   document.querySelectorAll('.view-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.view === view);
   });
+  // Hide property tabs when viewing portfolio (they're irrelevant)
+  document.getElementById('property-tabs').style.display =
+    view === 'portfolio' ? 'none' : '';
   renderView();
 }
 
@@ -633,6 +648,7 @@ async function renderView() {
       case 'historical':   await renderHistorical();   break;
       case 'tax-summary':  await renderTaxSummary();   break;
       case 'add-entry':    await renderAddEntry();      break;
+      case 'portfolio':    await renderPortfolio();     break;
     }
   } catch (e) {
     app.innerHTML = `<div class="error-msg">Failed to load: ${escHtml(e.message)}</div>`;
@@ -1200,6 +1216,214 @@ async function renderTaxSummary() {
   `;
 }
 
+// ── View: Portfolio (All Properties) ─────────────────────────────────────────
+
+async function renderPortfolio() {
+  // Load all properties' transactions and summaries in parallel
+  await Promise.all(PROPERTIES.flatMap(p => [
+    ensureLoaded(p, 'transactions'),
+    ensureLoaded(p, 'summaries')
+  ]));
+
+  // ── Current year stats per property ──────────────────────────────────────
+  const yearStr = String(CURRENT_YEAR);
+  const propStats = PROPERTIES.map(prop => {
+    const txns = state.data[prop].transactions.filter(t => t.date.startsWith(yearStr));
+    let rent = 0, income = 0, expenses = 0;
+    for (const t of txns) {
+      if (t.type === 'income') { income += t.amount; if (t.category === 'rent') rent += t.amount; }
+      else expenses += t.amount;
+    }
+    return { prop, rent, income, expenses, net: income - expenses };
+  });
+
+  const totals = propStats.reduce((acc, p) => ({
+    rent:     acc.rent     + p.rent,
+    income:   acc.income   + p.income,
+    expenses: acc.expenses + p.expenses,
+    net:      acc.net      + p.net
+  }), { rent: 0, income: 0, expenses: 0, net: 0 });
+
+  const netClass = t => t >= 0 ? 'positive' : 'negative';
+
+  const propRows = propStats.map(p => `
+    <tr>
+      <td><strong>${p.prop}</strong></td>
+      <td class="text-right amount-income">${fmt(p.rent)}</td>
+      <td class="text-right amount-income">${fmt(p.income)}</td>
+      <td class="text-right amount-expense">${fmt(p.expenses)}</td>
+      <td class="text-right stat-value ${netClass(p.net)}" style="font-size:0.9rem">
+        ${p.net < 0 ? '−' : ''}${fmt(Math.abs(p.net))}
+      </td>
+    </tr>`).join('');
+
+  // ── Historical: combine summaries + current year from transactions ────────
+  // Gather all years across all properties' summaries
+  const histYears = new Set();
+  PROPERTIES.forEach(prop => Object.keys(state.data[prop].summaries).forEach(y => histYears.add(y)));
+
+  // Sort descending; prepend current year (always shown from transactions)
+  const sortedHistYears = [yearStr, ...[...histYears].filter(y => y !== yearStr).sort((a, b) => b - a)];
+
+  const histRows = sortedHistYears.map(y => {
+    const isCurrentYear = y === yearStr;
+
+    const yearly = PROPERTIES.map(prop => {
+      if (isCurrentYear) {
+        // Use live transactions for current year
+        const txns = state.data[prop].transactions.filter(t => t.date.startsWith(yearStr));
+        let income = 0, expenses = 0, rent = 0;
+        for (const t of txns) {
+          if (t.type === 'income') { income += t.amount; if (t.category === 'rent') rent += t.amount; }
+          else expenses += t.amount;
+        }
+        return { income, expenses, net: income - expenses, rent };
+      } else {
+        const d = state.data[prop].summaries[y] || {};
+        const income   = CATEGORIES.income.reduce((s, c)  => s + (d[c.code] || 0), 0);
+        const expenses = CATEGORIES.expense.reduce((s, c) => s + (d[c.code] || 0), 0);
+        return { income, expenses, net: income - expenses, rent: d.rent || 0 };
+      }
+    });
+
+    const combinedIncome   = yearly.reduce((s, p) => s + p.income,   0);
+    const combinedExpenses = yearly.reduce((s, p) => s + p.expenses, 0);
+    const combinedRent     = yearly.reduce((s, p) => s + p.rent,     0);
+    const combinedNet      = combinedIncome - combinedExpenses;
+    const nc               = netClass(combinedNet);
+
+    // Per-property net cells
+    const propCells = yearly.map((p, i) => {
+      const nc2 = netClass(p.net);
+      return `<td class="text-right ${nc2}" style="font-size:0.82rem">${p.net === 0 && p.income === 0 ? '—' : (p.net < 0 ? '−' : '') + fmtShort(Math.abs(p.net))}</td>`;
+    }).join('');
+
+    const yearLabel = isCurrentYear ? `<strong>${y} YTD</strong>` : y;
+
+    return `
+      <tr${isCurrentYear ? ' style="background:var(--primary-light)"' : ''}>
+        <td class="year-cell nowrap">${yearLabel}</td>
+        <td class="text-right amount-income">${fmtShort(combinedRent)}</td>
+        <td class="text-right amount-income">${fmtShort(combinedIncome)}</td>
+        <td class="text-right amount-expense">${fmtShort(combinedExpenses)}</td>
+        <td class="text-right ${nc} nowrap" style="font-weight:700">${combinedNet < 0 ? '−' : ''}${fmtShort(Math.abs(combinedNet))}</td>
+        ${propCells}
+      </tr>`;
+  }).join('');
+
+  // Grand total row (summaries only — excludes current year to avoid double-counting)
+  const grandIncome   = sortedHistYears.filter(y => y !== yearStr).reduce((s, y) => {
+    return s + PROPERTIES.reduce((ps, prop) => {
+      const d = state.data[prop].summaries[y] || {};
+      return ps + CATEGORIES.income.reduce((cs, c) => cs + (d[c.code] || 0), 0);
+    }, 0);
+  }, 0) + totals.income;
+
+  const grandExpenses = sortedHistYears.filter(y => y !== yearStr).reduce((s, y) => {
+    return s + PROPERTIES.reduce((ps, prop) => {
+      const d = state.data[prop].summaries[y] || {};
+      return ps + CATEGORIES.expense.reduce((cs, c) => cs + (d[c.code] || 0), 0);
+    }, 0);
+  }, 0) + totals.expenses;
+
+  const grandNet = grandIncome - grandExpenses;
+  const gnc = netClass(grandNet);
+
+  const noHistData = sortedHistYears.length <= 1; // only current year
+
+  document.getElementById('app').innerHTML = `
+    <!-- ── Current Year Stat Cards ── -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">YTD Rent — All</div>
+        <div class="stat-value income">${fmt(totals.rent)}</div>
+        <div class="stat-sub">${CURRENT_YEAR} · 3 properties</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Income — All</div>
+        <div class="stat-value income">${fmt(totals.income)}</div>
+        <div class="stat-sub">Year to Date</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Expenses — All</div>
+        <div class="stat-value expense">${fmt(totals.expenses)}</div>
+        <div class="stat-sub">Year to Date</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Net Income — All</div>
+        <div class="stat-value ${netClass(totals.net)}">${totals.net < 0 ? '−' : ''}${fmt(Math.abs(totals.net))}</div>
+        <div class="stat-sub">Year to Date</div>
+      </div>
+    </div>
+
+    <!-- ── Current Year Per-Property Breakdown ── -->
+    <div class="card mb-1" style="margin-bottom:1.25rem">
+      <div class="card-header">
+        <div class="card-title">${CURRENT_YEAR} — Per Property</div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Property</th>
+              <th class="text-right">Rent</th>
+              <th class="text-right">Total Income</th>
+              <th class="text-right">Total Expenses</th>
+              <th class="text-right">Net</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${propRows}
+            <tr style="background:var(--surface2);font-weight:700;border-top:2px solid var(--border)">
+              <td>All Properties</td>
+              <td class="text-right amount-income">${fmt(totals.rent)}</td>
+              <td class="text-right amount-income">${fmt(totals.income)}</td>
+              <td class="text-right amount-expense">${fmt(totals.expenses)}</td>
+              <td class="text-right ${netClass(totals.net)}">${totals.net < 0 ? '−' : ''}${fmt(Math.abs(totals.net))}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Historical Combined Table ── -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">All Years — Combined Totals</div>
+      </div>
+      <div class="table-wrap">
+        <table class="hist-table">
+          <thead>
+            <tr>
+              <th>Year</th>
+              <th class="text-right">Rent</th>
+              <th class="text-right">Income</th>
+              <th class="text-right">Expenses</th>
+              <th class="text-right">Net</th>
+              ${PROPERTIES.map(p => `<th class="text-right">${p} Net</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${histRows}
+            ${noHistData ? '' : `
+            <tr style="background:var(--surface2);font-weight:700;border-top:2px solid var(--border)">
+              <td>All Time</td>
+              <td></td>
+              <td class="text-right amount-income">${fmtShort(grandIncome)}</td>
+              <td class="text-right amount-expense">${fmtShort(grandExpenses)}</td>
+              <td class="text-right ${gnc}">${grandNet < 0 ? '−' : ''}${fmtShort(Math.abs(grandNet))}</td>
+              ${PROPERTIES.map(() => '<td></td>').join('')}
+            </tr>`}
+          </tbody>
+        </table>
+      </div>
+      ${noHistData ? `<div class="card-body" style="color:var(--text-muted);font-size:0.875rem">
+        Historical rows appear here once you add annual summaries via the Historical tab.
+      </div>` : ''}
+    </div>
+  `;
+}
+
 // ── View: Add Entry ───────────────────────────────────────────────────────────
 
 async function renderAddEntry() {
@@ -1405,6 +1629,71 @@ function escAttr(str) {
   return String(str ?? '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// ── Password Gate ─────────────────────────────────────────────────────────────
+
+const SESSION_KEY = 'rentals_auth';
+
+function isAuthed() {
+  return sessionStorage.getItem(SESSION_KEY) === '1';
+}
+
+function showPasswordGate() {
+  document.querySelector('.app-header').style.display = 'none';
+  document.getElementById('app').innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center">
+      <div class="card" style="width:min(360px,90vw);padding:2rem">
+        <div style="text-align:center;margin-bottom:1.5rem">
+          <div style="font-size:1.5rem;font-weight:700;color:var(--primary)">Rental Property Manager</div>
+          <div style="color:var(--text-muted);font-size:0.875rem;margin-top:0.25rem">Enter password to continue</div>
+        </div>
+        <div class="form-group">
+          <label for="pw-input">Password</label>
+          <input type="password" id="pw-input" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <div id="pw-error" class="error-msg hidden mt-1">Incorrect password.</div>
+        <button class="btn btn-primary" style="width:100%;margin-top:1rem" onclick="submitPassword()">
+          Sign In
+        </button>
+      </div>
+    </div>`;
+  // Allow Enter key
+  setTimeout(() => {
+    const el = document.getElementById('pw-input');
+    if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') submitPassword(); });
+  }, 0);
+}
+
+async function submitPassword() {
+  const pw = document.getElementById('pw-input')?.value || '';
+  const errEl = document.getElementById('pw-error');
+
+  // Verify password via worker
+  try {
+    const res = await fetch(`${API}/api/data`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'verify_password', password: pw })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      sessionStorage.setItem(SESSION_KEY, '1');
+      sessionStorage.setItem('rentals_pw', pw);
+      state.password = pw;
+      document.querySelector('.app-header').style.display = '';
+      renderView();
+    } else {
+      errEl.classList.remove('hidden');
+      document.getElementById('pw-input').value = '';
+      document.getElementById('pw-input').focus();
+    }
+  } catch {
+    errEl.textContent = 'Connection error. Try again.';
+    errEl.classList.remove('hidden');
+  }
+}
+
+window.submitPassword = submitPassword;
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 document.getElementById('property-tabs').addEventListener('click', e => {
@@ -1435,7 +1724,15 @@ window.saveDepreciationConfig = saveDepreciationConfig;
 window.openDepreciationEdit   = openDepreciationEdit;
 window.closeDepreciationEdit  = closeDepreciationEdit;
 
-renderView();
+// Start: show gate or app
+if (isAuthed()) {
+  // Restore password from sessionStorage key (prompt once per session)
+  const stored = sessionStorage.getItem('rentals_pw');
+  if (stored) state.password = stored;
+  renderView();
+} else {
+  showPasswordGate();
+}
 </script>
 </body>
 </html>
