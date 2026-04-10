@@ -2323,9 +2323,12 @@ async function renderTaxPlanning() {
     </tr>`).join('');
 
   document.getElementById('app').innerHTML = `
-  <div style="margin-bottom:1rem">
-    <div style="font-size:1.2rem;font-weight:700">${CURRENT_YEAR} Federal Tax Planning</div>
-    <div class="tp-note">Uses 2025 IRS rates (MFJ) as proxy — official ${CURRENT_YEAR} rates may differ. Not tax advice; consult a professional for filing.</div>
+  <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
+    <button class="btn btn-ghost btn-sm" onclick="switchView('current-year')" style="flex-shrink:0">← Back to Properties</button>
+    <div>
+      <div style="font-size:1.2rem;font-weight:700">${CURRENT_YEAR} Federal Tax Planning</div>
+      <div class="tp-note">Uses 2025 IRS rates (MFJ) as proxy — official ${CURRENT_YEAR} rates may differ. Not tax advice; consult a professional for filing.</div>
+    </div>
   </div>
   <div class="tp-layout">
 
