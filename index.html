@@ -2012,7 +2012,7 @@ async function saveMaintEntry() {
       state.data[prop].maintenance.push(result.entry);
     }
     closeMaintForm();
-    renderHistorical();
+    renderMaintenance();
   } catch (e) {
     errEl.textContent = 'Save failed: ' + e.message;
     errEl.classList.remove('hidden');
@@ -2046,7 +2046,7 @@ async function deleteMaintEntry(id) {
   try {
     await callApi({ action: 'delete_maintenance_entry', property: prop, id });
     state.data[prop].maintenance = state.data[prop].maintenance.filter(e => e.id !== id);
-    renderHistorical();
+    renderMaintenance();
   } catch (e) {
     alert('Delete failed: ' + e.message);
   }
@@ -2059,7 +2059,7 @@ async function seedMaintData(prop) {
   try {
     const result = await callApi({ action: 'save_maintenance', property: prop, entries });
     state.data[prop].maintenance = result.entries;
-    renderHistorical();
+    renderMaintenance();
   } catch (e) {
     alert('Load failed: ' + e.message);
   }
