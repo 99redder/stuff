@@ -415,16 +415,6 @@
     .tax-row.net .tax-amt.positive { color: var(--success); }
     .tax-row.net .tax-amt.negative { color: var(--danger); }
 
-    /* ── Delete confirm inline ──────────────────────────────────────────── */
-    .delete-confirm {
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      font-size: 0.8rem;
-    }
-
-    .delete-confirm span { color: var(--text-muted); white-space: nowrap; }
-
     /* ── Add Year form ──────────────────────────────────────────────────── */
     .year-form-grid {
       display: grid;
@@ -468,6 +458,89 @@
       .stat-value { font-size: 1.35rem; }
     }
 
+    /* ── Branded Modal ──────────────────────────────────────────────────── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15,23,42,0.55);
+      backdrop-filter: blur(2px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      animation: fadeIn 0.15s ease;
+    }
+
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+    .modal {
+      background: var(--surface);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2), 0 4px 12px rgba(0,0,0,0.1);
+      width: min(480px, 92vw);
+      overflow: hidden;
+      animation: slideUp 0.18s ease;
+    }
+
+    .modal-header {
+      padding: 1.25rem 1.5rem 1rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .modal-icon {
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      flex-shrink: 0;
+    }
+
+    .modal-icon.danger { background: var(--danger-light); color: var(--danger); }
+    .modal-icon.primary { background: var(--primary-light); color: var(--primary); }
+
+    .modal-title { font-size: 1rem; font-weight: 700; }
+    .modal-subtitle { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.1rem; }
+
+    .modal-body { padding: 1.25rem 1.5rem; }
+
+    .modal-detail {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.75rem 1rem;
+      font-size: 0.875rem;
+      margin-bottom: 1rem;
+    }
+
+    .modal-detail-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.2rem 0;
+      color: var(--text-muted);
+    }
+
+    .modal-detail-row span:last-child { color: var(--text); font-weight: 500; }
+
+    .modal-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      background: var(--surface2);
+    }
+
+    /* Edit modal form */
+    .modal .form-grid { grid-template-columns: 1fr 1fr; }
+    .modal .form-group.full { grid-column: 1 / -1; }
+
     /* ── Print Styles ───────────────────────────────────────────────────── */
     @media print {
       .app-header, .view-nav, #print-btn, .btn, .no-print { display: none !important; }
@@ -500,6 +573,101 @@
 <main class="page" id="app">
   <div class="loading"><span class="spinner"></span> Loading…</div>
 </main>
+
+<!-- ── Delete Confirmation Modal ── -->
+<div class="modal-overlay hidden" id="delete-modal" onclick="handleModalOverlayClick(event,'delete-modal')">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="del-modal-title">
+    <div class="modal-header">
+      <div class="modal-icon danger">🗑</div>
+      <div>
+        <div class="modal-title" id="del-modal-title">Delete Transaction</div>
+        <div class="modal-subtitle">This cannot be undone.</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="modal-detail" id="del-modal-detail"></div>
+      <p style="font-size:0.875rem;color:var(--text-muted)">
+        Are you sure you want to permanently delete this entry?
+      </p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeDeleteModal()">Cancel</button>
+      <button class="btn btn-danger" id="del-modal-confirm-btn" onclick="deleteModalStep2()">
+        Yes, Delete
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Delete Double-Confirm Modal ── -->
+<div class="modal-overlay hidden" id="delete-modal-2" onclick="handleModalOverlayClick(event,'delete-modal-2')">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-header">
+      <div class="modal-icon danger">⚠️</div>
+      <div>
+        <div class="modal-title" style="color:var(--danger)">Permanently Delete?</div>
+        <div class="modal-subtitle">Final confirmation required.</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:0.9rem;line-height:1.6">
+        This entry will be <strong>permanently removed</strong> from the database and
+        cannot be recovered. Click <strong>Delete Forever</strong> to confirm.
+      </p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeDeleteModal()">Cancel</button>
+      <button class="btn btn-danger" onclick="executeDelete()" style="background:#991b1b">
+        Delete Forever
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Edit Transaction Modal ── -->
+<div class="modal-overlay hidden" id="edit-modal" onclick="handleModalOverlayClick(event,'edit-modal')">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
+    <div class="modal-header">
+      <div class="modal-icon primary">✏️</div>
+      <div>
+        <div class="modal-title" id="edit-modal-title">Edit Transaction</div>
+        <div class="modal-subtitle" id="edit-modal-subtitle"></div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="edit-type">Type</label>
+          <select id="edit-type">
+            <option value="income">Income</option>
+            <option value="expense">Expense</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="edit-cat">Category</label>
+          <select id="edit-cat"></select>
+        </div>
+        <div class="form-group">
+          <label for="edit-date">Date</label>
+          <input type="date" id="edit-date">
+        </div>
+        <div class="form-group">
+          <label for="edit-amount">Amount ($)</label>
+          <input type="number" id="edit-amount" step="0.01" min="0.01">
+        </div>
+        <div class="form-group full">
+          <label for="edit-notes">Notes</label>
+          <input type="text" id="edit-notes" placeholder="Optional description">
+        </div>
+      </div>
+      <div id="edit-error" class="error-msg hidden" style="margin-top:0.75rem"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeEditModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEditTransaction()">Save Changes</button>
+    </div>
+  </div>
+</div>
 
 <script>
 'use strict';
@@ -679,7 +847,7 @@ async function renderCurrentYear() {
   const netClass = net > 0 ? 'positive' : net < 0 ? 'negative' : 'neutral';
 
   const rows = yearTxns.length === 0
-    ? `<tr><td colspan="5" class="empty-state" style="padding:2.5rem">
+    ? `<tr><td colspan="6" class="empty-state" style="padding:2.5rem">
          No transactions recorded for ${CURRENT_YEAR} yet.
          <p><button class="btn btn-primary mt-1" onclick="switchView('add-entry')">Add First Entry</button></p>
        </td></tr>`
@@ -688,22 +856,15 @@ async function renderCurrentYear() {
         return `
           <tr data-id="${escAttr(t.id)}">
             <td class="nowrap">${fmtDate(t.date)}</td>
-            <td>
-              <span class="badge badge-${t.type}">${isIncome ? 'Income' : 'Expense'}</span>
-            </td>
+            <td><span class="badge badge-${t.type}">${isIncome ? 'Income' : 'Expense'}</span></td>
             <td>${escHtml(CAT_MAP[t.category] || t.category)}</td>
             <td class="text-right nowrap ${isIncome ? 'amount-income' : 'amount-expense'}">
               ${isIncome ? '' : '−'}${fmt(t.amount)}
             </td>
-            <td class="text-right" style="color:var(--text-muted);font-size:0.82rem">${escHtml(t.description)}</td>
-            <td class="text-right">
-              <div class="delete-confirm hidden" id="del-${escAttr(t.id)}">
-                <span>Delete?</span>
-                <button class="btn btn-danger btn-sm" onclick="confirmDelete('${escAttr(t.id)}')">Yes</button>
-                <button class="btn btn-ghost btn-sm" onclick="cancelDelete('${escAttr(t.id)}')">No</button>
-              </div>
-              <button class="btn btn-ghost btn-sm" id="delbtn-${escAttr(t.id)}"
-                onclick="showDeleteConfirm('${escAttr(t.id)}')">Delete</button>
+            <td style="color:var(--text-muted);font-size:0.82rem">${escHtml(t.description)}</td>
+            <td class="text-right nowrap" style="white-space:nowrap">
+              <button class="btn btn-ghost btn-sm" onclick="openEditModal('${escAttr(t.id)}')">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="openDeleteModal('${escAttr(t.id)}')">Delete</button>
             </td>
           </tr>`;
       }).join('');
@@ -756,25 +917,152 @@ async function renderCurrentYear() {
   `;
 }
 
-function showDeleteConfirm(id) {
-  document.getElementById(`delbtn-${id}`).classList.add('hidden');
-  document.getElementById(`del-${id}`).classList.remove('hidden');
-}
+// ── Delete Modal ──────────────────────────────────────────────────────────────
 
-function cancelDelete(id) {
-  document.getElementById(`del-${id}`).classList.add('hidden');
-  document.getElementById(`delbtn-${id}`).classList.remove('hidden');
-}
+let _pendingDeleteId   = null;
+let _pendingDeleteProp = null;
 
-async function confirmDelete(id) {
+function openDeleteModal(id) {
   const prop = state.currentProperty;
+  const txn  = state.data[prop].transactions.find(t => t.id === id);
+  if (!txn) return;
+
+  _pendingDeleteId   = id;
+  _pendingDeleteProp = prop;
+
+  const isIncome = txn.type === 'income';
+  document.getElementById('del-modal-detail').innerHTML = `
+    <div class="modal-detail-row"><span>Date</span><span>${fmtDate(txn.date)}</span></div>
+    <div class="modal-detail-row"><span>Category</span><span>${escHtml(CAT_MAP[txn.category] || txn.category)}</span></div>
+    <div class="modal-detail-row"><span>Amount</span>
+      <span style="color:var(--${isIncome ? 'success' : 'danger'})">${isIncome ? '' : '−'}${fmt(txn.amount)}</span>
+    </div>
+    ${txn.description ? `<div class="modal-detail-row"><span>Notes</span><span>${escHtml(txn.description)}</span></div>` : ''}`;
+
+  document.getElementById('delete-modal').classList.remove('hidden');
+}
+
+function deleteModalStep2() {
+  document.getElementById('delete-modal').classList.add('hidden');
+  document.getElementById('delete-modal-2').classList.remove('hidden');
+}
+
+async function executeDelete() {
+  const id   = _pendingDeleteId;
+  const prop = _pendingDeleteProp;
+  closeDeleteModal();
+
   try {
     await callApi({ action: 'delete_transaction', property: prop, id });
     state.data[prop].transactions = state.data[prop].transactions.filter(t => t.id !== id);
     renderCurrentYear();
   } catch (e) {
-    alert('Delete failed: ' + e.message);
+    document.getElementById('app').insertAdjacentHTML(
+      'afterbegin', `<div class="error-msg">Delete failed: ${escHtml(e.message)}</div>`
+    );
   }
+}
+
+function closeDeleteModal() {
+  document.getElementById('delete-modal').classList.add('hidden');
+  document.getElementById('delete-modal-2').classList.add('hidden');
+  _pendingDeleteId   = null;
+  _pendingDeleteProp = null;
+}
+
+function handleModalOverlayClick(e, modalId) {
+  if (e.target.id === modalId) {
+    if (modalId === 'delete-modal' || modalId === 'delete-modal-2') closeDeleteModal();
+    if (modalId === 'edit-modal') closeEditModal();
+  }
+}
+
+// ── Edit Modal ────────────────────────────────────────────────────────────────
+
+let _editingId   = null;
+let _editingProp = null;
+
+function openEditModal(id) {
+  const prop = state.currentProperty;
+  const txn  = state.data[prop].transactions.find(t => t.id === id);
+  if (!txn) return;
+
+  _editingId   = id;
+  _editingProp = prop;
+
+  // Populate type
+  const typeEl = document.getElementById('edit-type');
+  typeEl.value = txn.type;
+
+  // Populate category options
+  populateEditCategories(txn.type, txn.category);
+
+  // Populate other fields
+  document.getElementById('edit-date').value   = txn.date;
+  document.getElementById('edit-amount').value = txn.amount;
+  document.getElementById('edit-notes').value  = txn.description || '';
+  document.getElementById('edit-error').classList.add('hidden');
+
+  // Subtitle
+  document.getElementById('edit-modal-subtitle').textContent =
+    `${prop} · ${fmtDate(txn.date)}`;
+
+  // Wire type change to repopulate categories
+  typeEl.onchange = () => populateEditCategories(typeEl.value, null);
+
+  document.getElementById('edit-modal').classList.remove('hidden');
+  document.getElementById('edit-amount').focus();
+}
+
+function populateEditCategories(type, selectedCode) {
+  const catEl = document.getElementById('edit-cat');
+  catEl.innerHTML = CATEGORIES[type].map(c =>
+    `<option value="${c.code}" ${c.code === selectedCode ? 'selected' : ''}>${escHtml(c.name)}</option>`
+  ).join('');
+}
+
+async function saveEditTransaction() {
+  const id     = _editingId;
+  const prop   = _editingProp;
+  const errEl  = document.getElementById('edit-error');
+  errEl.classList.add('hidden');
+
+  const type        = document.getElementById('edit-type').value;
+  const category    = document.getElementById('edit-cat').value;
+  const date        = document.getElementById('edit-date').value;
+  const amountRaw   = document.getElementById('edit-amount').value;
+  const description = document.getElementById('edit-notes').value.trim();
+
+  if (!date) { errEl.textContent = 'Date is required.'; errEl.classList.remove('hidden'); return; }
+  const amount = parseFloat(amountRaw);
+  if (isNaN(amount) || amount <= 0) { errEl.textContent = 'Enter a valid amount.'; errEl.classList.remove('hidden'); return; }
+
+  try {
+    // Delete old, add new (worker has no update action — this keeps it atomic-ish)
+    await callApi({ action: 'delete_transaction', property: prop, id });
+    const result = await callApi({
+      action: 'add_transaction', property: prop,
+      transaction: { type, category, date, amount, description }
+    });
+
+    // Update local cache
+    const txns = state.data[prop].transactions;
+    const idx  = txns.findIndex(t => t.id === id);
+    if (idx !== -1) txns.splice(idx, 1, result.transaction);
+    else txns.push(result.transaction);
+
+    closeEditModal();
+    renderCurrentYear();
+  } catch (e) {
+    errEl.textContent = 'Save failed: ' + e.message;
+    errEl.classList.remove('hidden');
+  }
+}
+
+function closeEditModal() {
+  document.getElementById('edit-modal').classList.add('hidden');
+  _editingId   = null;
+  _editingProp = null;
 }
 
 // ── View: Historical ──────────────────────────────────────────────────────────
@@ -1720,9 +2008,25 @@ window.useDefaultAmount       = useDefaultAmount;
 window.saveEntry              = saveEntry;
 window.saveAsDefault          = saveAsDefault;
 window.dismissDefaultPrompt   = dismissDefaultPrompt;
-window.saveDepreciationConfig = saveDepreciationConfig;
-window.openDepreciationEdit   = openDepreciationEdit;
-window.closeDepreciationEdit  = closeDepreciationEdit;
+window.saveDepreciationConfig  = saveDepreciationConfig;
+window.openDepreciationEdit    = openDepreciationEdit;
+window.closeDepreciationEdit   = closeDepreciationEdit;
+window.openDeleteModal         = openDeleteModal;
+window.deleteModalStep2        = deleteModalStep2;
+window.executeDelete           = executeDelete;
+window.closeDeleteModal        = closeDeleteModal;
+window.handleModalOverlayClick = handleModalOverlayClick;
+window.openEditModal           = openEditModal;
+window.saveEditTransaction     = saveEditTransaction;
+window.closeEditModal          = closeEditModal;
+
+// Close modals on Escape
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    closeDeleteModal();
+    closeEditModal();
+  }
+});
 
 // Start: show gate or app
 if (isAuthed()) {
