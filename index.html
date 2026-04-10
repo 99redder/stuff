@@ -49,7 +49,6 @@
 
     /* ── Theme Toggle ───────────────────────────────────────────────────────── */
     .theme-toggle {
-      margin-left: auto;
       background: var(--surface2);
       border: 1px solid var(--border);
       border-radius: var(--radius);
@@ -575,6 +574,40 @@
     .modal .form-grid { grid-template-columns: 1fr 1fr; }
     .modal .form-group.full { grid-column: 1 / -1; }
 
+    /* ── Tax Planning ───────────────────────────────────────────────────── */
+    .tp-header-btn {
+      background: var(--primary); color: white; border: none;
+      border-radius: var(--radius); padding: 0.35rem 0.75rem; cursor: pointer;
+      font-size: 0.82rem; font-weight: 600; transition: background 0.15s; white-space: nowrap; flex-shrink: 0;
+    }
+    .tp-header-btn:hover { background: var(--primary-hover); }
+    .tp-header-btn.active { background: var(--primary-hover); outline: 2px solid rgba(37,99,235,0.35); outline-offset: 1px; }
+    .tp-layout { display: grid; grid-template-columns: 1fr 390px; gap: 1.25rem; align-items: start; }
+    .tp-sticky { position: sticky; top: 5.5rem; }
+    .tp-grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 0.75rem; }
+    .tp-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    .tp-lbl { font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:0.3px; color:var(--text-muted); }
+    .tp-group { font-size:0.8rem; font-weight:700; color:var(--text); margin:0.85rem 0 0.5rem; padding-bottom:0.35rem; border-bottom:1px solid var(--border); }
+    .tp-group:first-child { margin-top:0; }
+    .tp-card { margin-bottom: 1.25rem; }
+    .tp-row { display:flex; justify-content:space-between; align-items:center; padding:0.38rem 0; font-size:0.875rem; border-bottom:1px solid var(--border); }
+    .tp-row:last-child { border-bottom:none; }
+    .tp-row.in { padding-left:1rem; color:var(--text-muted); font-size:0.82rem; }
+    .tp-row.sub { font-weight:700; border-bottom:2px solid var(--border); }
+    .tp-row.sec { background:var(--surface2); margin:0.25rem -1.25rem 0; padding:0.3rem 1.25rem; font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); border-bottom:none; }
+    .tp-row.owed { font-size:1.05rem; font-weight:700; background:var(--danger-light); margin:0.25rem -1.25rem 0; padding:0.65rem 1.25rem; border-top:2px solid #fca5a5; border-bottom:none; color:var(--danger); }
+    .tp-row.refund { font-size:1.05rem; font-weight:700; background:var(--success-light); margin:0.25rem -1.25rem 0; padding:0.65rem 1.25rem; border-top:2px solid #86efac; border-bottom:none; color:var(--success); }
+    .tp-fetch-row { display:flex; gap:0.5rem; align-items:flex-end; }
+    .tp-fetch-row .form-group:first-child { flex:1; }
+    .tp-pay-row { display:flex; gap:0.5rem; align-items:center; padding:0.4rem 0; border-bottom:1px solid var(--border); }
+    .tp-pay-row:last-child { border-bottom:none; }
+    .tp-pay-row input[type="date"] { width:155px; flex-shrink:0; }
+    .tp-pay-row input[type="number"] { flex:1; }
+    .tp-note { font-size:0.75rem; color:var(--text-muted); font-style:italic; margin-top:0.35rem; }
+    @media (max-width:960px) { .tp-layout { grid-template-columns:1fr; } .tp-sticky { position:static; } }
+    @media (max-width:768px) { .tp-grid-3 { grid-template-columns:1fr 1fr; } .tp-grid-2 { grid-template-columns:1fr; } }
+    @media (max-width:480px) { .tp-grid-3 { grid-template-columns:1fr; } }
+
     /* ── Print Styles ───────────────────────────────────────────────────── */
     @media print {
       .app-header, .view-nav, #print-btn, .btn, .no-print { display: none !important; }
@@ -594,7 +627,10 @@
       <button class="prop-tab" data-prop="95EB">95EB</button>
       <button class="prop-tab" data-prop="446BB">446BB</button>
     </div>
-    <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
+      <button class="tp-header-btn" id="tax-planning-btn" onclick="switchView('tax-planning')">Tax Planning</button>
+      <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
+    </div>
   </div>
   <div class="view-nav" id="view-nav">
     <button class="view-btn active" data-view="current-year">Current Year</button>
@@ -758,6 +794,40 @@ const NORMAL_MONTH_CONFIG = {
   ]}
 };
 
+// ── Tax Planning Constants (2025 MFJ rates — 2026 IRS rates TBD) ─────────────
+
+const TP_BRACKETS_MFJ = [
+  { limit: 23850,    rate: 0.10 },
+  { limit: 96950,    rate: 0.12 },
+  { limit: 206700,   rate: 0.22 },
+  { limit: 394600,   rate: 0.24 },
+  { limit: 501050,   rate: 0.32 },
+  { limit: 751600,   rate: 0.35 },
+  { limit: Infinity, rate: 0.37 },
+];
+const TP_LTCG_MFJ = [
+  { limit: 96700,    rate: 0.00 },
+  { limit: 600050,   rate: 0.15 },
+  { limit: Infinity, rate: 0.20 },
+];
+const TP_SE_SS_BASE = 176100;      // 2025 SS wage base
+const TP_NIIT_THRESHOLD = 250000;  // MFJ NIIT threshold
+const TP_STD_DEDUCTION = 30000;    // 2025 MFJ standard deduction
+const TP_IRA_LIMIT = 7000;
+const TP_CTC_PER_CHILD = 2000;
+const TP_CTC_PHASEOUT = 400000;    // MFJ phase-out start
+
+const FMG_API = 'https://florencemaegifts.com';
+const ESAI_API = 'https://eastern-shore-ai-contact.99redder.workers.dev';
+const TP_KEY = `rentals_tax_${CURRENT_YEAR}`;
+
+// Session-only (never persisted): admin passwords for FMG/ESAI fetch
+const TP_SESSION = { fmg_pw: '', esai_pw: '' };
+
+function tpLoad() { try { return JSON.parse(localStorage.getItem(TP_KEY) || '{}'); } catch { return {}; } }
+function tpSave(tp) { const { fmg_pw, esai_pw, ...d } = tp; localStorage.setItem(TP_KEY, JSON.stringify(d)); }
+function tpN(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 const state = {
@@ -852,9 +922,15 @@ function switchView(view) {
   document.querySelectorAll('.view-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.view === view);
   });
-  // Hide property tabs when viewing portfolio (they're irrelevant)
+  const isTaxPlanning = view === 'tax-planning';
+  // Hide property tabs for portfolio and tax planning
   document.getElementById('property-tabs').style.display =
-    view === 'portfolio' ? 'none' : '';
+    (view === 'portfolio' || isTaxPlanning) ? 'none' : '';
+  // Hide view-nav for tax planning
+  document.getElementById('view-nav').style.display = isTaxPlanning ? 'none' : '';
+  // Toggle tax planning button active state
+  const tpBtn = document.getElementById('tax-planning-btn');
+  if (tpBtn) tpBtn.classList.toggle('active', isTaxPlanning);
   renderView();
 }
 
@@ -869,6 +945,7 @@ async function renderView() {
       case 'tax-summary':  await renderTaxSummary();   break;
       case 'add-entry':    await renderAddEntry();      break;
       case 'portfolio':    await renderPortfolio();     break;
+      case 'tax-planning': await renderTaxPlanning();   break;
     }
   } catch (e) {
     app.innerHTML = `<div class="error-msg">Failed to load: ${escHtml(e.message)}</div>`;
@@ -2053,6 +2130,513 @@ async function postNormalMonth() {
   }
 }
 
+// ── Tax Planning ──────────────────────────────────────────────────────────────
+
+function tpCalcOrdinaryTax(income) {
+  let tax = 0, prev = 0;
+  for (const b of TP_BRACKETS_MFJ) {
+    if (income <= prev) break;
+    tax += (Math.min(income, b.limit) - prev) * b.rate;
+    prev = b.limit;
+  }
+  return tax;
+}
+
+function tpCalcLTCGTax(ordinaryStack, ltcg) {
+  let tax = 0, base = ordinaryStack, rem = ltcg;
+  for (const t of TP_LTCG_MFJ) {
+    if (rem <= 0 || base >= t.limit) { if (base >= t.limit) continue; break; }
+    const avail = t.limit - base;
+    const chunk = Math.min(rem, avail);
+    tax += chunk * t.rate;
+    rem -= chunk;
+    base = t.limit;
+  }
+  return tax;
+}
+
+function tpCalc(tp, rentalRows) {
+  const wages        = tpN(tp.navy_gross) + tpN(tp.wife_gross);
+  const businessInc  = tpN(tp.fmg) + tpN(tp.esai);
+  const rentalNet    = (rentalRows || []).reduce((s, p) => s + p.net, 0);
+  const rentalDepr   = tpN(tp.rental_depr);
+  const rentalTaxInc = rentalNet - rentalDepr;
+  const interest     = tpN(tp.treasury_int) + tpN(tp.ally_int) + tpN(tp.vio_int) +
+                       tpN(tp.rh_int) + tpN(tp.ibkr_int);
+  const dividends    = tpN(tp.rh_div);
+  const cryptoInc    = tpN(tp.crypto_income);
+  const stGains      = tpN(tp.crypto_st) + tpN(tp.rh_st) + tpN(tp.ibkr_st);
+  const ltGains      = tpN(tp.crypto_lt) + tpN(tp.rh_lt) + tpN(tp.ibkr_lt);
+
+  // Self-employment tax
+  const netSe     = businessInc * 0.9235;
+  const seTax     = Math.min(netSe, TP_SE_SS_BASE) * 0.124 + netSe * 0.029;
+  const halfSeTax = seTax / 2;
+
+  const grossIncome = wages + businessInc + rentalTaxInc + interest + dividends + cryptoInc + stGains + ltGains;
+
+  // Above-the-line adjustments
+  const iraAdj     = Math.min(tpN(tp.ira), TP_IRA_LIMIT);
+  const adjustments = iraAdj + halfSeTax;
+  const agi         = Math.max(0, grossIncome - adjustments);
+
+  // Deductions
+  const stdDed  = tpN(tp.std_ded) || TP_STD_DEDUCTION;
+  const qbiBase = Math.max(0, businessInc - halfSeTax);
+  const qbiDed  = tp.use_qbi !== false ? qbiBase * 0.20 : 0;
+  const totDed  = stdDed + qbiDed;
+  const taxInc  = Math.max(0, agi - totDed);
+
+  // Tax on income
+  const ltcgTaxable   = Math.min(Math.max(0, ltGains), taxInc);
+  const ordinaryTaxable = Math.max(0, taxInc - ltcgTaxable);
+  const ordTax        = tpCalcOrdinaryTax(ordinaryTaxable);
+  const ltcgTax       = tpCalcLTCGTax(ordinaryTaxable, ltcgTaxable);
+
+  // NIIT (3.8% on net investment income if AGI > threshold)
+  const nii  = interest + dividends + ltGains + stGains + cryptoInc + Math.max(0, rentalTaxInc);
+  const niit = agi > TP_NIIT_THRESHOLD ? Math.min(nii, agi - TP_NIIT_THRESHOLD) * 0.038 : 0;
+
+  const grossFedTax = ordTax + ltcgTax + seTax + niit;
+
+  // Child Tax Credit (2 children)
+  const ctcRaw     = 2 * TP_CTC_PER_CHILD;
+  const ctcPhaseout = Math.max(0, Math.ceil((agi - TP_CTC_PHASEOUT) / 1000)) * 50;
+  const ctc         = Math.max(0, ctcRaw - ctcPhaseout);
+
+  const netFedTax  = Math.max(0, grossFedTax - ctc);
+  const fedWithheld = tpN(tp.navy_fed) + tpN(tp.wife_fed);
+  const estPmts     = (tp.estimated_payments || []).reduce((s, p) => s + tpN(p.amount), 0);
+  const totFedPaid  = fedWithheld + estPmts;
+  const fedOwed     = netFedTax - totFedPaid;
+
+  // State tax
+  const stateWithheld = tpN(tp.navy_state) + tpN(tp.wife_state);
+  const stateRate     = tpN(tp.state_rate) / 100;
+  const stateDed      = tpN(tp.state_ded);
+  const stateTaxInc   = Math.max(0, agi - stateDed);
+  const stateTax      = stateTaxInc * stateRate;
+  const stateOwed     = stateTax - stateWithheld;
+
+  return {
+    wages, businessInc, rentalNet, rentalDepr, rentalTaxInc,
+    interest, dividends, cryptoInc, stGains, ltGains,
+    seTax, halfSeTax, grossIncome, iraAdj, adjustments, agi,
+    stdDed, qbiDed, totDed, taxInc, ordinaryTaxable, ltcgTaxable,
+    ordTax, ltcgTax, niit, grossFedTax, ctc, netFedTax,
+    fedWithheld, estPmts, totFedPaid, fedOwed,
+    stateTax, stateWithheld, stateOwed
+  };
+}
+
+function tpFld(id, label, val) {
+  return `<div class="form-group">
+    <label class="tp-lbl">${escHtml(label)}</label>
+    <input type="number" id="${id}" step="0.01" min="0" placeholder="0" value="${val || ''}" oninput="tpChanged()">
+  </div>`;
+}
+
+function tpBuildPayments(payments) {
+  if (!payments || payments.length === 0)
+    return '<div style="font-size:.875rem;color:var(--text-muted)">No estimated payments recorded.</div>';
+  return payments.map((p, i) => `
+    <div class="tp-pay-row">
+      <input type="date" value="${escAttr(p.date || '')}" onchange="tpPayDate(${i},this.value)">
+      <input type="number" step="0.01" min="0" placeholder="0.00" value="${p.amount || ''}" onchange="tpPayAmt(${i},this.value)">
+      <button class="btn btn-ghost btn-sm" style="color:var(--danger);padding:.2rem .5rem" onclick="tpRemovePayment(${i})">×</button>
+    </div>`).join('');
+}
+
+async function renderTaxPlanning() {
+  // Load all rental transaction + depreciation data
+  await Promise.all(PROPERTIES.flatMap(p => [ensureLoaded(p,'transactions'), ensureLoaded(p,'depreciation')]));
+
+  const rentalRows = PROPERTIES.map(prop => {
+    const txns = (state.data[prop].transactions || []).filter(t => t.date.startsWith(String(CURRENT_YEAR)));
+    const income   = txns.filter(t => t.type === 'income').reduce((s,t) => s + t.amount, 0);
+    const expenses = txns.filter(t => t.type === 'expense').reduce((s,t) => s + t.amount, 0);
+    const net = income - expenses;
+    const dc = state.data[prop].depreciation;
+    const deprAmt = dc ? (calcDepreciationSchedule(dc.costBasis, dc.placedInService).find(r => r.year === CURRENT_YEAR)?.annual || 0) : 0;
+    return { prop, income, expenses, net, deprAmt };
+  });
+  window._tpRentalRows = rentalRows;
+
+  const tp = tpLoad();
+  const autoDepr = rentalRows.reduce((s, p) => s + p.deprAmt, 0);
+  if (tp.rental_depr === undefined) tp.rental_depr = autoDepr;
+
+  const rentalTableRows = rentalRows.map(p => `
+    <tr>
+      <td style="padding:.3rem .5rem;font-weight:600">${escHtml(p.prop)}</td>
+      <td style="text-align:right;padding:.3rem .5rem;color:var(--success)">${fmt(p.income)}</td>
+      <td style="text-align:right;padding:.3rem .5rem;color:var(--danger)">${fmt(p.expenses)}</td>
+      <td style="text-align:right;padding:.3rem .5rem;font-weight:600;color:${p.net>=0?'var(--success)':'var(--danger)'}">${fmt(p.net)}</td>
+      <td style="text-align:right;padding:.3rem .5rem;color:var(--text-muted)">${p.deprAmt>0?fmt(p.deprAmt):'—'}</td>
+    </tr>`).join('');
+
+  document.getElementById('app').innerHTML = `
+  <div style="margin-bottom:1rem">
+    <div style="font-size:1.2rem;font-weight:700">${CURRENT_YEAR} Federal Tax Planning</div>
+    <div class="tp-note">Uses 2025 IRS rates (MFJ) as proxy — official ${CURRENT_YEAR} rates may differ. Not tax advice; consult a professional for filing.</div>
+  </div>
+  <div class="tp-layout">
+
+  <!-- ── Left Column: Inputs ── -->
+  <div>
+
+    <!-- W-2 & Retirement -->
+    <div class="card tp-card">
+      <div class="card-header"><div class="card-title">W-2 &amp; Retirement Income</div></div>
+      <div class="card-body">
+        <div class="tp-group">Navy Retirement</div>
+        <div class="tp-grid-3" style="margin-bottom:.75rem">
+          ${tpFld('tp-navy-gross','Gross Income',tp.navy_gross)}
+          ${tpFld('tp-navy-fed','Federal Withheld',tp.navy_fed)}
+          ${tpFld('tp-navy-state','State Withheld',tp.navy_state)}
+        </div>
+        <div class="tp-group">Wife's Job</div>
+        <div class="tp-grid-3">
+          ${tpFld('tp-wife-gross','Gross Income',tp.wife_gross)}
+          ${tpFld('tp-wife-fed','Federal Withheld',tp.wife_fed)}
+          ${tpFld('tp-wife-state','State Withheld',tp.wife_state)}
+        </div>
+      </div>
+    </div>
+
+    <!-- Business Income -->
+    <div class="card tp-card">
+      <div class="card-header"><div class="card-title">Business Income (Self-Employment)</div></div>
+      <div class="card-body">
+        <div class="tp-group">Florence Mae Gifts</div>
+        <div class="tp-fetch-row" style="margin-bottom:.25rem">
+          ${tpFld('tp-fmg','Income ($)',tp.fmg)}
+          <div class="form-group">
+            <label class="tp-lbl">Admin Password</label>
+            <input type="password" id="tp-fmg-pw" placeholder="••••••••" autocomplete="off"
+                   value="${escAttr(TP_SESSION.fmg_pw)}" oninput="TP_SESSION.fmg_pw=this.value" style="width:130px">
+          </div>
+          <div class="form-group" style="justify-content:flex-end">
+            <label class="tp-lbl">&nbsp;</label>
+            <button class="btn btn-ghost btn-sm" onclick="tpFetchFMG()">Fetch ${CURRENT_YEAR}</button>
+          </div>
+        </div>
+        <div id="tp-fmg-msg" class="tp-note"></div>
+
+        <div class="tp-group">Eastern Shore AI</div>
+        <div class="tp-fetch-row" style="margin-bottom:.25rem">
+          ${tpFld('tp-esai','Income ($)',tp.esai)}
+          <div class="form-group">
+            <label class="tp-lbl">Admin Password</label>
+            <input type="password" id="tp-esai-pw" placeholder="••••••••" autocomplete="off"
+                   value="${escAttr(TP_SESSION.esai_pw)}" oninput="TP_SESSION.esai_pw=this.value" style="width:130px">
+          </div>
+          <div class="form-group" style="justify-content:flex-end">
+            <label class="tp-lbl">&nbsp;</label>
+            <button class="btn btn-ghost btn-sm" onclick="tpFetchESAI()">Fetch ${CURRENT_YEAR}</button>
+          </div>
+        </div>
+        <div id="tp-esai-msg" class="tp-note"></div>
+        <div class="tp-note" style="margin-top:.5rem">SE tax (15.3%) applies automatically. Half is deducted above-the-line.</div>
+      </div>
+    </div>
+
+    <!-- Rental -->
+    <div class="card tp-card">
+      <div class="card-header"><div class="card-title">Rental Income — ${CURRENT_YEAR} YTD (from app data)</div></div>
+      <div class="card-body">
+        <table style="width:100%;font-size:.85rem;border-collapse:collapse;margin-bottom:1rem">
+          <thead>
+            <tr style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">
+              <th style="text-align:left;padding:.3rem .5rem">Property</th>
+              <th style="text-align:right;padding:.3rem .5rem">Income</th>
+              <th style="text-align:right;padding:.3rem .5rem">Expenses</th>
+              <th style="text-align:right;padding:.3rem .5rem">Net</th>
+              <th style="text-align:right;padding:.3rem .5rem">Auto Depr</th>
+            </tr>
+          </thead>
+          <tbody>${rentalTableRows}</tbody>
+        </table>
+        <div class="form-group" style="max-width:240px">
+          <label class="tp-lbl">Total Depreciation Deduction ($)</label>
+          <input type="number" id="tp-rental-depr" step="0.01" min="0"
+                 value="${tp.rental_depr !== undefined ? tp.rental_depr : autoDepr}" oninput="tpChanged()">
+          <div class="tp-note">Auto-filled from depreciation schedules. Adjust if needed.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Interest & Dividends -->
+    <div class="card tp-card">
+      <div class="card-header"><div class="card-title">Interest, Dividends &amp; Other Income</div></div>
+      <div class="card-body">
+        <div class="tp-grid-3">
+          ${tpFld('tp-treasury-int','Treasury Bond Interest',tp.treasury_int)}
+          ${tpFld('tp-rh-div','RH Dividends',tp.rh_div)}
+          ${tpFld('tp-rh-int','RH Interest',tp.rh_int)}
+          ${tpFld('tp-ibkr-int','IBKR Interest',tp.ibkr_int)}
+          ${tpFld('tp-ally-int','Ally Interest',tp.ally_int)}
+          ${tpFld('tp-vio-int','Vio MMS Interest',tp.vio_int)}
+          ${tpFld('tp-crypto-income','Crypto Income',tp.crypto_income)}
+        </div>
+      </div>
+    </div>
+
+    <!-- Capital Gains -->
+    <div class="card tp-card">
+      <div class="card-header"><div class="card-title">Capital Gains</div></div>
+      <div class="card-body">
+        <div class="tp-group">Short-Term — taxed as ordinary income</div>
+        <div class="tp-grid-3" style="margin-bottom:.75rem">
+          ${tpFld('tp-crypto-st','Crypto ST Gains',tp.crypto_st)}
+          ${tpFld('tp-rh-st','RH Stock ST Gains',tp.rh_st)}
+          ${tpFld('tp-ibkr-st','IBKR Stock ST Gains',tp.ibkr_st)}
+        </div>
+        <div class="tp-group">Long-Term — preferential rates (0% / 15% / 20%)</div>
+        <div class="tp-grid-3">
+          ${tpFld('tp-crypto-lt','Crypto LT Gains',tp.crypto_lt)}
+          ${tpFld('tp-rh-lt','RH Stock LT Gains',tp.rh_lt)}
+          ${tpFld('tp-ibkr-lt','IBKR Stock LT Gains',tp.ibkr_lt)}
+        </div>
+      </div>
+    </div>
+
+    <!-- Deductions -->
+    <div class="card tp-card">
+      <div class="card-header"><div class="card-title">Adjustments &amp; Deductions</div></div>
+      <div class="card-body">
+        <div class="tp-group">Above-the-Line Adjustments</div>
+        <div class="tp-grid-2" style="margin-bottom:.75rem">
+          ${tpFld('tp-ira','Traditional IRA Contribution',tp.ira)}
+          <div class="form-group">
+            <label class="tp-lbl">½ SE Tax (auto-calculated)</label>
+            <input type="number" id="tp-half-se" disabled style="background:var(--bg);cursor:not-allowed" value="0">
+          </div>
+        </div>
+        <div class="tp-group">Standard Deduction (2025 MFJ default: $30,000)</div>
+        <div class="tp-grid-2" style="margin-bottom:.75rem">
+          <div class="form-group">
+            <label class="tp-lbl">Amount ($)</label>
+            <input type="number" id="tp-std-ded" step="1" min="0"
+                   value="${tp.std_ded || TP_STD_DEDUCTION}" oninput="tpChanged()">
+          </div>
+        </div>
+        <div class="tp-group">QBI Deduction</div>
+        <label style="display:flex;align-items:center;gap:.5rem;font-size:.875rem;cursor:pointer">
+          <input type="checkbox" id="tp-use-qbi" ${tp.use_qbi!==false?'checked':''} onchange="tpChanged()">
+          Apply 20% Qualified Business Income deduction on FMG + ESAI net income (verify eligibility with your tax advisor)
+        </label>
+      </div>
+    </div>
+
+    <!-- Estimated Payments -->
+    <div class="card tp-card">
+      <div class="card-header">
+        <div class="card-title">Estimated Tax Payments Made</div>
+        <button class="btn btn-primary btn-sm" onclick="tpAddPayment()">+ Add Payment</button>
+      </div>
+      <div class="card-body">
+        <div id="tp-payments">${tpBuildPayments(tp.estimated_payments)}</div>
+      </div>
+    </div>
+
+    <!-- State Tax -->
+    <div class="card">
+      <div class="card-header"><div class="card-title">State Income Tax</div></div>
+      <div class="card-body">
+        <div class="tp-grid-2">
+          <div class="form-group">
+            <label class="tp-lbl">State Tax Rate (%)</label>
+            <input type="number" id="tp-state-rate" step="0.001" min="0" max="20" placeholder="e.g. 5.75"
+                   value="${tp.state_rate||''}" oninput="tpChanged()">
+          </div>
+          <div class="form-group">
+            <label class="tp-lbl">State Standard Deduction ($)</label>
+            <input type="number" id="tp-state-ded" step="1" min="0" placeholder="0"
+                   value="${tp.state_ded||''}" oninput="tpChanged()">
+          </div>
+        </div>
+        <div class="tp-note" style="margin-top:.5rem">State withholding is pulled from Navy Retirement and Wife's Job fields above.</div>
+      </div>
+    </div>
+
+  </div><!-- end inputs col -->
+
+  <!-- ── Right Column: Results ── -->
+  <div class="tp-sticky">
+    <div class="card" id="tp-results"></div>
+  </div>
+
+  </div><!-- end tp-layout -->`;
+
+  tpUpdateResults();
+}
+
+function tpReadForm() {
+  const tp = tpLoad(); // get existing (preserves estimated_payments)
+  const g = id => { const el = document.getElementById(id); return el && el.value !== '' ? parseFloat(el.value) || 0 : 0; };
+  const gc = id => { const el = document.getElementById(id); return el ? el.checked : true; };
+  tp.navy_gross = g('tp-navy-gross'); tp.navy_fed = g('tp-navy-fed'); tp.navy_state = g('tp-navy-state');
+  tp.wife_gross = g('tp-wife-gross'); tp.wife_fed = g('tp-wife-fed'); tp.wife_state = g('tp-wife-state');
+  tp.fmg = g('tp-fmg'); tp.esai = g('tp-esai');
+  tp.treasury_int = g('tp-treasury-int'); tp.rh_div = g('tp-rh-div'); tp.rh_int = g('tp-rh-int');
+  tp.ibkr_int = g('tp-ibkr-int'); tp.ally_int = g('tp-ally-int'); tp.vio_int = g('tp-vio-int');
+  tp.crypto_income = g('tp-crypto-income');
+  tp.crypto_st = g('tp-crypto-st'); tp.rh_st = g('tp-rh-st'); tp.ibkr_st = g('tp-ibkr-st');
+  tp.crypto_lt = g('tp-crypto-lt'); tp.rh_lt = g('tp-rh-lt'); tp.ibkr_lt = g('tp-ibkr-lt');
+  tp.ira = g('tp-ira'); tp.std_ded = g('tp-std-ded') || TP_STD_DEDUCTION;
+  tp.rental_depr = g('tp-rental-depr');
+  tp.use_qbi = gc('tp-use-qbi');
+  tp.state_rate = g('tp-state-rate'); tp.state_ded = g('tp-state-ded');
+  return tp;
+}
+
+function tpChanged() {
+  const tp = tpReadForm();
+  tpSave(tp);
+  tpUpdateResults(tp);
+}
+
+function tpUpdateResults(tp) {
+  if (!tp) tp = tpReadForm();
+  const r = tpCalc(tp, window._tpRentalRows || []);
+
+  const hse = document.getElementById('tp-half-se');
+  if (hse) hse.value = r.halfSeTax.toFixed(2);
+
+  const el = document.getElementById('tp-results');
+  if (!el) return;
+
+  const row = (lbl, amt, cls = '', deduct = false) => {
+    if (Math.abs(amt) < 0.005) return '';
+    const disp = deduct ? `(${fmt(amt)})` : fmt(amt);
+    return `<div class="tp-row ${cls}"><span>${escHtml(lbl)}</span><span>${disp}</span></div>`;
+  };
+  const sec = lbl => `<div class="tp-row sec">${escHtml(lbl)}</div>`;
+
+  const fedPos = r.fedOwed > 0.005;
+  const statePos = r.stateOwed > 0.005;
+  const hasState = tpN(tp.state_rate) > 0;
+
+  el.innerHTML = `
+    <div class="card-header"><div class="card-title">${CURRENT_YEAR} Estimate — MFJ</div></div>
+    <div class="card-body" style="padding:0 1.25rem">
+      ${sec('Gross Income')}
+      ${row('W-2 & Retirement', r.wages, 'in')}
+      ${row('Business (FMG + ESAI)', r.businessInc, 'in')}
+      ${r.rentalNet !== 0 ? row('Rental Net', r.rentalNet, 'in') : ''}
+      ${r.rentalDepr > 0 ? row('Less Depreciation', r.rentalDepr, 'in', true) : ''}
+      ${row('Interest & Dividends', r.interest + r.dividends + r.cryptoInc, 'in')}
+      ${r.stGains !== 0 ? row('ST Capital Gains', r.stGains, 'in') : ''}
+      ${r.ltGains !== 0 ? row('LT Capital Gains', r.ltGains, 'in') : ''}
+      ${row('Gross Income', r.grossIncome, 'sub')}
+
+      ${sec('Adjustments')}
+      ${r.iraAdj > 0 ? row('Traditional IRA', r.iraAdj, 'in', true) : ''}
+      ${r.halfSeTax > 0 ? row('½ Self-Employment Tax', r.halfSeTax, 'in', true) : ''}
+      ${row('AGI', r.agi, 'sub')}
+
+      ${sec('Deductions')}
+      ${row('Standard Deduction', r.stdDed, 'in', true)}
+      ${r.qbiDed > 0 ? row('QBI Deduction (20%)', r.qbiDed, 'in', true) : ''}
+      ${row('Taxable Income', r.taxInc, 'sub')}
+
+      ${sec('Federal Tax')}
+      ${row('Tax on Ordinary Income', r.ordTax, 'in')}
+      ${r.ltcgTaxable > 0 ? row('Tax on LT Capital Gains', r.ltcgTax, 'in') : ''}
+      ${r.seTax > 0 ? row('Self-Employment Tax', r.seTax, 'in') : ''}
+      ${r.niit > 0 ? row('Net Investment Income Tax (3.8%)', r.niit, 'in') : ''}
+      ${row('Gross Federal Tax', r.grossFedTax, 'sub')}
+      ${r.ctc > 0 ? row('Child Tax Credit (2 children)', r.ctc, 'in', true) : ''}
+      ${row('Net Federal Tax', r.netFedTax, 'sub')}
+
+      ${sec('Payments Made')}
+      ${r.fedWithheld > 0 ? row('Federal Withholding', r.fedWithheld, 'in', true) : ''}
+      ${r.estPmts > 0 ? row('Estimated Payments', r.estPmts, 'in', true) : ''}
+      ${row('Total Payments', r.totFedPaid, 'sub', true)}
+
+      <div class="tp-row ${fedPos ? 'owed' : 'refund'}">
+        <span>${fedPos ? 'Amount Owed — Federal' : 'Refund — Federal'}</span>
+        <span>${fmt(Math.abs(r.fedOwed))}</span>
+      </div>
+
+      ${hasState ? `
+        ${sec('State Tax')}
+        ${row('State Tax', r.stateTax, 'in')}
+        ${r.stateWithheld > 0 ? row('State Withholding', r.stateWithheld, 'in', true) : ''}
+        <div class="tp-row ${statePos ? 'owed' : 'refund'}">
+          <span>${statePos ? 'Amount Owed — State' : 'Refund — State'}</span>
+          <span>${fmt(Math.abs(r.stateOwed))}</span>
+        </div>
+      ` : '<div class="tp-row in" style="padding:.5rem 0">Enter state tax rate for state estimate</div>'}
+    </div>`;
+}
+
+async function tpFetchFMG() {
+  const pw = document.getElementById('tp-fmg-pw')?.value;
+  const msg = document.getElementById('tp-fmg-msg');
+  if (!pw) { msg.textContent = 'Enter admin password first.'; return; }
+  msg.textContent = 'Fetching…';
+  try {
+    const res = await fetch(`${FMG_API}/api/tax/transactions?year=${CURRENT_YEAR}&type=all&limit=5000`,
+      { headers: { 'X-Admin-Password': pw } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const cents = (data.income || []).reduce((s, r) => s + Number(r.amount_cents || 0), 0);
+    const dollars = cents / 100;
+    document.getElementById('tp-fmg').value = dollars.toFixed(2);
+    TP_SESSION.fmg_pw = pw;
+    msg.textContent = `Fetched: ${fmt(dollars)} ${CURRENT_YEAR} YTD`;
+    tpChanged();
+  } catch (e) { msg.textContent = `Failed: ${e.message}`; }
+}
+
+async function tpFetchESAI() {
+  const pw = document.getElementById('tp-esai-pw')?.value;
+  const msg = document.getElementById('tp-esai-msg');
+  if (!pw) { msg.textContent = 'Enter admin password first.'; return; }
+  msg.textContent = 'Fetching…';
+  try {
+    const res = await fetch(`${ESAI_API}/api/tax/transactions?year=${CURRENT_YEAR}&type=all&limit=5000`,
+      { headers: { 'X-Admin-Password': pw } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const cents = (data.income || []).reduce((s, r) => s + Number(r.amount_cents || 0), 0);
+    const dollars = cents / 100;
+    document.getElementById('tp-esai').value = dollars.toFixed(2);
+    TP_SESSION.esai_pw = pw;
+    msg.textContent = `Fetched: ${fmt(dollars)} ${CURRENT_YEAR} YTD`;
+    tpChanged();
+  } catch (e) { msg.textContent = `Failed: ${e.message}`; }
+}
+
+function tpAddPayment() {
+  const tp = tpReadForm();
+  if (!tp.estimated_payments) tp.estimated_payments = [];
+  tp.estimated_payments.push({ date: new Date().toISOString().slice(0,10), amount: 0 });
+  tpSave(tp);
+  document.getElementById('tp-payments').innerHTML = tpBuildPayments(tp.estimated_payments);
+  tpUpdateResults(tp);
+}
+
+function tpRemovePayment(i) {
+  const tp = tpReadForm();
+  (tp.estimated_payments || []).splice(i, 1);
+  tpSave(tp);
+  document.getElementById('tp-payments').innerHTML = tpBuildPayments(tp.estimated_payments);
+  tpUpdateResults(tp);
+}
+
+function tpPayDate(i, val) {
+  const tp = tpReadForm();
+  if (tp.estimated_payments?.[i]) { tp.estimated_payments[i].date = val; tpSave(tp); tpUpdateResults(tp); }
+}
+
+function tpPayAmt(i, val) {
+  const tp = tpReadForm();
+  if (tp.estimated_payments?.[i]) { tp.estimated_payments[i].amount = parseFloat(val) || 0; tpSave(tp); tpUpdateResults(tp); }
+}
+
 // ── Security Helpers ──────────────────────────────────────────────────────────
 
 function escHtml(str) {
@@ -2187,6 +2771,13 @@ window.saveEditTransaction     = saveEditTransaction;
 window.closeEditModal          = closeEditModal;
 window.toggleTheme             = toggleTheme;
 window.postNormalMonth         = postNormalMonth;
+window.tpChanged               = tpChanged;
+window.tpFetchFMG              = tpFetchFMG;
+window.tpFetchESAI             = tpFetchESAI;
+window.tpAddPayment            = tpAddPayment;
+window.tpRemovePayment         = tpRemovePayment;
+window.tpPayDate               = tpPayDate;
+window.tpPayAmt                = tpPayAmt;
 
 // Close modals on Escape
 document.addEventListener('keydown', e => {
