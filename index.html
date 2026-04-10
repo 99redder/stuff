@@ -735,6 +735,12 @@ const CATEGORIES = {
   ]
 };
 
+// Historical-only expense categories (paid-off properties; not available in Add Entry)
+const HIST_ONLY_EXPENSES = [
+  { code: 'mortgage_interest', name: 'Mortgage Interest' },
+  { code: 'pmi',               name: 'PMI' },
+];
+
 const ALL_CATS = [...CATEGORIES.income, ...CATEGORIES.expense];
 const CAT_MAP  = Object.fromEntries(ALL_CATS.map(c => [c.code, c.name]));
 const CAT_TYPE = Object.fromEntries([
@@ -1304,25 +1310,28 @@ async function renderHistorical() {
   const years = Object.keys(summaries).sort((a, b) => b - a);
 
   // Build column list: only show cats that have any non-zero data
-  const incomeCats  = CATEGORIES.income.filter(c  => years.some(y => (summaries[y][c.code] || 0) !== 0));
-  const expenseCats = CATEGORIES.expense.filter(c => years.some(y => (summaries[y][c.code] || 0) !== 0));
+  const incomeCats     = CATEGORIES.income.filter(c  => years.some(y => (summaries[y][c.code] || 0) !== 0));
+  const expenseCats    = CATEGORIES.expense.filter(c => years.some(y => (summaries[y][c.code] || 0) !== 0));
+  const histOnlyCats   = HIST_ONLY_EXPENSES.filter(c => years.some(y => (summaries[y][c.code] || 0) !== 0));
   // Show at least the main ones if empty
-  const showIncome  = incomeCats.length  ? incomeCats  : CATEGORIES.income.slice(0, 2);
-  const showExpense = expenseCats.length ? expenseCats : CATEGORIES.expense.slice(0, 4);
-  const allShow     = [...showIncome, ...showExpense];
+  const showIncome     = incomeCats.length  ? incomeCats  : CATEGORIES.income.slice(0, 2);
+  const showExpense    = expenseCats.length ? expenseCats : CATEGORIES.expense.slice(0, 4);
+  const allExpenseShow = [...showExpense, ...histOnlyCats];
+  const allShow        = [...showIncome, ...allExpenseShow];
 
   const headerCols = allShow.map(c => `<th class="text-right">${escHtml(c.name)}</th>`).join('');
   const totalIncomeIdx = showIncome.length;
 
   const yearRows = years.map(y => {
     const d = summaries[y];
-    const inc = showIncome.reduce((s, c)  => s + (d[c.code] || 0), 0);
-    const exp = showExpense.reduce((s, c) => s + (d[c.code] || 0), 0);
+    const inc = showIncome.reduce((s, c)    => s + (d[c.code] || 0), 0);
+    const exp = allExpenseShow.reduce((s, c) => s + (d[c.code] || 0), 0);
     const net = inc - exp;
     const netClass = net > 0 ? 'amount-income' : net < 0 ? 'amount-expense' : '';
     const cols = allShow.map(c => {
       const v = d[c.code] || 0;
-      return `<td class="text-right ${v === 0 ? '' : CAT_TYPE[c.code] === 'income' ? 'amount-income' : 'amount-expense'}">${v === 0 ? '—' : fmtShort(v)}</td>`;
+      const isIncome = CAT_TYPE[c.code] === 'income';
+      return `<td class="text-right ${v === 0 ? '' : isIncome ? 'amount-income' : 'amount-expense'}">${v === 0 ? '—' : fmtShort(v)}</td>`;
     }).join('');
 
     return `
@@ -1409,6 +1418,13 @@ function buildYearFormGrid(year = '', data = {}) {
              value="${data[c.code] || ''}">
     </div>`).join('');
 
+  const histOnlyFields = HIST_ONLY_EXPENSES.map(c => `
+    <div class="form-group">
+      <label>${escHtml(c.name)}</label>
+      <input type="number" id="yf-${c.code}" step="0.01" min="0" placeholder="0"
+             value="${data[c.code] || ''}">
+    </div>`).join('');
+
   document.getElementById('year-form-grid').innerHTML = `
     <div class="form-group">
       <label>Year</label>
@@ -1418,6 +1434,8 @@ function buildYearFormGrid(year = '', data = {}) {
     ${incomeFields}
     <div class="section-label" style="grid-column:1/-1">Expenses</div>
     ${expenseFields}
+    <div class="section-label" style="grid-column:1/-1;color:var(--text-muted);font-style:italic">Historical Only</div>
+    ${histOnlyFields}
   `;
 }
 
@@ -1453,7 +1471,7 @@ async function saveYearForm() {
   }
 
   const data = {};
-  for (const c of ALL_CATS) {
+  for (const c of [...ALL_CATS, ...HIST_ONLY_EXPENSES]) {
     const el = document.getElementById(`yf-${c.code}`);
     data[c.code] = el && el.value !== '' ? parseFloat(el.value) || 0 : 0;
   }

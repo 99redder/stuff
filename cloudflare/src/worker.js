@@ -7,7 +7,8 @@ const VALID_PROPERTIES = ['6AL', '95EB', '446BB'];
 const VALID_CATEGORIES = [
   'rent', 'deposit', 'late_fee', 'other_income',
   'taxes', 'insurance', 'repairs', 'improvements', 'utilities',
-  'hoa', 'management', 'auto', 'legal', 'marketing', 'other_expense'
+  'hoa', 'management', 'auto', 'legal', 'marketing', 'other_expense',
+  'mortgage_interest', 'pmi'  // historical summaries only
 ];
 
 const CORS_HEADERS = {
