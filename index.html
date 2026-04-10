@@ -813,7 +813,7 @@ const TP_LTCG_MFJ = [
 const TP_SE_SS_BASE = 176100;      // 2025 SS wage base
 const TP_NIIT_THRESHOLD = 250000;  // MFJ NIIT threshold
 const TP_STD_DEDUCTION = 30000;    // 2025 MFJ standard deduction
-const TP_IRA_LIMIT = 7000;
+const TP_IRA_LIMIT = 15000; // MFJ: 2 spouses × $7,500 each (2026 limit)
 const TP_CTC_PER_CHILD = 2000;
 const TP_CTC_PHASEOUT = 400000;    // MFJ phase-out start
 
@@ -843,10 +843,12 @@ const MD_COUNTY_RATES = {
 };
 
 function calcMarylandTax(tp, agi) {
-  const county = tp.md_county || '';
+  const county = tp.md_county || 'Wicomico';
   const countyRate = MD_COUNTY_RATES[county] || 0;
-  // Navy retirement is 100% exempt from Maryland income tax (fully phased in as of 2024)
-  const navyExempt = tpN(tp.navy_gross);
+  // MD military retirement exemption: $12,500 (under 55) or $20,000 (age 55+)
+  // per MD Form 502SU code "u" — NOT 100% exempt
+  const exemptCap = tp.navy_age_55 ? 20000 : 12500;
+  const navyExempt = Math.min(tpN(tp.navy_gross), exemptCap);
   const mdAgi = Math.max(0, agi - navyExempt);
   // Standard deduction: 15% of MD AGI, clamped to min/max
   const mdStdDed = Math.min(MD_STD_DED_MAX, Math.max(MD_STD_DED_MIN, mdAgi * 0.15));
@@ -864,7 +866,7 @@ function calcMarylandTax(tp, agi) {
   const totalTax   = stateTax + countyTax;
   const withheld   = tpN(tp.navy_state) + tpN(tp.wife_state);
   const owed       = totalTax - withheld;
-  return { county, countyRate, navyExempt, mdAgi, mdStdDed, mdExemptAmt, mdTaxInc, stateTax, countyTax, totalTax, withheld, owed };
+  return { county, countyRate, exemptCap, navyExempt, mdAgi, mdStdDed, mdExemptAmt, mdTaxInc, stateTax, countyTax, totalTax, withheld, owed };
 }
 
 const FMG_API = 'https://florencemaegifts.com';
@@ -2230,7 +2232,7 @@ function tpCalcLTCGTax(ordinaryStack, ltcg) {
 
 function tpCalc(tp, rentalRows) {
   const wages        = tpN(tp.navy_gross) + tpN(tp.wife_gross);
-  const businessInc  = tpN(tp.fmg) + tpN(tp.esai);
+  const businessInc  = tpN(tp.fmg_sp) + tpN(tp.fmg) + tpN(tp.esai);
   const rentalNet    = (rentalRows || []).reduce((s, p) => s + p.net, 0);
   const rentalDepr   = tpN(tp.rental_depr);
   const rentalTaxInc = rentalNet - rentalDepr;
@@ -2313,6 +2315,7 @@ function tpToggleLock(who) {
   const ids = who === 'navy' ? ['tp-navy-gross','tp-navy-fed','tp-navy-state']
     : who === 'wife' ? ['tp-wife-gross','tp-wife-fed','tp-wife-state']
     : who === 'treasury' ? ['tp-treasury-int']
+    : who === 'fmg_sp' ? ['tp-fmg-sp']
     : ['tp-ira'];
 
   const locked = tp[key];
@@ -2357,6 +2360,11 @@ async function renderTaxPlanning() {
   const tp = await tpLoadFromAPI();
   const autoDepr = rentalRows.reduce((s, p) => s + p.deprAmt, 0);
   if (tp.rental_depr === undefined) tp.rental_depr = autoDepr;
+  // Seed FMG SP defaults for first load
+  if (tp.fmg_sp === undefined) tp.fmg_sp = 747;
+  if (tp.fmg_sp_locked === undefined) tp.fmg_sp_locked = true;
+  // Default county to Wicomico
+  if (!tp.md_county) tp.md_county = 'Wicomico';
 
   const rentalTableRows = rentalRows.map(p => `
     <tr>
@@ -2413,9 +2421,19 @@ async function renderTaxPlanning() {
     <div class="card tp-card">
       <div class="card-header"><div class="card-title">Business Income (Self-Employment)</div></div>
       <div class="card-body">
-        <div class="tp-group">Florence Mae Gifts</div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div class="tp-group" style="flex:1;margin-bottom:0">FMG — Sole Proprietorship (pre-LLC period)</div>
+          <button class="btn btn-ghost btn-sm" style="margin-left:.5rem;font-size:.8rem" onclick="tpToggleLock('fmg_sp')" id="tp-fmg-sp-lock-btn">
+            ${tp.fmg_sp_locked ? '🔒 Locked' : '🔓 Lock'}
+          </button>
+        </div>
+        <div style="margin-top:.5rem;margin-bottom:.75rem">
+          ${tpFld('tp-fmg-sp','Net Profit ($)',tp.fmg_sp ?? 747,tp.fmg_sp_locked)}
+        </div>
+
+        <div class="tp-group">FMG — LLC (fetched from repo)</div>
         <div class="tp-fetch-row" style="margin-bottom:.25rem">
-          ${tpFld('tp-fmg','Income ($)',tp.fmg)}
+          ${tpFld('tp-fmg','Net Income ($)',tp.fmg)}
           <div class="form-group">
             <label class="tp-lbl">Admin Password</label>
             <input type="password" id="tp-fmg-pw" placeholder="••••••••" autocomplete="off"
@@ -2559,20 +2577,29 @@ async function renderTaxPlanning() {
     <div class="card">
       <div class="card-header"><div class="card-title">Maryland State &amp; Local Income Tax (2025)</div></div>
       <div class="card-body">
-        <div class="form-group" style="max-width:260px">
-          <label class="tp-lbl">County</label>
-          <select id="tp-md-county" onchange="tpChanged()">
-            <option value="">— Select county —</option>
-            ${Object.keys(MD_COUNTY_RATES).map(c =>
-              `<option value="${escAttr(c)}" ${tp.md_county===c?'selected':''}>${escHtml(c)}</option>`
-            ).join('')}
-          </select>
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.75rem">
+          <div class="form-group" style="margin-bottom:0">
+            <label class="tp-lbl">County</label>
+            <select id="tp-md-county" onchange="tpChanged()">
+              ${Object.keys(MD_COUNTY_RATES).map(c => {
+                const sel = (tp.md_county || 'Wicomico') === c ? 'selected' : '';
+                return `<option value="${escAttr(c)}" ${sel}>${escHtml(c)}</option>`;
+              }).join('')}
+            </select>
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="tp-lbl">Retiree Age Bracket</label>
+            <label style="display:flex;align-items:center;gap:.4rem;font-size:.875rem;cursor:pointer;margin-top:.4rem">
+              <input type="checkbox" id="tp-navy-age-55" ${tp.navy_age_55 ? 'checked' : ''} onchange="tpChanged()">
+              Age 55 or older (exemption cap $20,000 vs $12,500)
+            </label>
+          </div>
         </div>
-        <div class="tp-note" style="margin-top:.75rem">
-          ✓ Navy retirement income is <strong>100% exempt</strong> from Maryland income tax (fully phased in 2024+).<br>
+        <div class="tp-note">
+          ✓ Navy retirement exemption: <strong>$12,500</strong> (under 55) or <strong>$20,000</strong> (age 55+) per MD Form 502SU code "u".<br>
           ✓ Standard deduction: 15% of MD AGI (min $3,100 / max $4,700, MFJ).<br>
           ✓ Personal exemptions: 4 × $3,200 = $12,800 (MFJ + 2 dependents).<br>
-          ✓ State withholding pulled from W-2 &amp; Retirement section above.
+          ✓ County locked to Wicomico (3.20%). State withholding from W-2 &amp; Retirement section above.
         </div>
       </div>
     </div>
@@ -2594,7 +2621,10 @@ function tpReadForm() {
   const g = id => { const el = document.getElementById(id); return el && el.value !== '' ? parseFloat(el.value) || 0 : 0; };
   const gc = id => { const el = document.getElementById(id); return el ? el.checked : true; };
   if (!tp.navy_locked) { tp.navy_gross = g('tp-navy-gross'); tp.navy_fed = g('tp-navy-fed'); tp.navy_state = g('tp-navy-state'); }
+  const ageEl = document.getElementById('tp-navy-age-55');
+  if (ageEl) tp.navy_age_55 = ageEl.checked;
   if (!tp.wife_locked) { tp.wife_gross = g('tp-wife-gross'); tp.wife_fed = g('tp-wife-fed'); tp.wife_state = g('tp-wife-state'); }
+  if (!tp.fmg_sp_locked) tp.fmg_sp = g('tp-fmg-sp');
   tp.fmg = g('tp-fmg'); tp.esai = g('tp-esai');
   if (!tp.treasury_locked) tp.treasury_int = g('tp-treasury-int');
   tp.rh_div = g('tp-rh-div'); tp.rh_int = g('tp-rh-int');
@@ -2607,7 +2637,7 @@ function tpReadForm() {
   tp.rental_depr = g('tp-rental-depr');
   tp.use_qbi = gc('tp-use-qbi');
   const countyEl = document.getElementById('tp-md-county');
-  if (countyEl) tp.md_county = countyEl.value;
+  if (countyEl) tp.md_county = countyEl.value || 'Wicomico';
   return tp;
 }
 
@@ -2636,14 +2666,13 @@ function tpUpdateResults(tp) {
 
   const fedPos = r.fedOwed > 0.005;
   const md = r.md;
-  const hasCounty = !!md.county;
 
   el.innerHTML = `
     <div class="card-header"><div class="card-title">${CURRENT_YEAR} Estimate — MFJ</div></div>
     <div class="card-body" style="padding:0 1.25rem">
       ${sec('Gross Income')}
       ${row('W-2 & Retirement', r.wages, 'in')}
-      ${row('Business (FMG + ESAI)', r.businessInc, 'in')}
+      ${r.businessInc > 0 ? row('Business Income (FMG + ESAI)', r.businessInc, 'in') : ''}
       ${r.rentalNet !== 0 ? row('Rental Net', r.rentalNet, 'in') : ''}
       ${r.rentalDepr > 0 ? row('Less Depreciation', r.rentalDepr, 'in', true) : ''}
       ${row('Interest & Dividends', r.interest + r.dividends + r.cryptoInc, 'in')}
@@ -2680,22 +2709,20 @@ function tpUpdateResults(tp) {
         <span>${fmt(Math.abs(r.fedOwed))}</span>
       </div>
 
-      ${hasCounty ? `
-        ${sec('Maryland State & Local Tax')}
-        ${md.navyExempt > 0 ? row('Less Navy Retirement (exempt)', md.navyExempt, 'in', true) : ''}
-        ${row('Maryland AGI', md.mdAgi, 'in')}
-        ${row('MD Standard Deduction', md.mdStdDed, 'in', true)}
-        ${row('Personal Exemptions (4×$3,200)', md.mdExemptAmt, 'in', true)}
-        ${row('MD Taxable Income', md.mdTaxInc, 'sub')}
-        ${row('State Tax', md.stateTax, 'in')}
-        ${row(md.county + ' County (' + (md.countyRate*100).toFixed(2) + '%)', md.countyTax, 'in')}
-        ${row('Total MD Tax', md.totalTax, 'sub')}
-        ${md.withheld > 0 ? row('State Withholding', md.withheld, 'in', true) : ''}
-        <div class="tp-row ${md.owed > 0.005 ? 'owed' : 'refund'}">
-          <span>${md.owed > 0.005 ? 'Amount Owed — Maryland' : 'Refund — Maryland'}</span>
-          <span>${fmt(Math.abs(md.owed))}</span>
-        </div>
-      ` : '<div class="tp-row in" style="padding:.5rem 0">Select a county for Maryland tax estimate</div>'}
+      ${sec('Maryland State & Local Tax')}
+      ${md.navyExempt > 0 ? row(`Less Navy Retirement (exempt, cap $${md.exemptCap.toLocaleString()})`, md.navyExempt, 'in', true) : ''}
+      ${row('Maryland AGI', md.mdAgi, 'in')}
+      ${row('MD Standard Deduction', md.mdStdDed, 'in', true)}
+      ${row('Personal Exemptions (4×$3,200)', md.mdExemptAmt, 'in', true)}
+      ${row('MD Taxable Income', md.mdTaxInc, 'sub')}
+      ${row('State Tax', md.stateTax, 'in')}
+      ${row(md.county + ' County (' + (md.countyRate*100).toFixed(2) + '%)', md.countyTax, 'in')}
+      ${row('Total MD Tax', md.totalTax, 'sub')}
+      ${md.withheld > 0 ? row('State Withholding', md.withheld, 'in', true) : ''}
+      <div class="tp-row ${md.owed > 0.005 ? 'owed' : 'refund'}">
+        <span>${md.owed > 0.005 ? 'Amount Owed — Maryland' : 'Refund — Maryland'}</span>
+        <span>${fmt(Math.abs(md.owed))}</span>
+      </div>
     </div>`;
 }
 
