@@ -1488,9 +1488,13 @@ async function renderHistorical() {
       return `<td class="text-right ${v === 0 ? '' : isIncome ? 'amount-income' : 'amount-expense'}">${v === 0 ? '—' : fmtShort(v)}</td>`;
     }).join('');
 
+    const prBadge = d.primary_residence
+      ? `<span style="font-size:.65rem;font-weight:700;background:var(--text-muted);color:var(--bg);border-radius:3px;padding:.1rem .3rem;margin-left:.4rem;vertical-align:middle">PRIMARY RES.</span>`
+      : '';
+
     return `
       <tr>
-        <td class="year-cell">${y}</td>
+        <td class="year-cell">${y}${prBadge}</td>
         ${cols}
         <td class="text-right amount-income">${fmtShort(inc)}</td>
         <td class="text-right amount-expense">${fmtShort(exp)}</td>
@@ -1584,6 +1588,10 @@ function buildYearFormGrid(year = '', data = {}) {
       <label>Year</label>
       ${yearField}
     </div>
+    <div class="form-group" style="grid-column:1/-1;display:flex;align-items:center;gap:.5rem">
+      <input type="checkbox" id="yf-primary-residence" ${data.primary_residence ? 'checked' : ''}>
+      <label for="yf-primary-residence" style="margin:0;cursor:pointer;font-weight:600">Primary Residence — explains $0 rent for this year</label>
+    </div>
     <div class="section-label" style="grid-column:1/-1">Income</div>
     ${incomeFields}
     <div class="section-label" style="grid-column:1/-1">Expenses</div>
@@ -1629,6 +1637,8 @@ async function saveYearForm() {
     const el = document.getElementById(`yf-${c.code}`);
     data[c.code] = el && el.value !== '' ? parseFloat(el.value) || 0 : 0;
   }
+  const prEl = document.getElementById('yf-primary-residence');
+  if (prEl && prEl.checked) data.primary_residence = true;
 
   try {
     await callApi({ action: 'save_summary', property: prop, year, data });

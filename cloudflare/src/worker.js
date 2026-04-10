@@ -187,6 +187,8 @@ async function handleSaveSummary(env, property, year, data) {
     const val = data[code];
     sanitized[code] = (typeof val === 'number' && isFinite(val)) ? val : 0;
   }
+  // Preserve boolean flags
+  if (data.primary_residence === true) sanitized.primary_residence = true;
 
   const summaries = await env.RENTALS.get(`summaries:${property}`, 'json') || {};
   summaries[year] = sanitized;
