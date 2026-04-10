@@ -90,6 +90,9 @@
     }
 
     .app-title {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
       font-size: 1.1rem;
       font-weight: 700;
       color: var(--text);
@@ -98,6 +101,12 @@
     }
 
     .app-title span { color: var(--primary); }
+
+    .app-title .house-icon {
+      font-size: 1.2rem;
+      line-height: 1;
+      flex-shrink: 0;
+    }
 
     .property-tabs {
       display: flex;
@@ -621,7 +630,10 @@
 
 <header class="app-header">
   <div class="header-top">
-    <div class="app-title">Rental <span>Property Manager</span></div>
+    <div class="app-title">
+      <span class="house-icon">🏠</span>
+      Rental <span>Property Manager</span>
+    </div>
     <div class="property-tabs" id="property-tabs">
       <button class="prop-tab active" data-prop="6AL">6AL</button>
       <button class="prop-tab" data-prop="95EB">95EB</button>
