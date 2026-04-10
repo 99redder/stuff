@@ -1875,7 +1875,10 @@ function renderMaintenanceSection(prop) {
   const rows = entries.map(e => `
     <tr>
       <td style="white-space:nowrap;padding:.4rem .5rem">${fmtDate(e.date)}</td>
-      <td style="padding:.4rem .5rem">${escHtml(e.description)}</td>
+      <td style="padding:.4rem .5rem">
+        ${escHtml(e.description)}
+        ${e.notes ? `<div style="font-size:.8rem;color:var(--text-muted);margin-top:.2rem">${escHtml(e.notes)}</div>` : ''}
+      </td>
       <td class="text-right" style="white-space:nowrap;padding:.4rem .5rem">${e.cost > 0 ? fmt(e.cost) : '—'}</td>
       <td style="padding:.4rem .5rem;color:var(--text-muted);font-size:.85rem">${escHtml(e.performedBy)}</td>
       <td class="text-right no-print" style="padding:.4rem .5rem;white-space:nowrap">
@@ -1939,6 +1942,11 @@ function renderMaintenanceSection(prop) {
             <label>Performed By</label>
             <input type="text" id="mf-performed-by" placeholder="Contractor or DIY">
           </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label>Notes</label>
+            <textarea id="mf-notes" rows="2" placeholder="Optional — warranty info, paint colors, part numbers, etc."
+                      style="resize:vertical;font-family:inherit;font-size:.875rem;padding:.4rem .6rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);width:100%;box-sizing:border-box"></textarea>
+          </div>
         </div>
         <div class="form-actions mt-2">
           <button class="btn btn-primary" id="maint-form-submit" onclick="saveMaintEntry()">Save Entry</button>
@@ -1974,6 +1982,7 @@ function editMaintEntry(id) {
   document.getElementById('mf-date').value = entry.date;
   document.getElementById('mf-cost').value = entry.cost || 0;
   document.getElementById('mf-performed-by').value = entry.performedBy || '';
+  document.getElementById('mf-notes').value = entry.notes || '';
   document.getElementById('maint-form-title').textContent = 'Edit Maintenance Entry';
   document.getElementById('maint-form-submit').textContent = 'Update Entry';
   openAddMaint();
@@ -1987,6 +1996,7 @@ async function saveMaintEntry() {
   const date = document.getElementById('mf-date').value;
   const cost = parseFloat(document.getElementById('mf-cost').value) || 0;
   const performedBy = document.getElementById('mf-performed-by').value.trim();
+  const notes = document.getElementById('mf-notes').value.trim();
   const errEl = document.getElementById('maint-form-error');
 
   if (!description) { errEl.textContent = 'Description is required.'; errEl.classList.remove('hidden'); return; }
@@ -1994,11 +2004,11 @@ async function saveMaintEntry() {
 
   try {
     if (editId) {
-      const result = await callApi({ action: 'update_maintenance_entry', property: prop, id: editId, entry: { date, description, cost, performedBy } });
+      const result = await callApi({ action: 'update_maintenance_entry', property: prop, id: editId, entry: { date, description, cost, performedBy, notes } });
       const idx = state.data[prop].maintenance.findIndex(e => e.id === editId);
       if (idx !== -1) state.data[prop].maintenance[idx] = result.entry;
     } else {
-      const result = await callApi({ action: 'add_maintenance_entry', property: prop, entry: { date, description, cost, performedBy } });
+      const result = await callApi({ action: 'add_maintenance_entry', property: prop, entry: { date, description, cost, performedBy, notes } });
       state.data[prop].maintenance.push(result.entry);
     }
     closeMaintForm();
