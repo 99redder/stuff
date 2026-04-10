@@ -635,6 +635,7 @@
   <div class="view-nav" id="view-nav">
     <button class="view-btn active" data-view="current-year">Current Year</button>
     <button class="view-btn" data-view="historical">Historical</button>
+    <button class="view-btn" data-view="maintenance">Maintenance</button>
     <button class="view-btn" data-view="tax-summary">Tax Summary</button>
     <button class="view-btn" data-view="add-entry">+ Add Entry</button>
     <button class="view-btn" data-view="portfolio">All Properties</button>
@@ -1209,8 +1210,9 @@ async function renderView() {
 
   try {
     switch (state.currentView) {
-      case 'current-year': await renderCurrentYear(); break;
+      case 'current-year': await renderCurrentYear();  break;
       case 'historical':   await renderHistorical();   break;
+      case 'maintenance':  await renderMaintenance();  break;
       case 'tax-summary':  await renderTaxSummary();   break;
       case 'add-entry':    await renderAddEntry();      break;
       case 'portfolio':    await renderPortfolio();     break;
@@ -1651,7 +1653,6 @@ async function renderHistorical() {
   const prop = state.currentProperty;
   await ensureLoaded(prop, 'summaries');
   await ensureLoaded(prop, 'depreciation');
-  await ensureLoaded(prop, 'maintenance');
 
   const summaries = state.data[prop].summaries;
   const years = Object.keys(summaries).sort((a, b) => b - a);
@@ -1747,7 +1748,6 @@ async function renderHistorical() {
     </div>
 
     ${renderDepreciationSection(prop)}
-    ${renderMaintenanceSection(prop)}
   `;
 }
 
@@ -1859,6 +1859,12 @@ async function deleteYear(year) {
 }
 
 // ── View: Maintenance Log ─────────────────────────────────────────────────────
+
+async function renderMaintenance() {
+  const prop = state.currentProperty;
+  await ensureLoaded(prop, 'maintenance');
+  document.getElementById('app').innerHTML = renderMaintenanceSection(prop);
+}
 
 function renderMaintenanceSection(prop) {
   const entries = (state.data[prop].maintenance || []).slice().sort((a, b) => b.date.localeCompare(a.date));
