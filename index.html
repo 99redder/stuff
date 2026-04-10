@@ -2255,8 +2255,8 @@ function tpCalc(tp, rentalRows) {
   const stGains      = tpN(tp.crypto_st) + tpN(tp.rh_st) + tpN(tp.ibkr_st);
   const ltGains      = tpN(tp.crypto_lt) + tpN(tp.rh_lt) + tpN(tp.ibkr_lt);
 
-  // Self-employment tax
-  const netSe     = businessInc * 0.9235;
+  // Self-employment tax (only applies when net SE income is positive)
+  const netSe     = Math.max(0, businessInc) * 0.9235;
   const seTax     = Math.min(netSe, TP_SE_SS_BASE) * 0.124 + netSe * 0.029;
   const halfSeTax = seTax / 2;
 
@@ -2699,7 +2699,7 @@ function tpUpdateResults(tp) {
     <div class="card-body" style="padding:0 1.25rem">
       ${sec('Gross Income')}
       ${row('W-2 & Retirement', r.wages, 'in')}
-      ${r.businessInc > 0 ? row('Business Income (FMG + ESAI)', r.businessInc, 'in') : ''}
+      ${row('Business Income (FMG + ESAI)', r.businessInc, r.businessInc >= 0 ? 'in' : 'in amount-expense')}
       ${r.rentalNet !== 0 ? row('Rental Net', r.rentalNet, 'in') : ''}
       ${r.rentalDepr > 0 ? row('Less Depreciation', r.rentalDepr, 'in', true) : ''}
       ${row('Interest & Dividends', r.interest + r.dividends + r.cryptoInc, 'in')}
