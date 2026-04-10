@@ -2582,11 +2582,12 @@ async function tpFetchFMG() {
       { headers: { 'X-Admin-Password': pw } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    const cents = (data.income || []).reduce((s, r) => s + Number(r.amount_cents || 0), 0);
-    const dollars = cents / 100;
+    const incCents = (data.income || []).reduce((s, r) => s + Number(r.amount_cents || 0), 0);
+    const expCents = (data.expenses || []).reduce((s, r) => s + Number(r.amount_cents || 0), 0);
+    const dollars = (incCents - expCents) / 100;
     document.getElementById('tp-fmg').value = dollars.toFixed(2);
     TP_SESSION.fmg_pw = pw;
-    msg.textContent = `Fetched: ${fmt(dollars)} ${CURRENT_YEAR} YTD`;
+    msg.textContent = `Fetched: ${fmt(incCents/100)} income − ${fmt(expCents/100)} expenses = ${fmt(dollars)} net`;
     tpChanged();
   } catch (e) { msg.textContent = `Failed: ${e.message}`; }
 }
@@ -2601,11 +2602,12 @@ async function tpFetchESAI() {
       { headers: { 'X-Admin-Password': pw } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    const cents = (data.income || []).reduce((s, r) => s + Number(r.amount_cents || 0), 0);
-    const dollars = cents / 100;
+    const incCents = (data.income || []).reduce((s, r) => s + Number(r.amount_cents || 0), 0);
+    const expCents = (data.expenses || []).reduce((s, r) => s + Number(r.amount_cents || 0), 0);
+    const dollars = (incCents - expCents) / 100;
     document.getElementById('tp-esai').value = dollars.toFixed(2);
     TP_SESSION.esai_pw = pw;
-    msg.textContent = `Fetched: ${fmt(dollars)} ${CURRENT_YEAR} YTD`;
+    msg.textContent = `Fetched: ${fmt(incCents/100)} income − ${fmt(expCents/100)} expenses = ${fmt(dollars)} net`;
     tpChanged();
   } catch (e) { msg.textContent = `Failed: ${e.message}`; }
 }
