@@ -608,6 +608,7 @@
     .budget-item:last-child { border-bottom:none; }
     .budget-item-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .budget-item-amt { font-weight:600; white-space:nowrap; color:var(--text-muted); }
+    .budget-item-lock { flex-shrink:0; }
     .budget-item-actions { display:flex; gap:.2rem; flex-shrink:0; opacity:0; transition:opacity .15s; }
     .budget-item:hover .budget-item-actions { opacity:1; }
     .budget-edit-row { gap:.4rem; padding:.35rem 0; }
@@ -2976,10 +2977,16 @@ function _renderBudgetHtml() {
     }
     return `<div class="budget-item">
       <span class="budget-item-name">${escHtml(item.name)}</span>
-      <span class="budget-item-amt">${fmt(item.amount)}</span>
+      <span class="budget-item-amt">${fmt(item.amount)}/mo</span>
+      <span class="budget-item-lock">
+        <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem;font-size:.8rem;opacity:.6" title="${item.locked?'Unlock':'Lock'}"
+                onclick="budgetToggleLock('income','${item.id}')">${item.locked ? '🔒' : '🔓'}</button>
+      </span>
       <span class="budget-item-actions">
-        <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem" onclick="budgetEdit('income','${item.id}')">Edit</button>
-        <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem;color:var(--danger)" onclick="budgetDelete('income','${item.id}')">×</button>
+        ${!item.locked ? `
+          <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem" onclick="budgetEdit('income','${item.id}')">Edit</button>
+          <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem;color:var(--danger)" onclick="budgetDelete('income','${item.id}')">×</button>
+        ` : ''}
       </span>
     </div>`;
   }).join('');
@@ -3010,10 +3017,16 @@ function _renderBudgetHtml() {
       }
       return `<div class="budget-item">
         <span class="budget-item-name">${escHtml(item.name)}</span>
-        <span class="budget-item-amt">${fmt(item.amount)}</span>
+        <span class="budget-item-amt">${fmt(item.amount)}/mo</span>
+        <span class="budget-item-lock">
+          <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem;font-size:.8rem;opacity:.6" title="${item.locked?'Unlock':'Lock'}"
+                  onclick="budgetToggleLock('${escAttr(cat)}','${item.id}')">${item.locked ? '🔒' : '🔓'}</button>
+        </span>
         <span class="budget-item-actions">
-          <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem" onclick="budgetEdit('${escAttr(cat)}','${item.id}')">Edit</button>
-          <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem;color:var(--danger)" onclick="budgetDelete('${escAttr(cat)}','${item.id}')">×</button>
+          ${!item.locked ? `
+            <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem" onclick="budgetEdit('${escAttr(cat)}','${item.id}')">Edit</button>
+            <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem;color:var(--danger)" onclick="budgetDelete('${escAttr(cat)}','${item.id}')">×</button>
+          ` : ''}
         </span>
       </div>`;
     }).join('');
@@ -3079,7 +3092,19 @@ function budgetAdd(section) {
   setTimeout(() => document.getElementById('bedit-name')?.focus(), 50);
 }
 
+async function budgetToggleLock(section, id) {
+  const b = state.budget;
+  const list = section === 'income' ? b.income : (b.expenses[section] || []);
+  const item = list.find(i => i.id === id);
+  if (item) item.locked = !item.locked;
+  _renderBudgetHtml();
+  await _saveBudget();
+}
+
 function budgetEdit(section, id) {
+  const b = state.budget;
+  const list = section === 'income' ? b.income : (b.expenses[section] || []);
+  if (list.find(i => i.id === id)?.locked) return;
   _bEdit = { section, id };
   _renderBudgetHtml();
   setTimeout(() => document.getElementById('bedit-name')?.focus(), 50);
@@ -3103,7 +3128,7 @@ async function budgetSave(section, id) {
   } else {
     const list = section === 'income' ? b.income : (b.expenses[section] || []);
     const item = list.find(i => i.id === id);
-    if (item) { item.name = name; item.amount = amount; }
+    if (item) { item.name = name; item.amount = amount; /* locked preserved */ }
   }
 
   _bEdit = null;
