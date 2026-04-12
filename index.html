@@ -651,9 +651,10 @@
   </div>
   <div class="view-nav" id="view-nav">
     <button class="view-btn active" data-view="current-year">Current Year</button>
+    <button class="view-btn" data-view="tax-summary">Tax Summary</button>
+    <button class="view-btn" data-view="investment-return">Investment Return</button>
     <button class="view-btn" data-view="historical">Historical</button>
     <button class="view-btn" data-view="maintenance">Maintenance</button>
-    <button class="view-btn" data-view="tax-summary">Tax Summary</button>
     <button class="view-btn" data-view="add-entry">+ Add Entry</button>
     <button class="view-btn" data-view="portfolio">All Properties</button>
   </div>
@@ -1227,13 +1228,14 @@ async function renderView() {
 
   try {
     switch (state.currentView) {
-      case 'current-year': await renderCurrentYear();  break;
-      case 'historical':   await renderHistorical();   break;
-      case 'maintenance':  await renderMaintenance();  break;
-      case 'tax-summary':  await renderTaxSummary();   break;
-      case 'add-entry':    await renderAddEntry();      break;
-      case 'portfolio':    await renderPortfolio();     break;
-      case 'tax-planning': await renderTaxPlanning();   break;
+      case 'current-year':  await renderCurrentYear();  break;
+      case 'tax-summary':   await renderTaxSummary();   break;
+      case 'investment-return': await renderInvestmentReturn(); break;
+      case 'historical':    await renderHistorical();   break;
+      case 'maintenance':   await renderMaintenance();  break;
+      case 'add-entry':     await renderAddEntry();     break;
+      case 'portfolio':     await renderPortfolio();    break;
+      case 'tax-planning':  await renderTaxPlanning();  break;
     }
   } catch (e) {
     app.innerHTML = `<div class="error-msg">Failed to load: ${escHtml(e.message)}</div>`;
@@ -2145,6 +2147,123 @@ async function renderTaxSummary() {
           <span>Net Income</span>
           <span class="tax-amt ${netClass}">${net < 0 ? '−' : ''}${fmt(Math.abs(net))}</span>
         </div>
+      </div>
+    </div>
+  `;
+}
+
+// ── View: Investment Return ────────────────────────────────────────────────────
+
+async function renderInvestmentReturn() {
+  const prop = state.currentProperty;
+  await ensureLoaded(prop, 'transactions');
+  await ensureLoaded(prop, 'defaults');
+
+  const yearStr = String(CURRENT_YEAR);
+  const yearTxns = state.data[prop].transactions.filter(t => t.date.startsWith(yearStr));
+
+  // Get property defaults
+  const defaults = state.data[prop].defaults || {};
+  const purchasePrice = defaults.purchasePrice || 0;
+  const downPayment = defaults.downPayment || 0;
+
+  // Calculate YTD stats
+  let rent = 0, income = 0, expenses = 0;
+  for (const t of yearTxns) {
+    if (t.type === 'income') { income += t.amount; if (t.category === 'rent') rent += t.amount; }
+    else expenses += t.amount;
+  }
+  const netOperatingIncome = income - expenses;
+
+  // Calculate ROI metrics
+  const cashOnCashROI = downPayment > 0 ? (netOperatingIncome / downPayment) * 100 : 0;
+  const capRate = purchasePrice > 0 ? (netOperatingIncome / purchasePrice) * 100 : 0;
+
+  document.getElementById('app').innerHTML = `
+    <div class="card" style="max-width:720px">
+      <div class="card-header">
+        <div class="card-title">Investment Return — ${prop} — ${CURRENT_YEAR}</div>
+        <button class="btn btn-ghost btn-sm no-print" id="print-btn" onclick="window.print()">Print</button>
+      </div>
+      <div class="card-body">
+        <!-- Key Metrics Section -->
+        <div class="stats-row" style="margin-bottom:1.5rem">
+          <div class="stat-card">
+            <div class="stat-label">Net Operating Income</div>
+            <div class="stat-value income">${fmt(netOperatingIncome)}</div>
+            <div class="stat-sub">Income − Expenses</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Cash on Cash ROI</div>
+            <div class="stat-value ${cashOnCashROI >= 0 ? 'income' : 'expense'}">${cashOnCashROI.toFixed(2)}%</div>
+            <div class="stat-sub">Net Operating Income ÷ Down Payment</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Cap Rate</div>
+            <div class="stat-value ${capRate >= 0 ? 'income' : 'expense'}">${capRate.toFixed(2)}%</div>
+            <div class="stat-sub">Net Operating Income ÷ Purchase Price</div>
+          </div>
+        </div>
+
+        <!-- Financial Summary -->
+        <div class="card" style="margin-bottom:1rem">
+          <div class="card-header">
+            <div class="card-title">Year-to-Date Financial Summary</div>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table class="simple-table" style="width:100%;margin:0">
+              <tr>
+                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border)">Total Rent Received</td>
+                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border);text-align:right;color:var(--success)">${fmt(rent)}</td>
+              </tr>
+              <tr>
+                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border)">Other Income</td>
+                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border);text-align:right;color:var(--success)">${fmt(income - rent)}</td>
+              </tr>
+              <tr>
+                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border);font-weight:700">Total Income</td>
+                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border);text-align:right;color:var(--success);font-weight:700">${fmt(income)}</td>
+              </tr>
+              <tr>
+                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border)">Total Expenses</td>
+                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border);text-align:right;color:var(--danger)">${fmt(expenses)}</td>
+              </tr>
+              <tr>
+                <td style="padding:.5rem .75rem;font-weight:700">Net Operating Income</td>
+                <td style="padding:.5rem .75rem;text-align:right;color:${netOperatingIncome >= 0 ? 'var(--success)' : 'var(--danger)'};font-weight:700">${netOperatingIncome < 0 ? '−' : ''}${fmt(Math.abs(netOperatingIncome))}</td>
+              </tr>
+            </table>
+          </div>
+        </div>
+
+        <!-- Property Details -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Property Investment Details</div>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table class="simple-table" style="width:100%;margin:0">
+              <tr>
+                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border)">Purchase Price</td>
+                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border);text-align:right">${fmt(purchasePrice)}</td>
+              </tr>
+              <tr>
+                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border)">Down Payment</td>
+                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border);text-align:right">${fmt(downPayment)}</td>
+              </tr>
+              <tr>
+                <td style="padding:.5rem .75rem">Equity (Current)</td>
+                <td style="padding:.5rem .75rem;text-align:right">${fmt(purchasePrice - (defaults.loanBalance || 0))}</td>
+              </tr>
+            </table>
+          </div>
+        </div>
+
+        ${yearTxns.length === 0 ? `
+          <div class="card-body" style="color:var(--text-muted);font-size:0.875rem;text-align:center;margin-top:1rem">
+            No transactions recorded for ${CURRENT_YEAR}. Add entries to see investment metrics.
+          </div>
+        ` : ''}
       </div>
     </div>
   `;
