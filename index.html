@@ -3062,7 +3062,13 @@ function _renderBudgetHtml() {
 
   document.getElementById('app').innerHTML = `
     <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
-      <button class="btn btn-ghost btn-sm" onclick="switchView('current-year')" style="flex-shrink:0">← Back to Properties</button>
+      <button class="btn btn-ghost btn-sm" onclick="switchView('current-year')" style="flex-shrink:0;background:linear-gradient(135deg,#f59e0b,#d97706);color:white;border:none;box-shadow:0 2px 8px rgba(245,158,11,0.35);transition:transform 0.15s,box-shadow 0.15s">← Back to Properties</button>
+      <style>
+      #app button[onclick="switchView('current-year')"]:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(245,158,11,0.45);
+      }
+      </style>
       <div style="font-size:1.2rem;font-weight:700">Monthly Budget</div>
     </div>
     ${summaryBar}
