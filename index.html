@@ -655,7 +655,6 @@
     <button class="view-btn" data-view="investment-return">Investment Return</button>
     <button class="view-btn" data-view="historical">Historical</button>
     <button class="view-btn" data-view="maintenance">Maintenance</button>
-    <button class="view-btn" data-view="add-entry">+ Add Entry</button>
     <button class="view-btn" data-view="portfolio">All Properties</button>
   </div>
 </header>
@@ -1233,7 +1232,6 @@ async function renderView() {
       case 'investment-return': await renderInvestmentReturn(); break;
       case 'historical':    await renderHistorical();   break;
       case 'maintenance':   await renderMaintenance();  break;
-      case 'add-entry':     await renderAddEntry();     break;
       case 'portfolio':     await renderPortfolio();    break;
       case 'tax-planning':  await renderTaxPlanning();  break;
     }
