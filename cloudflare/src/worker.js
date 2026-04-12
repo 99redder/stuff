@@ -63,6 +63,8 @@ async function handleDataApi(request, env) {
   // Non-property actions
   if (action === 'get_tax_planning') return handleGetTaxPlanning(env, body.year);
   if (action === 'save_tax_planning') return handleSaveTaxPlanning(env, body.year, body.data);
+  if (action === 'get_budget') return handleGetBudget(env);
+  if (action === 'save_budget') return handleSaveBudget(env, body.data);
 
   const { property } = body;
 
@@ -368,6 +370,21 @@ async function handleSaveTaxPlanning(env, year, data) {
     return jsonResponse({ error: 'Missing data object' }, 400);
   }
   await env.RENTALS.put(`tax_planning:${year}`, JSON.stringify(data));
+  return jsonResponse({ success: true });
+}
+
+// ── Monthly Budget ────────────────────────────────────────────────────────────
+
+async function handleGetBudget(env) {
+  const data = await env.RENTALS.get('budget', 'json') || {};
+  return jsonResponse({ data });
+}
+
+async function handleSaveBudget(env, data) {
+  if (!data || typeof data !== 'object') {
+    return jsonResponse({ error: 'Missing data object' }, 400);
+  }
+  await env.RENTALS.put('budget', JSON.stringify(data));
   return jsonResponse({ success: true });
 }
 

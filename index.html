@@ -604,6 +604,14 @@
     .tp-group { font-size:0.8rem; font-weight:700; color:var(--text); margin:0.85rem 0 0.5rem; padding-bottom:0.35rem; border-bottom:1px solid var(--border); }
     .tp-group:first-child { margin-top:0; }
     .tp-card { margin-bottom: 1.25rem; }
+    .budget-item { display:flex; align-items:center; gap:.4rem; padding:.35rem 0; border-bottom:1px solid var(--border); font-size:.875rem; }
+    .budget-item:last-child { border-bottom:none; }
+    .budget-item-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .budget-item-amt { font-weight:600; white-space:nowrap; color:var(--text-muted); }
+    .budget-item-actions { display:flex; gap:.2rem; flex-shrink:0; opacity:0; transition:opacity .15s; }
+    .budget-item:hover .budget-item-actions { opacity:1; }
+    .budget-edit-row { gap:.4rem; padding:.35rem 0; }
+    @media (max-width:640px) { .budget-item-actions { opacity:1; } }
     .tp-row { display:flex; justify-content:space-between; align-items:center; padding:0.38rem 0; font-size:0.875rem; border-bottom:1px solid var(--border); }
     .tp-row:last-child { border-bottom:none; }
     .tp-row.in { padding-left:1rem; color:var(--text-muted); font-size:0.82rem; }
@@ -645,6 +653,7 @@
       <button class="prop-tab" data-prop="446BB">446BB</button>
     </div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
+      <button class="tp-header-btn" id="budget-btn" onclick="switchView('budget')">Monthly Budget</button>
       <button class="tp-header-btn" id="tax-planning-btn" onclick="switchView('tax-planning')">Tax Planning</button>
       <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
     </div>
@@ -1122,7 +1131,8 @@ const state = {
     '446BB': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null }
   },
   pendingDefaultPrompt: null,  // { category, amount } after a save
-  pendingMaintPrompt: null     // { date, amount, description, category } after expense save
+  pendingMaintPrompt: null,    // { date, amount, description, category } after expense save
+  budget: null                 // loaded once, global (not per-property)
 };
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -1210,14 +1220,18 @@ function switchView(view) {
     b.classList.toggle('active', b.dataset.view === view);
   });
   const isTaxPlanning = view === 'tax-planning';
-  // Hide property tabs for portfolio and tax planning
+  const isBudget = view === 'budget';
+  const isFullscreen = isTaxPlanning || isBudget;
+  // Hide property tabs for portfolio, tax planning, and budget
   document.getElementById('property-tabs').style.display =
-    (view === 'portfolio' || isTaxPlanning) ? 'none' : '';
-  // Hide view-nav for tax planning
-  document.getElementById('view-nav').style.display = isTaxPlanning ? 'none' : '';
-  // Toggle tax planning button active state
+    (view === 'portfolio' || isFullscreen) ? 'none' : '';
+  // Hide view-nav for tax planning and budget
+  document.getElementById('view-nav').style.display = isFullscreen ? 'none' : '';
+  // Toggle header button active states
   const tpBtn = document.getElementById('tax-planning-btn');
   if (tpBtn) tpBtn.classList.toggle('active', isTaxPlanning);
+  const budgetBtn = document.getElementById('budget-btn');
+  if (budgetBtn) budgetBtn.classList.toggle('active', isBudget);
   renderView();
 }
 
@@ -1235,6 +1249,7 @@ async function renderView() {
       case 'add-entry':     await renderAddEntry();     break;
       case 'portfolio':     await renderPortfolio();    break;
       case 'tax-planning':  await renderTaxPlanning();  break;
+      case 'budget':        await renderBudget();        break;
     }
   } catch (e) {
     app.innerHTML = `<div class="error-msg">Failed to load: ${escHtml(e.message)}</div>`;
@@ -2904,6 +2919,211 @@ function tpBuildPayments(payments) {
       <input type="number" step="0.01" min="0" placeholder="0.00" value="${p.amount || ''}" onchange="tpPayAmt(${i},this.value)">
       <button class="btn btn-ghost btn-sm" style="color:var(--danger);padding:.2rem .5rem" onclick="tpRemovePayment(${i})">×</button>
     </div>`).join('');
+}
+
+// ── View: Monthly Budget ──────────────────────────────────────────────────────
+
+const BUDGET_EXPENSE_CATS = [
+  'Retirement Savings','School Savings','Investments','Misc Savings',
+  'Utilities','Services','Mortgage','Cars','Insurance','Travel'
+];
+
+let _bEdit = null; // { section: 'income'|catName, id: uuid|'new' }
+
+async function renderBudget() {
+  if (!state.budget) {
+    const result = await callApi({ action: 'get_budget' });
+    const raw = result.data || {};
+    state.budget = {
+      income: raw.income || [],
+      expenses: {}
+    };
+    for (const cat of BUDGET_EXPENSE_CATS) {
+      state.budget.expenses[cat] = raw.expenses?.[cat] || [];
+    }
+  }
+  _renderBudgetHtml();
+}
+
+function _renderBudgetHtml() {
+  const b = state.budget;
+  const totalIncome = b.income.reduce((s, i) => s + (i.amount || 0), 0);
+  const catTotals = {};
+  let totalExpenses = 0;
+  for (const cat of BUDGET_EXPENSE_CATS) {
+    catTotals[cat] = (b.expenses[cat] || []).reduce((s, i) => s + (i.amount || 0), 0);
+    totalExpenses += catTotals[cat];
+  }
+  const net = totalIncome - totalExpenses;
+  const netColor = net >= 0 ? 'var(--success)' : 'var(--danger)';
+
+  const summaryBar = `
+    <div style="display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:1.25rem;padding:.75rem 1rem;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius)">
+      <div><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Monthly Income</div>
+           <div style="font-size:1.3rem;font-weight:700;color:var(--success)">${fmt(totalIncome)}</div></div>
+      <div><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Monthly Expenses</div>
+           <div style="font-size:1.3rem;font-weight:700;color:var(--danger)">${fmt(totalExpenses)}</div></div>
+      <div><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Monthly Net</div>
+           <div style="font-size:1.3rem;font-weight:700;color:${netColor}">${net < 0 ? '−' : ''}${fmt(Math.abs(net))}</div></div>
+      <div><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Annual Net</div>
+           <div style="font-size:1.3rem;font-weight:700;color:${netColor}">${net < 0 ? '−' : ''}${fmt(Math.abs(net * 12))}</div></div>
+    </div>`;
+
+  // Income section
+  const incomeRows = b.income.map(item => {
+    if (_bEdit?.section === 'income' && _bEdit?.id === item.id) {
+      return _budgetEditRow('income', item);
+    }
+    return `<div class="budget-item">
+      <span class="budget-item-name">${escHtml(item.name)}</span>
+      <span class="budget-item-amt">${fmt(item.amount)}</span>
+      <span class="budget-item-actions">
+        <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem" onclick="budgetEdit('income','${item.id}')">Edit</button>
+        <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem;color:var(--danger)" onclick="budgetDelete('income','${item.id}')">×</button>
+      </span>
+    </div>`;
+  }).join('');
+
+  const incomeAddRow = (_bEdit?.section === 'income' && _bEdit?.id === 'new')
+    ? _budgetEditRow('income', null)
+    : `<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:.5rem;justify-content:flex-start" onclick="budgetAdd('income')">+ Add Income Source</button>`;
+
+  const incomeCard = `
+    <div class="card" style="height:fit-content">
+      <div class="card-header">
+        <div class="card-title">Income</div>
+        <div style="font-weight:700;color:var(--success)">${fmt(totalIncome)}/mo</div>
+      </div>
+      <div class="card-body" style="padding-top:.5rem">
+        ${incomeRows || '<div style="color:var(--text-muted);font-size:.875rem;margin-bottom:.5rem">No income sources yet.</div>'}
+        ${incomeAddRow}
+      </div>
+    </div>`;
+
+  // Expense categories
+  const expenseCards = BUDGET_EXPENSE_CATS.map(cat => {
+    const items = b.expenses[cat] || [];
+    const catTotal = catTotals[cat];
+    const rows = items.map(item => {
+      if (_bEdit?.section === cat && _bEdit?.id === item.id) {
+        return _budgetEditRow(cat, item);
+      }
+      return `<div class="budget-item">
+        <span class="budget-item-name">${escHtml(item.name)}</span>
+        <span class="budget-item-amt">${fmt(item.amount)}</span>
+        <span class="budget-item-actions">
+          <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem" onclick="budgetEdit('${escAttr(cat)}','${item.id}')">Edit</button>
+          <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem;color:var(--danger)" onclick="budgetDelete('${escAttr(cat)}','${item.id}')">×</button>
+        </span>
+      </div>`;
+    }).join('');
+
+    const addRow = (_bEdit?.section === cat && _bEdit?.id === 'new')
+      ? _budgetEditRow(cat, null)
+      : `<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:.25rem;justify-content:flex-start" onclick="budgetAdd('${escAttr(cat)}')">+ Add Item</button>`;
+
+    return `
+      <div class="card" style="margin-bottom:.75rem">
+        <div class="card-header" style="padding:.6rem 1rem">
+          <div style="font-weight:700;font-size:.9rem">${escHtml(cat)}</div>
+          <div style="font-weight:700;color:${catTotal > 0 ? 'var(--danger)' : 'var(--text-muted)'}">
+            ${catTotal > 0 ? fmt(catTotal) + '/mo' : '—'}
+          </div>
+        </div>
+        ${items.length > 0 || (_bEdit?.section === cat) ? `
+          <div class="card-body" style="padding:.5rem 1rem .75rem">
+            ${rows}
+            ${addRow}
+          </div>` : `
+          <div style="padding:.25rem 1rem .6rem">
+            ${addRow}
+          </div>`}
+      </div>`;
+  }).join('');
+
+  const totalExpensesBar = `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:.6rem .75rem;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);font-weight:700;margin-top:-.25rem">
+      <span>Total Expenses</span><span style="color:var(--danger)">${fmt(totalExpenses)}/mo</span>
+    </div>`;
+
+  document.getElementById('app').innerHTML = `
+    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="switchView('current-year')" style="flex-shrink:0">← Back to Properties</button>
+      <div style="font-size:1.2rem;font-weight:700">Monthly Budget</div>
+    </div>
+    ${summaryBar}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;align-items:start">
+      <div>${incomeCard}</div>
+      <div>${expenseCards}${totalExpensesBar}</div>
+    </div>`;
+}
+
+function _budgetEditRow(section, item) {
+  const id = item?.id || 'new';
+  const name = item?.name || '';
+  const amount = item?.amount || '';
+  return `<div class="budget-item budget-edit-row">
+    <input type="text" id="bedit-name" placeholder="Name" value="${escAttr(name)}"
+           style="flex:1;min-width:0;padding:.3rem .5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);font-size:.875rem">
+    <input type="number" id="bedit-amt" placeholder="0.00" value="${escAttr(String(amount))}" step="0.01" min="0"
+           style="width:90px;padding:.3rem .5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);font-size:.875rem"
+           onkeydown="if(event.key==='Enter')budgetSave('${escAttr(section)}','${id}')">
+    <button class="btn btn-primary btn-sm" style="padding:.3rem .6rem" onclick="budgetSave('${escAttr(section)}','${id}')">Save</button>
+    <button class="btn btn-ghost btn-sm" style="padding:.3rem .5rem" onclick="budgetCancelEdit()">✕</button>
+  </div>`;
+}
+
+function budgetAdd(section) {
+  _bEdit = { section, id: 'new' };
+  _renderBudgetHtml();
+  setTimeout(() => document.getElementById('bedit-name')?.focus(), 50);
+}
+
+function budgetEdit(section, id) {
+  _bEdit = { section, id };
+  _renderBudgetHtml();
+  setTimeout(() => document.getElementById('bedit-name')?.focus(), 50);
+}
+
+function budgetCancelEdit() {
+  _bEdit = null;
+  _renderBudgetHtml();
+}
+
+async function budgetSave(section, id) {
+  const name = document.getElementById('bedit-name')?.value.trim();
+  const amount = parseFloat(document.getElementById('bedit-amt')?.value) || 0;
+  if (!name) { document.getElementById('bedit-name')?.focus(); return; }
+
+  const b = state.budget;
+  if (id === 'new') {
+    const newItem = { id: crypto.randomUUID(), name, amount };
+    if (section === 'income') b.income.push(newItem);
+    else { if (!b.expenses[section]) b.expenses[section] = []; b.expenses[section].push(newItem); }
+  } else {
+    const list = section === 'income' ? b.income : (b.expenses[section] || []);
+    const item = list.find(i => i.id === id);
+    if (item) { item.name = name; item.amount = amount; }
+  }
+
+  _bEdit = null;
+  _renderBudgetHtml();
+  await _saveBudget();
+}
+
+async function budgetDelete(section, id) {
+  if (!confirm('Remove this item?')) return;
+  const b = state.budget;
+  if (section === 'income') b.income = b.income.filter(i => i.id !== id);
+  else if (b.expenses[section]) b.expenses[section] = b.expenses[section].filter(i => i.id !== id);
+  _bEdit = null;
+  _renderBudgetHtml();
+  await _saveBudget();
+}
+
+async function _saveBudget() {
+  try { await callApi({ action: 'save_budget', data: state.budget }); }
+  catch { /* non-critical — data is in memory */ }
 }
 
 async function renderTaxPlanning() {
