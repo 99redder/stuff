@@ -2287,7 +2287,8 @@ async function renderInvestmentReturn() {
     const sched = calcDepreciationSchedule(dc.costBasis, dc.placedInService);
     if (sched.length) cumulativeDepreciation = sched[sched.length - 1].cumulative;
   }
-  const depreciationRecaptureTax = cumulativeDepreciation * 0.25;
+  // Primary residences: no depreciation recapture (never rented), no capital gains tax (§121 exclusion)
+  const depreciationRecaptureTax = isPrimaryResidence ? 0 : cumulativeDepreciation * 0.25;
 
   // ── Zillow / Net Proceeds ─────────────────────────────────────────────────
   const zillowEstimate  = inv.zillowEstimate || null;
@@ -2301,11 +2302,13 @@ async function renderInvestmentReturn() {
   if (zillowEstimate) {
     saleClosingAmt  = zillowEstimate * (saleClosingPct / 100);
     const grossAfterClosing = zillowEstimate - saleClosingAmt;
-    // Capital gain = gross proceeds - total invested (depr recapture is taxed separately)
-    const capitalGain   = Math.max(0, grossAfterClosing - totalCapitalInvested);
-    federalCapGainsTax  = capitalGain * 0.15;
-    stateCapGainsTax    = capitalGain * (stateCapGainsPct / 100);
-    netSaleProceeds     = grossAfterClosing - depreciationRecaptureTax - federalCapGainsTax - stateCapGainsTax;
+    if (!isPrimaryResidence) {
+      // Capital gain = gross proceeds - total invested (depr recapture taxed separately)
+      const capitalGain  = Math.max(0, grossAfterClosing - totalCapitalInvested);
+      federalCapGainsTax = capitalGain * 0.15;
+      stateCapGainsTax   = capitalGain * (stateCapGainsPct / 100);
+    }
+    netSaleProceeds = grossAfterClosing - depreciationRecaptureTax - (federalCapGainsTax || 0) - (stateCapGainsTax || 0);
   }
 
   // ── All-Years Cash Flow ───────────────────────────────────────────────────
@@ -2447,9 +2450,12 @@ async function renderInvestmentReturn() {
         <table style="width:100%;border-collapse:collapse">
           ${row('Zillow Estimate', zillowEstimate, 'var(--success)')}
           ${row(`− Sale Closing Costs (${saleClosingPct}%)`, saleClosingAmt, 'var(--danger)')}
-          ${row('− Depreciation Recapture Tax (25%)', depreciationRecaptureTax > 0 ? depreciationRecaptureTax : 0, 'var(--danger)')}
+          ${isPrimaryResidence
+            ? `<tr><td colspan="2" style="padding:.35rem .75rem;border-bottom:1px solid var(--border);font-size:0.82rem;color:var(--text-muted)">§121 exclusion applies — no capital gains or depreciation recapture tax (up to $500k MFJ)</td></tr>`
+            : `${row('− Depreciation Recapture Tax (25%)', depreciationRecaptureTax > 0 ? depreciationRecaptureTax : 0, 'var(--danger)')}
           ${row('− Federal Capital Gains Tax (15%)', federalCapGainsTax, 'var(--danger)')}
-          ${stateCapGainsPct > 0 ? row(`− State Capital Gains Tax (${stateCapGainsPct}%)`, stateCapGainsTax, 'var(--danger)') : ''}
+          ${stateCapGainsPct > 0 ? row(`− State Capital Gains Tax (${stateCapGainsPct}%)`, stateCapGainsTax, 'var(--danger)') : ''}`
+          }
           ${row('Estimated Net Proceeds', netSaleProceeds, netSaleProceeds !== null ? 'var(--success)' : 'var(--text-muted)', false, true)}
         </table>
         ${zillowEstimate === null ? `<div style="padding:.5rem .75rem;color:var(--text-muted);font-size:0.85rem">Configure a Zillow URL below and click Refresh to fetch the current estimate.</div>` : ''}
