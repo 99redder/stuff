@@ -118,6 +118,15 @@ async function handleDataApi(request, env) {
     case 'delete_maintenance_entry':
       return handleDeleteMaintenanceEntry(env, property, body.id);
 
+    case 'get_investment':
+      return handleGetInvestment(env, property);
+
+    case 'save_investment':
+      return handleSaveInvestment(env, property, body.config);
+
+    case 'fetch_zillow':
+      return handleFetchZillow(env, property, body.url);
+
     default:
       return jsonResponse({ error: 'Invalid action' }, 400);
   }
@@ -386,6 +395,124 @@ async function handleSaveBudget(env, data) {
   }
   await env.RENTALS.put('budget', JSON.stringify(data));
   return jsonResponse({ success: true });
+}
+
+// ── Investment Return ─────────────────────────────────────────────────────────
+
+async function handleGetInvestment(env, property) {
+  const config = await env.RENTALS.get(`investment:${property}`, 'json') || null;
+  return jsonResponse({ config });
+}
+
+async function handleSaveInvestment(env, property, config) {
+  if (!config || typeof config !== 'object') {
+    return jsonResponse({ error: 'Missing config object' }, 400);
+  }
+
+  const { purchasePrice, purchaseClosingCosts, saleClosingCostPct } = config;
+
+  if (typeof purchasePrice !== 'number' || !isFinite(purchasePrice) || purchasePrice < 0) {
+    return jsonResponse({ error: 'purchasePrice must be a non-negative number' }, 400);
+  }
+  if (typeof purchaseClosingCosts !== 'number' || !isFinite(purchaseClosingCosts) || purchaseClosingCosts < 0) {
+    return jsonResponse({ error: 'purchaseClosingCosts must be a non-negative number' }, 400);
+  }
+  if (typeof saleClosingCostPct !== 'number' || !isFinite(saleClosingCostPct) || saleClosingCostPct < 0 || saleClosingCostPct > 20) {
+    return jsonResponse({ error: 'saleClosingCostPct must be a number between 0 and 20' }, 400);
+  }
+
+  // Merge into existing — preserve zillowEstimate/zillowFetchedAt unless manually overridden
+  const existing = await env.RENTALS.get(`investment:${property}`, 'json') || {};
+  const saved = {
+    ...existing,
+    purchasePrice,
+    purchaseClosingCosts,
+    saleClosingCostPct,
+    zillowUrl: typeof config.zillowUrl === 'string' ? config.zillowUrl.trim() : (existing.zillowUrl || ''),
+  };
+
+  // Allow manual Zillow estimate override
+  if (typeof config.zillowEstimate === 'number' && isFinite(config.zillowEstimate) && config.zillowEstimate > 0) {
+    saved.zillowEstimate  = config.zillowEstimate;
+    saved.zillowFetchedAt = typeof config.zillowFetchedAt === 'string' ? config.zillowFetchedAt : new Date().toISOString();
+  }
+
+  await env.RENTALS.put(`investment:${property}`, JSON.stringify(saved));
+  return jsonResponse({ success: true, config: saved });
+}
+
+async function handleFetchZillow(env, property, url) {
+  if (!url || typeof url !== 'string' || !url.includes('zillow.com')) {
+    return jsonResponse({ error: 'Invalid Zillow URL' }, 400);
+  }
+
+  let html;
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+      }
+    });
+
+    if (!response.ok) {
+      return jsonResponse({ error: `Zillow returned HTTP ${response.status}. Try entering the estimate manually.` }, 422);
+    }
+
+    html = await response.text();
+  } catch (err) {
+    return jsonResponse({ error: `Failed to reach Zillow: ${err.message}` }, 502);
+  }
+
+  // Attempt extraction — multiple patterns for resilience
+  let zestimate = null;
+
+  // Pattern 1: "zestimate":{"amount":XXXXXX}
+  const m1 = html.match(/"zestimate"\s*:\s*\{\s*"amount"\s*:\s*(\d+)/);
+  if (m1) zestimate = parseInt(m1[1], 10);
+
+  // Pattern 2: "zestimate":XXXXXX (direct number, 5–7 digits)
+  if (!zestimate) {
+    const m2 = html.match(/"zestimate"\s*:\s*(\d{5,7})\b/);
+    if (m2) zestimate = parseInt(m2[1], 10);
+  }
+
+  // Pattern 3: __NEXT_DATA__ script tag
+  if (!zestimate) {
+    try {
+      const ndMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+      if (ndMatch) {
+        const nd = JSON.parse(ndMatch[1]);
+        const gdpCache = nd?.props?.pageProps?.componentProps?.gdpClientCache;
+        if (gdpCache) {
+          const gc = JSON.parse(gdpCache);
+          const firstKey = Object.keys(gc)[0];
+          zestimate = gc?.[firstKey]?.property?.zestimate?.amount
+            || gc?.[firstKey]?.zestimate?.amount
+            || null;
+        }
+      }
+    } catch (_) {
+      // parse failure — continue to error below
+    }
+  }
+
+  if (!zestimate) {
+    return jsonResponse({
+      error: 'Could not find Zestimate on page. Zillow may be blocking automated access — enter the estimate manually.'
+    }, 422);
+  }
+
+  // Persist result into investment config
+  const existing = await env.RENTALS.get(`investment:${property}`, 'json') || {};
+  existing.zillowEstimate = zestimate;
+  existing.zillowFetchedAt = new Date().toISOString();
+  existing.zillowUrl = url;
+  await env.RENTALS.put(`investment:${property}`, JSON.stringify(existing));
+
+  return jsonResponse({ zestimate, fetchedAt: existing.zillowFetchedAt });
 }
 
 // ── Helper ────────────────────────────────────────────────────────────────────

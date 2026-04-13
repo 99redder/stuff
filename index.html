@@ -1127,9 +1127,9 @@ const state = {
   currentView: 'current-year',
   password: '',
   data: {
-    '6AL':   { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null },
-    '95EB':  { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null },
-    '446BB': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null }
+    '6AL':   { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
+    '95EB':  { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
+    '446BB': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null }
   },
   pendingDefaultPrompt: null,  // { category, amount } after a save
   pendingMaintPrompt: null,    // { date, amount, description, category } after expense save
@@ -1169,11 +1169,12 @@ async function ensureLoaded(property, key) {
     summaries:    'get_summaries',
     defaults:     'get_defaults',
     depreciation: 'get_depreciation',
-    maintenance:  'get_maintenance'
+    maintenance:  'get_maintenance',
+    investment:   'get_investment'
   };
 
   const result = await callApi({ action: actionMap[key], property });
-  if (key === 'depreciation') {
+  if (key === 'depreciation' || key === 'investment') {
     state.data[property][key] = result.config || null; // null means not configured
   } else if (key === 'maintenance') {
     state.data[property][key] = result.entries || [];
@@ -2171,117 +2172,344 @@ async function renderTaxSummary() {
 
 async function renderInvestmentReturn() {
   const prop = state.currentProperty;
-  await ensureLoaded(prop, 'transactions');
-  await ensureLoaded(prop, 'defaults');
+  await Promise.all([
+    ensureLoaded(prop, 'transactions'),
+    ensureLoaded(prop, 'summaries'),
+    ensureLoaded(prop, 'depreciation'),
+    ensureLoaded(prop, 'investment'),
+  ]);
 
+  const inv    = state.data[prop].investment || {};
+  const dc     = state.data[prop].depreciation;
+  const summs  = state.data[prop].summaries || {};
+  const txns   = state.data[prop].transactions || [];
   const yearStr = String(CURRENT_YEAR);
-  const yearTxns = state.data[prop].transactions.filter(t => t.date.startsWith(yearStr));
 
-  // Get property defaults
-  const defaults = state.data[prop].defaults || {};
-  const purchasePrice = defaults.purchasePrice || 0;
-  const downPayment = defaults.downPayment || 0;
+  // ── Capital Invested ──────────────────────────────────────────────────────
+  const purchasePrice      = inv.purchasePrice       || 0;
+  const purchaseClosing    = inv.purchaseClosingCosts || 0;
+  const saleClosingPct     = (typeof inv.saleClosingCostPct === 'number') ? inv.saleClosingCostPct : 6;
 
-  // Calculate YTD stats
-  let rent = 0, income = 0, expenses = 0;
-  for (const t of yearTxns) {
-    if (t.type === 'income') { income += t.amount; if (t.category === 'rent') rent += t.amount; }
-    else expenses += t.amount;
+  // Cumulative improvements: historical summaries + current-year transactions
+  let cumulativeImprovements = 0;
+  for (const [yr, d] of Object.entries(summs)) {
+    if (yr !== yearStr) cumulativeImprovements += (d.improvements || 0);
   }
-  const netOperatingIncome = income - expenses;
+  for (const t of txns) {
+    if (t.date.startsWith(yearStr) && t.category === 'improvements') cumulativeImprovements += t.amount;
+  }
+  const totalCapitalInvested = purchasePrice + purchaseClosing + cumulativeImprovements;
 
-  // Calculate ROI metrics
-  const cashOnCashROI = downPayment > 0 ? (netOperatingIncome / downPayment) * 100 : 0;
-  const capRate = purchasePrice > 0 ? (netOperatingIncome / purchasePrice) * 100 : 0;
+  // ── Depreciation Recapture ────────────────────────────────────────────────
+  let cumulativeDepreciation = 0;
+  if (dc) {
+    const sched = calcDepreciationSchedule(dc.costBasis, dc.placedInService);
+    if (sched.length) cumulativeDepreciation = sched[sched.length - 1].cumulative;
+  }
+  const depreciationRecaptureTax = cumulativeDepreciation * 0.25;
+
+  // ── Zillow / Net Proceeds ─────────────────────────────────────────────────
+  const zillowEstimate  = inv.zillowEstimate || null;
+  const zillowFetchedAt = inv.zillowFetchedAt || null;
+  const zillowUrl       = inv.zillowUrl || '';
+
+  let netSaleProceeds = null;
+  let saleClosingAmt  = null;
+  if (zillowEstimate) {
+    saleClosingAmt  = zillowEstimate * (saleClosingPct / 100);
+    netSaleProceeds = zillowEstimate - saleClosingAmt - depreciationRecaptureTax;
+  }
+
+  // ── All-Years Cash Flow ───────────────────────────────────────────────────
+  let allYearsIncome = 0, allYearsExpenses = 0;
+  const histYears = Object.keys(summs).filter(y => y !== yearStr).sort();
+  for (const yr of histYears) {
+    const d = summs[yr];
+    for (const c of CATEGORIES.income)   allYearsIncome   += (d[c.code] || 0);
+    for (const c of CATEGORIES.expense)  allYearsExpenses += (d[c.code] || 0);
+    // Also include hist-only categories (mortgage_interest, pmi)
+    allYearsExpenses += (d.mortgage_interest || 0) + (d.pmi || 0);
+  }
+  for (const t of txns) {
+    if (t.date.startsWith(yearStr)) {
+      if (t.type === 'income') allYearsIncome += t.amount;
+      else allYearsExpenses += t.amount;
+    }
+  }
+  const cumNetCashFlow = allYearsIncome - allYearsExpenses;
+
+  // ── Total Return ──────────────────────────────────────────────────────────
+  const hasEnoughData = totalCapitalInvested > 0;
+  const propertyAppreciation = (netSaleProceeds !== null) ? netSaleProceeds - totalCapitalInvested : null;
+  const totalReturn = (propertyAppreciation !== null) ? propertyAppreciation + cumNetCashFlow : null;
+  const roiPct = (totalReturn !== null && totalCapitalInvested > 0) ? (totalReturn / totalCapitalInvested) * 100 : null;
+
+  // Annualized ROI — use purchaseDate from depreciation config
+  let annualizedROI = null, yearsHeld = null;
+  const purchaseDateStr = dc?.purchaseDate || null;
+  if (purchaseDateStr && totalCapitalInvested > 0 && totalReturn !== null) {
+    const purchaseMs = new Date(purchaseDateStr + 'T00:00:00').getTime();
+    const todayMs    = new Date().getTime();
+    yearsHeld = (todayMs - purchaseMs) / (365.25 * 24 * 60 * 60 * 1000);
+    if (yearsHeld > 0) {
+      annualizedROI = (Math.pow(1 + totalReturn / totalCapitalInvested, 1 / yearsHeld) - 1) * 100;
+    }
+  }
+
+  // Year range for cash flow label
+  const firstHistYear = histYears.length ? histYears[0] : yearStr;
+  const yearRangeLabel = firstHistYear === yearStr ? yearStr : `${firstHistYear}–${yearStr}`;
+
+  // Fetch timestamp display
+  const fetchedLabel = zillowFetchedAt
+    ? ` (fetched ${fmtDate(zillowFetchedAt.slice(0, 10))})`
+    : '';
+
+  // Row builder
+  const row = (label, value, color, borderBottom = true, bold = false) => {
+    const borderStyle = borderBottom ? 'border-bottom:1px solid var(--border);' : '';
+    const boldStyle   = bold ? 'font-weight:700;' : '';
+    let valHtml;
+    if (value === null) {
+      valHtml = `<span style="color:var(--text-muted)">—</span>`;
+    } else {
+      valHtml = `<span style="color:${color}">${value < 0 ? '−' : ''}${fmt(Math.abs(value))}</span>`;
+    }
+    if (bold && value !== null) valHtml = `<strong style="color:${color}">${value < 0 ? '−' : ''}${fmt(Math.abs(value))}</strong>`;
+    return `
+      <tr>
+        <td style="padding:.5rem .75rem;${borderStyle}${boldStyle}">${label}</td>
+        <td style="padding:.5rem .75rem;${borderStyle}text-align:right">${valHtml}</td>
+      </tr>`;
+  };
+
+  // ── Stat cards ────────────────────────────────────────────────────────────
+  const statCards = `
+    <div class="stats-row" style="margin-bottom:1.5rem">
+      <div class="stat-card">
+        <div class="stat-label">Total Invested</div>
+        <div class="stat-value" style="color:var(--text)">${hasEnoughData ? fmt(totalCapitalInvested) : '—'}</div>
+        <div class="stat-sub">Purchase + Closing + Improvements</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Est. Net Proceeds</div>
+        <div class="stat-value" style="color:${netSaleProceeds !== null ? 'var(--success)' : 'var(--text-muted)'}">${netSaleProceeds !== null ? fmt(netSaleProceeds) : '—'}</div>
+        <div class="stat-sub">Zillow − Closing − Recapture</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Net Cash Flow</div>
+        <div class="stat-value" style="color:${cumNetCashFlow >= 0 ? 'var(--success)' : 'var(--danger)'}">${cumNetCashFlow < 0 ? '−' : ''}${fmt(Math.abs(cumNetCashFlow))}</div>
+        <div class="stat-sub">All Income − All Expenses</div>
+      </div>
+    </div>`;
+
+  // ── Total Return card ─────────────────────────────────────────────────────
+  const totalReturnColor = totalReturn === null ? 'var(--text-muted)' : (totalReturn >= 0 ? 'var(--success)' : 'var(--danger)');
+  const heldLine = yearsHeld !== null ? `<div style="color:var(--text-muted);font-size:0.82rem;margin-top:.25rem">Held ${yearsHeld.toFixed(1)} years since ${fmtDate(purchaseDateStr)}</div>` : '';
+
+  const totalReturnCard = `
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-header"><div class="card-title">Total Estimated Return</div></div>
+      <div class="card-body" style="padding:0">
+        <table style="width:100%;border-collapse:collapse">
+          ${row('Property Appreciation (Net Proceeds − Invested)', propertyAppreciation, propertyAppreciation !== null && propertyAppreciation >= 0 ? 'var(--success)' : 'var(--danger)')}
+          ${row('+ Net Rental Cash Flow (All Years)', cumNetCashFlow, cumNetCashFlow >= 0 ? 'var(--success)' : 'var(--danger)')}
+          ${row('Total Return', totalReturn, totalReturnColor, false, true)}
+        </table>
+        <div style="padding:.5rem .75rem;border-top:2px solid var(--border)">
+          <div style="display:flex;gap:2rem;flex-wrap:wrap">
+            <div>
+              <span style="color:var(--text-muted);font-size:0.82rem">ROI</span>
+              <span style="font-weight:700;margin-left:.5rem;color:${totalReturnColor}">${roiPct !== null ? (roiPct >= 0 ? '+' : '−') + Math.abs(roiPct).toFixed(1) + '%' : '—'}</span>
+            </div>
+            ${annualizedROI !== null ? `<div>
+              <span style="color:var(--text-muted);font-size:0.82rem">Annualized</span>
+              <span style="font-weight:700;margin-left:.5rem;color:${annualizedROI >= 0 ? 'var(--success)' : 'var(--danger)'}">${annualizedROI >= 0 ? '+' : '−'}${Math.abs(annualizedROI).toFixed(1)}%/yr</span>
+            </div>` : ''}
+          </div>
+          ${heldLine}
+        </div>
+      </div>
+    </div>`;
+
+  // ── Capital Invested card ─────────────────────────────────────────────────
+  const capitalCard = `
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-header"><div class="card-title">Capital Invested</div></div>
+      <div class="card-body" style="padding:0">
+        <table style="width:100%;border-collapse:collapse">
+          ${row('Purchase Price', purchasePrice, 'var(--text)')}
+          ${row('+ Purchase Closing Costs', purchaseClosing, 'var(--text)')}
+          ${row('+ Capital Improvements (all years)', cumulativeImprovements, 'var(--text)')}
+          ${row('Total Capital Invested', totalCapitalInvested, 'var(--text)', false, true)}
+        </table>
+      </div>
+    </div>`;
+
+  // ── Estimated Current Value card ──────────────────────────────────────────
+  const currentValueCard = `
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-header"><div class="card-title">Estimated Current Value${fetchedLabel}</div></div>
+      <div class="card-body" style="padding:0">
+        <table style="width:100%;border-collapse:collapse">
+          ${row('Zillow Estimate', zillowEstimate, 'var(--success)')}
+          ${row(`− Sale Closing Costs (${saleClosingPct}%)`, saleClosingAmt, 'var(--danger)')}
+          ${row('− Depreciation Recapture Tax (25%)', depreciationRecaptureTax > 0 ? depreciationRecaptureTax : 0, 'var(--danger)')}
+          ${row('Estimated Net Proceeds', netSaleProceeds, netSaleProceeds !== null ? 'var(--success)' : 'var(--text-muted)', false, true)}
+        </table>
+        ${zillowEstimate === null ? `<div style="padding:.5rem .75rem;color:var(--text-muted);font-size:0.85rem">Configure a Zillow URL below and click Refresh to fetch the current estimate.</div>` : ''}
+      </div>
+    </div>`;
+
+  // ── Cash Flow card ────────────────────────────────────────────────────────
+  const cashFlowCard = `
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-header"><div class="card-title">Cumulative Rental Cash Flow (${yearRangeLabel})</div></div>
+      <div class="card-body" style="padding:0">
+        <table style="width:100%;border-collapse:collapse">
+          ${row(`Total Income`, allYearsIncome, 'var(--success)')}
+          ${row('Total Expenses', allYearsExpenses, 'var(--danger)')}
+          ${row('Net Cash Flow', cumNetCashFlow, cumNetCashFlow >= 0 ? 'var(--success)' : 'var(--danger)', false, true)}
+        </table>
+      </div>
+    </div>`;
+
+  // ── Configuration card ────────────────────────────────────────────────────
+  const isConfigured = inv.purchasePrice > 0;
+  const configOpen = !isConfigured; // auto-open if not yet configured
+
+  const configCard = `
+    <div class="card" id="inv-config-card">
+      <div class="card-header" style="cursor:pointer" onclick="toggleInvestmentConfig()">
+        <div class="card-title">Configuration</div>
+        <button class="btn btn-ghost btn-sm no-print" type="button" id="inv-config-toggle">${configOpen ? 'Hide' : 'Edit'}</button>
+      </div>
+      <div id="inv-config-body" style="display:${configOpen ? 'block' : 'none'}">
+        <div class="card-body">
+          <div class="form-grid" style="max-width:520px">
+            <div class="form-group">
+              <label>Purchase Price ($)</label>
+              <input type="number" id="inv-purchase-price" step="1" min="0" value="${escAttr(String(purchasePrice || ''))}" placeholder="e.g. 75000">
+            </div>
+            <div class="form-group">
+              <label>Purchase Closing Costs ($)</label>
+              <input type="number" id="inv-purchase-closing" step="1" min="0" value="${escAttr(String(purchaseClosing || ''))}" placeholder="e.g. 3200">
+            </div>
+            <div class="form-group">
+              <label>Estimated Sale Closing Cost (%)</label>
+              <input type="number" id="inv-sale-pct" step="0.1" min="0" max="20" value="${escAttr(String(saleClosingPct))}" placeholder="6">
+            </div>
+            <div class="form-group" style="grid-column:1/-1">
+              <label>Zillow Property URL</label>
+              <div style="display:flex;gap:.5rem;align-items:flex-start">
+                <input type="url" id="inv-zillow-url" value="${escAttr(zillowUrl)}" placeholder="https://www.zillow.com/homedetails/..." style="flex:1">
+                <button class="btn btn-secondary btn-sm" type="button" onclick="refreshZillowEstimate()" style="white-space:nowrap;margin-top:0">Refresh Estimate</button>
+              </div>
+              <div id="inv-zillow-status" style="font-size:0.82rem;margin-top:.25rem;color:var(--text-muted)">${zillowEstimate ? `Last fetched: ${fetchedLabel.trim().replace(/[()]/g,'')} — $${zillowEstimate.toLocaleString()}` : 'No estimate fetched yet.'}</div>
+            </div>
+            <div class="form-group">
+              <label>Manual Zillow Estimate Override ($)</label>
+              <input type="number" id="inv-zillow-manual" step="1" min="0" value="${escAttr(String(zillowEstimate || ''))}" placeholder="Enter manually if refresh fails">
+            </div>
+          </div>
+          <div class="form-actions mt-2" style="display:flex;gap:.5rem;align-items:center">
+            <button class="btn btn-primary" type="button" onclick="saveInvestmentConfig()">Save Configuration</button>
+          </div>
+          <div id="inv-config-error" class="error-msg mt-1 hidden"></div>
+        </div>
+      </div>
+    </div>`;
 
   document.getElementById('app').innerHTML = `
     <div class="card" style="max-width:720px">
       <div class="card-header">
-        <div class="card-title">Investment Return — ${prop} — ${CURRENT_YEAR}</div>
-        <button class="btn btn-ghost btn-sm no-print" id="print-btn" onclick="window.print()">Print</button>
+        <div class="card-title">Investment Return — ${escHtml(prop)}</div>
+        <button class="btn btn-ghost btn-sm no-print" onclick="window.print()">Print</button>
       </div>
       <div class="card-body">
-        <!-- Key Metrics Section -->
-        <div class="stats-row" style="margin-bottom:1.5rem">
-          <div class="stat-card">
-            <div class="stat-label">Net Operating Income</div>
-            <div class="stat-value income">${fmt(netOperatingIncome)}</div>
-            <div class="stat-sub">Income − Expenses</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Cash on Cash ROI</div>
-            <div class="stat-value ${cashOnCashROI >= 0 ? 'income' : 'expense'}">${cashOnCashROI.toFixed(2)}%</div>
-            <div class="stat-sub">Net Operating Income ÷ Down Payment</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Cap Rate</div>
-            <div class="stat-value ${capRate >= 0 ? 'income' : 'expense'}">${capRate.toFixed(2)}%</div>
-            <div class="stat-sub">Net Operating Income ÷ Purchase Price</div>
-          </div>
-        </div>
-
-        <!-- Financial Summary -->
-        <div class="card" style="margin-bottom:1rem">
-          <div class="card-header">
-            <div class="card-title">Year-to-Date Financial Summary</div>
-          </div>
-          <div class="card-body" style="padding:0">
-            <table class="simple-table" style="width:100%;margin:0">
-              <tr>
-                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border)">Total Rent Received</td>
-                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border);text-align:right;color:var(--success)">${fmt(rent)}</td>
-              </tr>
-              <tr>
-                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border)">Other Income</td>
-                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border);text-align:right;color:var(--success)">${fmt(income - rent)}</td>
-              </tr>
-              <tr>
-                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border);font-weight:700">Total Income</td>
-                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border);text-align:right;color:var(--success);font-weight:700">${fmt(income)}</td>
-              </tr>
-              <tr>
-                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border)">Total Expenses</td>
-                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border);text-align:right;color:var(--danger)">${fmt(expenses)}</td>
-              </tr>
-              <tr>
-                <td style="padding:.5rem .75rem;font-weight:700">Net Operating Income</td>
-                <td style="padding:.5rem .75rem;text-align:right;color:${netOperatingIncome >= 0 ? 'var(--success)' : 'var(--danger)'};font-weight:700">${netOperatingIncome < 0 ? '−' : ''}${fmt(Math.abs(netOperatingIncome))}</td>
-              </tr>
-            </table>
-          </div>
-        </div>
-
-        <!-- Property Details -->
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">Property Investment Details</div>
-          </div>
-          <div class="card-body" style="padding:0">
-            <table class="simple-table" style="width:100%;margin:0">
-              <tr>
-                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border)">Purchase Price</td>
-                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border);text-align:right">${fmt(purchasePrice)}</td>
-              </tr>
-              <tr>
-                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border)">Down Payment</td>
-                <td style="padding:.5rem .75rem;border-bottom:1px solid var(--border);text-align:right">${fmt(downPayment)}</td>
-              </tr>
-              <tr>
-                <td style="padding:.5rem .75rem">Equity (Current)</td>
-                <td style="padding:.5rem .75rem;text-align:right">${fmt(purchasePrice - (defaults.loanBalance || 0))}</td>
-              </tr>
-            </table>
-          </div>
-        </div>
-
-        ${yearTxns.length === 0 ? `
-          <div class="card-body" style="color:var(--text-muted);font-size:0.875rem;text-align:center;margin-top:1rem">
-            No transactions recorded for ${CURRENT_YEAR}. Add entries to see investment metrics.
-          </div>
-        ` : ''}
+        ${!isConfigured ? `
+          <div style="background:var(--warning-bg,#fef9c3);border:1px solid var(--warning-border,#fde68a);border-radius:6px;padding:.75rem 1rem;margin-bottom:1rem;font-size:0.9rem;color:#92400e">
+            Enter the purchase price and closing costs below to calculate your all-time investment return.
+          </div>` : ''}
+        ${statCards}
+        ${isConfigured ? totalReturnCard : ''}
+        ${capitalCard}
+        ${currentValueCard}
+        ${cashFlowCard}
+        ${configCard}
       </div>
     </div>
   `;
+}
+
+async function saveInvestmentConfig() {
+  const prop = state.currentProperty;
+  const errEl = document.getElementById('inv-config-error');
+  errEl.classList.add('hidden');
+
+  const purchasePrice      = parseFloat(document.getElementById('inv-purchase-price').value) || 0;
+  const purchaseClosing    = parseFloat(document.getElementById('inv-purchase-closing').value) || 0;
+  const saleClosingCostPct = parseFloat(document.getElementById('inv-sale-pct').value);
+  const zillowUrl          = document.getElementById('inv-zillow-url').value.trim();
+  const manualEstimate     = parseFloat(document.getElementById('inv-zillow-manual').value) || null;
+
+  if (isNaN(saleClosingCostPct) || saleClosingCostPct < 0 || saleClosingCostPct > 20) {
+    errEl.textContent = 'Sale closing cost % must be between 0 and 20.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  const configToSave = { purchasePrice, purchaseClosingCosts: purchaseClosing, saleClosingCostPct, zillowUrl };
+  if (manualEstimate && manualEstimate > 0) {
+    configToSave.zillowEstimate  = manualEstimate;
+    configToSave.zillowFetchedAt = new Date().toISOString();
+  }
+
+  try {
+    const res = await callApi({ action: 'save_investment', property: prop, config: configToSave });
+    state.data[prop].investment = res.config || configToSave;
+    renderInvestmentReturn();
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.classList.remove('hidden');
+  }
+}
+
+async function refreshZillowEstimate() {
+  const prop   = state.currentProperty;
+  const url    = document.getElementById('inv-zillow-url').value.trim();
+  const status = document.getElementById('inv-zillow-status');
+
+  if (!url || !url.includes('zillow.com')) {
+    status.textContent = 'Enter a valid Zillow property URL first.';
+    status.style.color = 'var(--danger)';
+    return;
+  }
+
+  status.textContent = 'Fetching estimate…';
+  status.style.color = 'var(--text-muted)';
+
+  try {
+    const res = await callApi({ action: 'fetch_zillow', property: prop, url });
+    // Worker already persisted the result — update local cache
+    if (!state.data[prop].investment) state.data[prop].investment = {};
+    state.data[prop].investment.zillowEstimate  = res.zestimate;
+    state.data[prop].investment.zillowFetchedAt = res.fetchedAt;
+    state.data[prop].investment.zillowUrl       = url;
+    renderInvestmentReturn();
+  } catch (err) {
+    status.textContent = err.message;
+    status.style.color = 'var(--danger)';
+  }
+}
+
+function toggleInvestmentConfig() {
+  const body   = document.getElementById('inv-config-body');
+  const toggle = document.getElementById('inv-config-toggle');
+  if (!body) return;
+  const open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  if (toggle) toggle.textContent = open ? 'Hide' : 'Edit';
 }
 
 // ── View: Portfolio (All Properties) ─────────────────────────────────────────
@@ -3772,6 +4000,9 @@ window.tpAddPayment            = tpAddPayment;
 window.tpRemovePayment         = tpRemovePayment;
 window.tpPayDate               = tpPayDate;
 window.tpPayAmt                = tpPayAmt;
+window.saveInvestmentConfig    = saveInvestmentConfig;
+window.refreshZillowEstimate   = refreshZillowEstimate;
+window.toggleInvestmentConfig  = toggleInvestmentConfig;
 
 // Close modals on Escape
 document.addEventListener('keydown', e => {
