@@ -2267,8 +2267,8 @@ async function renderInvestmentReturn() {
   const purchasePrice      = inv.purchasePrice       || 0;
   const purchaseClosing    = inv.purchaseClosingCosts || 0;
   const saleClosingPct     = (typeof inv.saleClosingCostPct === 'number') ? inv.saleClosingCostPct : 6;
-  // State capital gains defaults: NH = 0%, VA = 5.75%
-  const STATE_CGT_DEFAULTS = { '6AL': 0, '95EB': 0, '446BB': 5.75 };
+  // State capital gains defaults: NH = 0%, VA = 5.75%, MD (Wicomico Co.) = 8.95%
+  const STATE_CGT_DEFAULTS = { '6AL': 0, '95EB': 0, '446BB': 5.75, '731WO': 8.95 };
   const stateCapGainsPct   = (typeof inv.stateCapGainsPct === 'number') ? inv.stateCapGainsPct : (STATE_CGT_DEFAULTS[prop] ?? 0);
 
   // Cumulative improvements: historical summaries + current-year transactions
