@@ -2213,11 +2213,17 @@ async function renderInvestmentReturn() {
   const zillowFetchedAt = inv.zillowFetchedAt || null;
   const zillowUrl       = inv.zillowUrl || '';
 
-  let netSaleProceeds = null;
-  let saleClosingAmt  = null;
+  let netSaleProceeds  = null;
+  let saleClosingAmt   = null;
+  let capitalGainsTax  = null;
   if (zillowEstimate) {
     saleClosingAmt  = zillowEstimate * (saleClosingPct / 100);
-    netSaleProceeds = zillowEstimate - saleClosingAmt - depreciationRecaptureTax;
+    const grossAfterClosing = zillowEstimate - saleClosingAmt;
+    // LTCG (15%) applies to appreciation above cost basis; depr recapture already handles
+    // the depreciation portion, so: capital gain = gross proceeds - total invested
+    const capitalGain = Math.max(0, grossAfterClosing - totalCapitalInvested);
+    capitalGainsTax  = capitalGain * 0.15;
+    netSaleProceeds  = grossAfterClosing - depreciationRecaptureTax - capitalGainsTax;
   }
 
   // ── All-Years Cash Flow ───────────────────────────────────────────────────
@@ -2294,7 +2300,7 @@ async function renderInvestmentReturn() {
       <div class="stat-card">
         <div class="stat-label">Est. Net Proceeds</div>
         <div class="stat-value" style="color:${netSaleProceeds !== null ? 'var(--success)' : 'var(--text-muted)'}">${netSaleProceeds !== null ? fmt(netSaleProceeds) : '—'}</div>
-        <div class="stat-sub">Zillow − Closing − Recapture</div>
+        <div class="stat-sub">Zillow − Closing − Taxes</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Net Cash Flow</div>
@@ -2355,6 +2361,7 @@ async function renderInvestmentReturn() {
           ${row('Zillow Estimate', zillowEstimate, 'var(--success)')}
           ${row(`− Sale Closing Costs (${saleClosingPct}%)`, saleClosingAmt, 'var(--danger)')}
           ${row('− Depreciation Recapture Tax (25%)', depreciationRecaptureTax > 0 ? depreciationRecaptureTax : 0, 'var(--danger)')}
+          ${row('− Capital Gains Tax (15%)', capitalGainsTax, 'var(--danger)')}
           ${row('Estimated Net Proceeds', netSaleProceeds, netSaleProceeds !== null ? 'var(--success)' : 'var(--text-muted)', false, true)}
         </table>
         ${zillowEstimate === null ? `<div style="padding:.5rem .75rem;color:var(--text-muted);font-size:0.85rem">Configure a Zillow URL below and click Refresh to fetch the current estimate.</div>` : ''}
