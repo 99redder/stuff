@@ -2339,9 +2339,9 @@ async function renderInvestmentReturn() {
     : null;
   const roiPct = (totalReturn !== null && totalCapitalInvested > 0) ? (totalReturn / totalCapitalInvested) * 100 : null;
 
-  // Annualized ROI — use purchaseDate from depreciation config
+  // Annualized ROI — prefer purchase date from investment config, fall back to depreciation config
   let annualizedROI = null, yearsHeld = null;
-  const purchaseDateStr = dc?.purchaseDate || null;
+  const purchaseDateStr = inv.purchaseDate || dc?.purchaseDate || null;
   if (purchaseDateStr && totalCapitalInvested > 0 && totalReturn !== null) {
     const purchaseMs = new Date(purchaseDateStr + 'T00:00:00').getTime();
     const todayMs    = new Date().getTime();
@@ -2496,6 +2496,10 @@ async function renderInvestmentReturn() {
               <input type="number" id="inv-purchase-closing" step="1" min="0" value="${escAttr(String(purchaseClosing || ''))}" placeholder="e.g. 3200">
             </div>
             <div class="form-group">
+              <label>Purchase Date</label>
+              <input type="date" id="inv-purchase-date" value="${escAttr(inv.purchaseDate || '')}">
+            </div>
+            <div class="form-group">
               <label>Estimated Sale Closing Cost (%)</label>
               <input type="number" id="inv-sale-pct" step="0.1" min="0" max="20" value="${escAttr(String(saleClosingPct))}" placeholder="6">
             </div>
@@ -2556,6 +2560,7 @@ async function saveInvestmentConfig() {
   const purchaseClosing    = parseFloat(document.getElementById('inv-purchase-closing').value) || 0;
   const saleClosingCostPct = parseFloat(document.getElementById('inv-sale-pct').value);
   const stateCapGainsPct   = parseFloat(document.getElementById('inv-state-cgt').value);
+  const purchaseDate       = document.getElementById('inv-purchase-date').value || null;
   const zillowUrl          = document.getElementById('inv-zillow-url').value.trim();
   const manualEstimate     = parseFloat(document.getElementById('inv-zillow-manual').value) || null;
 
@@ -2570,7 +2575,7 @@ async function saveInvestmentConfig() {
     return;
   }
 
-  const configToSave = { purchasePrice, purchaseClosingCosts: purchaseClosing, saleClosingCostPct, stateCapGainsPct, zillowUrl };
+  const configToSave = { purchasePrice, purchaseClosingCosts: purchaseClosing, saleClosingCostPct, stateCapGainsPct, purchaseDate, zillowUrl };
   if (manualEstimate && manualEstimate > 0) {
     configToSave.zillowEstimate  = manualEstimate;
     configToSave.zillowFetchedAt = new Date().toISOString();

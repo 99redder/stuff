@@ -433,6 +433,8 @@ async function handleSaveInvestment(env, property, config) {
     saleClosingCostPct,
     stateCapGainsPct,
     zillowUrl: typeof config.zillowUrl === 'string' ? config.zillowUrl.trim() : (existing.zillowUrl || ''),
+    purchaseDate: (typeof config.purchaseDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(config.purchaseDate))
+      ? config.purchaseDate : (existing.purchaseDate || null),
   };
 
   // Allow manual Zillow estimate override
