@@ -66,6 +66,16 @@ async function handleDataApi(request, env) {
   if (action === 'get_budget') return handleGetBudget(env);
   if (action === 'save_budget') return handleSaveBudget(env, body.data);
 
+  if (action === 'get_solar_config')     return handleGetSolarConfig(env);
+  if (action === 'save_solar_config')    return handleSaveSolarConfig(env, body.config);
+  if (action === 'get_solar_entries')    return handleGetSolarEntries(env);
+  if (action === 'add_solar_entry')      return handleAddSolarEntry(env, body.entry);
+  if (action === 'update_solar_entry')   return handleUpdateSolarEntry(env, body.id, body.entry);
+  if (action === 'delete_solar_entry')   return handleDeleteSolarEntry(env, body.id);
+  if (action === 'get_solar_summaries')  return handleGetSolarSummaries(env);
+  if (action === 'save_solar_summary')   return handleSaveSolarSummary(env, body.year, body.data);
+  if (action === 'delete_solar_summary') return handleDeleteSolarSummary(env, body.year);
+
   const { property } = body;
 
   if (!property || !VALID_PROPERTIES.includes(property)) {
@@ -519,6 +529,126 @@ async function handleFetchZillow(env, property, url) {
   await env.RENTALS.put(`investment:${property}`, JSON.stringify(existing));
 
   return jsonResponse({ zestimate, fetchedAt: existing.zillowFetchedAt });
+}
+
+// ── Solar ─────────────────────────────────────────────────────────────────────
+
+const VALID_SOLAR_CODES = ['ELECPAID', 'ELECNOSOLAR', 'TRUEUP', 'SREC', 'CREDITS', 'MAINT', 'SYSTEM'];
+
+async function handleGetSolarConfig(env) {
+  const config = await env.RENTALS.get('solar:config', 'json') || null;
+  return jsonResponse({ config });
+}
+
+async function handleSaveSolarConfig(env, config) {
+  if (!config || typeof config !== 'object') {
+    return jsonResponse({ error: 'Missing config object' }, 400);
+  }
+  const existing = await env.RENTALS.get('solar:config', 'json') || {};
+  const saved = { ...existing, ...config };
+  await env.RENTALS.put('solar:config', JSON.stringify(saved));
+  return jsonResponse({ success: true, config: saved });
+}
+
+async function handleGetSolarEntries(env) {
+  const entries = await env.RENTALS.get('solar:entries', 'json') || [];
+  return jsonResponse({ entries });
+}
+
+async function handleAddSolarEntry(env, entry) {
+  if (!entry || typeof entry !== 'object') {
+    return jsonResponse({ error: 'Missing entry object' }, 400);
+  }
+  const { date, description, code, amount } = entry;
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return jsonResponse({ error: 'Invalid date format' }, 400);
+  }
+  if (!VALID_SOLAR_CODES.includes(code)) {
+    return jsonResponse({ error: `Invalid code — must be one of: ${VALID_SOLAR_CODES.join(', ')}` }, 400);
+  }
+  if (typeof amount !== 'number' || !isFinite(amount) || amount < 0) {
+    return jsonResponse({ error: 'Amount must be a non-negative number' }, 400);
+  }
+  const entries = await env.RENTALS.get('solar:entries', 'json') || [];
+  const newEntry = {
+    id: crypto.randomUUID(),
+    date,
+    description: typeof description === 'string' ? description.trim() : '',
+    code,
+    amount,
+  };
+  entries.push(newEntry);
+  entries.sort((a, b) => a.date.localeCompare(b.date));
+  await env.RENTALS.put('solar:entries', JSON.stringify(entries));
+  return jsonResponse({ entry: newEntry });
+}
+
+async function handleUpdateSolarEntry(env, id, entry) {
+  if (!id || !entry || typeof entry !== 'object') {
+    return jsonResponse({ error: 'Missing id or entry' }, 400);
+  }
+  const entries = await env.RENTALS.get('solar:entries', 'json') || [];
+  const idx = entries.findIndex(e => e.id === id);
+  if (idx === -1) return jsonResponse({ error: 'Entry not found' }, 404);
+  const { date, description, code, amount } = entry;
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return jsonResponse({ error: 'Invalid date format' }, 400);
+  }
+  if (code && !VALID_SOLAR_CODES.includes(code)) {
+    return jsonResponse({ error: 'Invalid code' }, 400);
+  }
+  if (typeof amount !== 'number' || !isFinite(amount) || amount < 0) {
+    return jsonResponse({ error: 'Amount must be a non-negative number' }, 400);
+  }
+  entries[idx] = {
+    ...entries[idx],
+    date: date || entries[idx].date,
+    description: typeof description === 'string' ? description.trim() : entries[idx].description,
+    code: code || entries[idx].code,
+    amount,
+  };
+  entries.sort((a, b) => a.date.localeCompare(b.date));
+  await env.RENTALS.put('solar:entries', JSON.stringify(entries));
+  return jsonResponse({ entry: entries.find(e => e.id === id) });
+}
+
+async function handleDeleteSolarEntry(env, id) {
+  if (!id) return jsonResponse({ error: 'Missing id' }, 400);
+  const entries = await env.RENTALS.get('solar:entries', 'json') || [];
+  const filtered = entries.filter(e => e.id !== id);
+  if (filtered.length === entries.length) {
+    return jsonResponse({ error: 'Entry not found' }, 404);
+  }
+  await env.RENTALS.put('solar:entries', JSON.stringify(filtered));
+  return jsonResponse({ success: true });
+}
+
+async function handleGetSolarSummaries(env) {
+  const summaries = await env.RENTALS.get('solar:summaries', 'json') || {};
+  return jsonResponse({ summaries });
+}
+
+async function handleSaveSolarSummary(env, year, data) {
+  if (!year || !/^\d{4}$/.test(String(year))) {
+    return jsonResponse({ error: 'Invalid year' }, 400);
+  }
+  if (!data || typeof data !== 'object') {
+    return jsonResponse({ error: 'Missing data object' }, 400);
+  }
+  const summaries = await env.RENTALS.get('solar:summaries', 'json') || {};
+  summaries[String(year)] = data;
+  await env.RENTALS.put('solar:summaries', JSON.stringify(summaries));
+  return jsonResponse({ success: true });
+}
+
+async function handleDeleteSolarSummary(env, year) {
+  if (!year || !/^\d{4}$/.test(String(year))) {
+    return jsonResponse({ error: 'Invalid year' }, 400);
+  }
+  const summaries = await env.RENTALS.get('solar:summaries', 'json') || {};
+  delete summaries[String(year)];
+  await env.RENTALS.put('solar:summaries', JSON.stringify(summaries));
+  return jsonResponse({ success: true });
 }
 
 // ── Helper ────────────────────────────────────────────────────────────────────

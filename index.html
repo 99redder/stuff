@@ -656,6 +656,7 @@
     </div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
       <button class="tp-header-btn" id="budget-btn" onclick="switchView('budget')">Monthly Budget</button>
+      <button class="tp-header-btn" id="solar-btn" onclick="switchView('solar')">☀️ Solar</button>
       <button class="tp-header-btn" id="tax-planning-btn" onclick="switchView('tax-planning')">Tax Planning</button>
       <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
     </div>
@@ -769,6 +770,56 @@
   </div>
 </div>
 
+<!-- ── Billing Cycle Calculator Modal ── -->
+<div class="modal-overlay hidden" id="solar-calc-modal" onclick="handleModalOverlayClick(event,'solar-calc-modal')">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="solar-calc-title" style="max-width:500px">
+    <div class="modal-header">
+      <div class="modal-icon" style="background:linear-gradient(135deg,#f59e0b,#d97706);font-size:1.2rem">🧮</div>
+      <div>
+        <div class="modal-title" id="solar-calc-title">Billing Cycle Calculator</div>
+        <div class="modal-subtitle">Estimate electricity cost without solar</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.65rem;margin-bottom:1rem">
+        <label style="grid-column:span 2;display:flex;flex-direction:column;gap:.2rem;font-size:.85rem;font-weight:600">
+          kWh Used This Billing Cycle
+          <input type="number" id="calc-kwh" class="form-input" step="1" min="0" placeholder="e.g. 850" oninput="updateCalcResult()">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
+          Customer Charge ($)
+          <input type="number" id="calc-cust" class="form-input" step=".01" value="10.50" oninput="updateCalcResult()">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
+          Distribution ($/kWh)
+          <input type="number" id="calc-dist" class="form-input" step=".0001" value="0.0678" oninput="updateCalcResult()">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
+          Transmission ($/kWh)
+          <input type="number" id="calc-trans" class="form-input" step=".0001" value="0.0334" oninput="updateCalcResult()">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
+          Supply/Energy ($/kWh)
+          <input type="number" id="calc-supply" class="form-input" step=".0001" value="0.0852" oninput="updateCalcResult()">
+        </label>
+        <label style="grid-column:span 2;display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
+          Taxes &amp; Fees (%)
+          <input type="number" id="calc-tax" class="form-input" step=".1" value="6.0" oninput="updateCalcResult()">
+        </label>
+      </div>
+      <div style="padding:.85rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg)">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:.25rem">Estimated Bill Without Solar</div>
+        <div id="calc-result-amount" style="font-size:1.8rem;font-weight:700;color:var(--success)">—</div>
+        <div id="calc-result-breakdown" style="font-size:.78rem;color:var(--text-muted);margin-top:.2rem"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeSolarCalcModal()">Close</button>
+      <button class="btn btn-primary" id="calc-use-btn" onclick="useCalcResult()" disabled>Use as ELECNOSOLAR Entry →</button>
+    </div>
+  </div>
+</div>
+
 <script>
 'use strict';
 
@@ -801,6 +852,18 @@ const CATEGORIES = {
     { code: 'other_expense', name: 'Other Expenses' },
   ]
 };
+
+// Solar entry codes
+const SOLAR_CODES = [
+  { code: 'ELECPAID',    name: 'Elec Paid',        type: 'cost',    desc: 'Actual electricity bill paid to utility' },
+  { code: 'ELECNOSOLAR', name: 'Elec w/o Solar',   type: 'savings', desc: 'Estimated bill if you had no solar' },
+  { code: 'TRUEUP',      name: 'True-Up',           type: 'savings', desc: 'Annual net metering true-up credit/charge' },
+  { code: 'SREC',        name: 'SRECs',             type: 'income',  desc: 'Solar Renewable Energy Credits sold' },
+  { code: 'CREDITS',     name: 'Tax Credits',       type: 'income',  desc: 'Federal/state tax credits received' },
+  { code: 'MAINT',       name: 'Maintenance',       type: 'cost',    desc: 'Solar system maintenance costs' },
+  { code: 'SYSTEM',      name: 'System Cost',       type: 'cost',    desc: 'Panel/inverter/installation costs' },
+];
+const SOLAR_CODE_MAP = Object.fromEntries(SOLAR_CODES.map(c => [c.code, c]));
 
 // Historical-only expense categories (paid-off properties; not available in Add Entry)
 const HIST_ONLY_EXPENSES = [
@@ -1199,7 +1262,8 @@ const state = {
   },
   pendingDefaultPrompt: null,  // { category, amount } after a save
   pendingMaintPrompt: null,    // { date, amount, description, category } after expense save
-  budget: null                 // loaded once, global (not per-property)
+  budget: null,                // loaded once, global (not per-property)
+  solar: { config: null, entries: null, summaries: null }
 };
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -1301,17 +1365,20 @@ function switchView(view) {
   });
   const isTaxPlanning = view === 'tax-planning';
   const isBudget = view === 'budget';
-  const isFullscreen = isTaxPlanning || isBudget;
-  // Hide property tabs for portfolio, tax planning, and budget
+  const isSolar = view === 'solar';
+  const isFullscreen = isTaxPlanning || isBudget || isSolar;
+  // Hide property tabs for portfolio, tax planning, budget, and solar
   document.getElementById('property-tabs').style.display =
     (view === 'portfolio' || isFullscreen) ? 'none' : '';
-  // Hide view-nav for tax planning and budget
+  // Hide view-nav for tax planning, budget, and solar
   document.getElementById('view-nav').style.display = isFullscreen ? 'none' : '';
   // Toggle header button active states
   const tpBtn = document.getElementById('tax-planning-btn');
   if (tpBtn) tpBtn.classList.toggle('active', isTaxPlanning);
   const budgetBtn = document.getElementById('budget-btn');
   if (budgetBtn) budgetBtn.classList.toggle('active', isBudget);
+  const solarBtn = document.getElementById('solar-btn');
+  if (solarBtn) solarBtn.classList.toggle('active', isSolar);
   renderView();
 }
 
@@ -1330,6 +1397,7 @@ async function renderView() {
       case 'portfolio':     await renderPortfolio();    break;
       case 'tax-planning':  await renderTaxPlanning();  break;
       case 'budget':        await renderBudget();        break;
+      case 'solar':         await renderSolar();         break;
     }
   } catch (e) {
     app.innerHTML = `<div class="error-msg">Failed to load: ${escHtml(e.message)}</div>`;
@@ -3504,6 +3572,577 @@ async function _saveBudget() {
   catch { /* non-critical — data is in memory */ }
 }
 
+// ── Solar ROI ────────────────────────────────────────────────────────────────
+
+let _sEdit     = null;  // { id:'new'|uuid, date, description, code, amount } — entry edit state
+let _sYearEdit = null;  // 'new' | year string | null — summary edit state
+let _sCalcAmt  = null;  // computed ELECNOSOLAR amount from calculator
+
+async function renderSolar() {
+  if (state.solar.config === null) {
+    const r = await callApi({ action: 'get_solar_config' });
+    state.solar.config = r.config || {};
+  }
+  if (state.solar.entries === null) {
+    const r = await callApi({ action: 'get_solar_entries' });
+    state.solar.entries = r.entries || [];
+  }
+  if (state.solar.summaries === null) {
+    const r = await callApi({ action: 'get_solar_summaries' });
+    state.solar.summaries = r.summaries || {};
+  }
+  _renderSolarHtml();
+}
+
+function _solarEntryEditRow(entry) {
+  // entry=null → new row; entry=object → edit existing
+  const d = entry ? entry.date        : (_sEdit?.date || new Date().toISOString().slice(0, 10));
+  const c = entry ? entry.code        : (_sEdit?.code || 'ELECPAID');
+  const n = entry ? entry.description : (_sEdit?.description || '');
+  const a = entry ? entry.amount      : (_sEdit?.amount !== undefined ? _sEdit.amount : '');
+  const id = entry?.id || 'new';
+  const codeOpts = SOLAR_CODES.map(sc =>
+    `<option value="${sc.code}"${sc.code === c ? ' selected' : ''}>${sc.code} — ${sc.name}</option>`
+  ).join('');
+  return `<tr style="background:var(--hover)">
+    <td><input type="date" id="sentry-date" class="form-input" style="width:135px;font-size:.83rem" value="${escAttr(d)}"></td>
+    <td><select id="sentry-code" class="form-input" style="font-size:.83rem">${codeOpts}</select></td>
+    <td><input type="text" id="sentry-desc" class="form-input" style="font-size:.83rem" placeholder="Description" value="${escAttr(n)}"></td>
+    <td><input type="number" id="sentry-amt" class="form-input" style="width:95px;text-align:right;font-size:.83rem" step=".01" min="0" placeholder="0.00" value="${escAttr(String(a))}"></td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-primary btn-sm" onclick="solarSaveEntry('${escAttr(id)}')">Save</button>
+      <button class="btn btn-ghost btn-sm" onclick="solarCancelEntry()">Cancel</button>
+    </td>
+  </tr>`;
+}
+
+function _solarSummaryEditRow(year, data) {
+  const isNew = year === 'new';
+  const inp = (code) =>
+    `<td><input type="number" id="ssum-${code}" class="form-input" step=".01" min="0"
+      style="width:78px;font-size:.78rem" value="${escAttr(String(data?.[code] !== undefined ? data[code] : ''))}"></td>`;
+  return `<tr style="background:var(--hover)">
+    <td>${isNew
+      ? `<input type="number" id="ssum-year" class="form-input" style="width:72px;font-size:.85rem" placeholder="YYYY" min="2000" max="2099">`
+      : `<strong>${escHtml(year)}</strong>`}
+    </td>
+    ${inp('ELECPAID')}${inp('ELECNOSOLAR')}
+    <td style="color:var(--text-muted);font-size:.78rem;text-align:center">auto</td>
+    ${inp('TRUEUP')}${inp('SREC')}${inp('CREDITS')}${inp('MAINT')}${inp('SYSTEM')}
+    <td style="white-space:nowrap">
+      <button class="btn btn-primary btn-sm" onclick="solarSaveSummary('${escAttr(String(year))}')">Save</button>
+      <button class="btn btn-ghost btn-sm" onclick="solarCancelSummary()">Cancel</button>
+    </td>
+  </tr>`;
+}
+
+function _renderSolarHtml() {
+  const cfg      = state.solar.config   || {};
+  const entries  = state.solar.entries  || [];
+  const summaries = state.solar.summaries || {};
+
+  // ── All-time ROI calculation ──────────────────────────────────────────────
+  let totals = { ELECPAID:0, ELECNOSOLAR:0, TRUEUP:0, SREC:0, CREDITS:0, MAINT:0, SYSTEM:0 };
+  for (const yr of Object.keys(summaries)) {
+    const s = summaries[yr];
+    for (const k of Object.keys(totals)) totals[k] += s[k] || 0;
+  }
+  for (const e of entries) {
+    if (totals.hasOwnProperty(e.code)) totals[e.code] += e.amount;
+  }
+  const electricSavings = totals.ELECNOSOLAR - totals.ELECPAID + totals.TRUEUP;
+  const totalReturns    = electricSavings + totals.SREC + totals.CREDITS;
+  const netProfit       = totalReturns - totals.MAINT - totals.SYSTEM;
+  const roiPct          = totals.SYSTEM > 0 ? netProfit / totals.SYSTEM * 100 : null;
+
+  let yearsHeld = null, annualizedROI = null;
+  const installDateStr = cfg.installDate || null;
+  if (installDateStr) {
+    yearsHeld = (Date.now() - new Date(installDateStr).getTime()) / (365.25 * 24 * 3600 * 1000);
+    if (yearsHeld > 0 && totals.SYSTEM > 0) {
+      annualizedROI = (Math.pow(1 + netProfit / totals.SYSTEM, 1 / yearsHeld) - 1) * 100;
+    }
+  }
+
+  const fmtS = (v, show = true) => show && v !== null ? `${v >= 0 ? '+' : '−'}${fmt(Math.abs(v))}` : '—';
+  const fmtP = v => v === null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+  const pc   = (v) => v >= 0 ? 'var(--success)' : 'var(--danger)';
+
+  // ── ROI section ──────────────────────────────────────────────────────────
+  const hasSystem = totals.SYSTEM > 0;
+  const roiHtml = `
+    <div class="card" style="margin-bottom:1rem">
+      <h3 style="margin:0 0 .9rem;font-size:1rem;font-weight:700">All-Time Investment ROI</h3>
+      <div class="stats-row" style="margin-bottom:.9rem">
+        <div class="stat-card">
+          <div class="stat-label">Total Invested</div>
+          <div class="stat-value">${hasSystem ? fmt(totals.SYSTEM) : '—'}</div>
+          <div class="stat-sub">System cost</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Elec Savings</div>
+          <div class="stat-value ${electricSavings >= 0 ? 'income' : 'expense'}">${fmtS(electricSavings, hasSystem)}</div>
+          <div class="stat-sub">w/o Solar − Paid + True-Up</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">SREC + Credits</div>
+          <div class="stat-value income">${fmt(totals.SREC + totals.CREDITS)}</div>
+          <div class="stat-sub">Extra income</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Net Profit</div>
+          <div class="stat-value ${netProfit >= 0 ? 'income' : 'expense'}">${fmtS(netProfit, hasSystem)}</div>
+          <div class="stat-sub">After all costs</div>
+        </div>
+      </div>
+      <table class="summary-table" style="margin-bottom:.25rem">
+        <tbody>
+          <tr><td>Elec Savings (w/o Solar − Paid)</td><td style="text-align:right">${fmtS(totals.ELECNOSOLAR - totals.ELECPAID)}</td></tr>
+          <tr><td>+ True-Up Credits</td><td style="text-align:right">${fmtS(totals.TRUEUP)}</td></tr>
+          <tr><td>+ SREC Income</td><td style="text-align:right">${fmt(totals.SREC)}</td></tr>
+          <tr><td>+ Tax Credits</td><td style="text-align:right">${fmt(totals.CREDITS)}</td></tr>
+          <tr><td>− Maintenance Costs</td><td style="text-align:right">−${fmt(totals.MAINT)}</td></tr>
+          <tr><td>− System Cost</td><td style="text-align:right">−${fmt(totals.SYSTEM)}</td></tr>
+          <tr style="font-weight:700;border-top:2px solid var(--border)">
+            <td>Net Profit</td>
+            <td style="text-align:right;color:${hasSystem ? pc(netProfit) : 'inherit'}">${fmtS(netProfit, hasSystem)}</td>
+          </tr>
+          <tr style="font-weight:700">
+            <td>ROI (on system cost)</td>
+            <td style="text-align:right;color:${roiPct !== null ? pc(roiPct) : 'inherit'}">${fmtP(roiPct)}</td>
+          </tr>
+          <tr style="font-weight:700">
+            <td>Annualized Return${yearsHeld ? ` (${yearsHeld.toFixed(1)}y since ${fmtDate(installDateStr)})` : ''}</td>
+            <td style="text-align:right;color:${annualizedROI !== null ? pc(annualizedROI) : 'inherit'}">${fmtP(annualizedROI)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>`;
+
+  // ── Current-year ledger ────────────────────────────────────────────────────
+  const curYear = String(CURRENT_YEAR);
+  const cyTotals = {};
+  for (const sc of SOLAR_CODES) cyTotals[sc.code] = 0;
+  for (const e of entries) if (cyTotals.hasOwnProperty(e.code)) cyTotals[e.code] += e.amount;
+
+  const entryRows = entries.map(e => {
+    if (_sEdit && _sEdit.id === e.id) return _solarEntryEditRow(e);
+    const sc = SOLAR_CODE_MAP[e.code];
+    const badgeColor = sc?.type === 'cost' ? '#ef4444' : sc?.type === 'income' ? '#22c55e' : '#3b82f6';
+    return `<tr>
+      <td style="white-space:nowrap">${fmtDate(e.date)}</td>
+      <td><span style="display:inline-block;padding:.1rem .4rem;border-radius:4px;font-size:.75rem;font-weight:700;background:${badgeColor}22;color:${badgeColor}">${escHtml(e.code)}</span></td>
+      <td style="font-size:.85rem">${escHtml(e.description)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${fmt(e.amount)}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" onclick="solarEditEntry('${escAttr(e.id)}')">Edit</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="solarDeleteEntry('${escAttr(e.id)}')">×</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const addNewRow = (_sEdit && _sEdit.id === 'new') ? _solarEntryEditRow(null) : '';
+  const showEntryTable = entries.length > 0 || (_sEdit && _sEdit.id === 'new');
+
+  const cySection = `
+    <div class="card" style="margin-bottom:1rem">
+      <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem">
+        <h3 style="margin:0;font-size:1rem;font-weight:700">${curYear} Ledger</h3>
+        <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="solarStartAddEntry()">+ Add Entry</button>
+      </div>
+      ${!showEntryTable ? `<p style="color:var(--text-muted);font-size:.88rem;margin:0">No entries yet for ${curYear}. Click + Add Entry or use the 🧮 Billing Cycle Calculator above.</p>` : ''}
+      ${showEntryTable ? `
+        <div style="overflow-x:auto">
+          <table class="summary-table">
+            <thead><tr>
+              <th>Date</th><th>Code</th><th>Description</th>
+              <th style="text-align:right">Amount</th><th></th>
+            </tr></thead>
+            <tbody>${entryRows}${addNewRow}</tbody>
+          </table>
+        </div>` : (_sEdit?.id === 'new' ? `
+        <div style="overflow-x:auto">
+          <table class="summary-table">
+            <thead><tr>
+              <th>Date</th><th>Code</th><th>Description</th>
+              <th style="text-align:right">Amount</th><th></th>
+            </tr></thead>
+            <tbody>${addNewRow}</tbody>
+          </table>
+        </div>` : '')}
+    </div>`;
+
+  // ── Historical summaries ─────────────────────────────────────────────────
+  const sortedYears = Object.keys(summaries).sort().reverse();
+  const showSumTable = sortedYears.length > 0 || _sYearEdit !== null;
+
+  const sumRows = sortedYears.map(yr => {
+    if (_sYearEdit === yr) return _solarSummaryEditRow(yr, summaries[yr]);
+    const s = summaries[yr];
+    const savings = (s.ELECNOSOLAR || 0) - (s.ELECPAID || 0);
+    const hasSavings = s.ELECNOSOLAR || s.ELECPAID;
+    return `<tr>
+      <td style="font-weight:600">${escHtml(yr)}</td>
+      <td style="text-align:right">${s.ELECPAID ? fmt(s.ELECPAID) : '—'}</td>
+      <td style="text-align:right">${s.ELECNOSOLAR ? fmt(s.ELECNOSOLAR) : '—'}</td>
+      <td style="text-align:right;color:${savings >= 0 ? 'var(--success)' : 'var(--danger)'}">
+        ${hasSavings ? fmtS(savings) : '—'}
+      </td>
+      <td style="text-align:right">${s.TRUEUP ? fmtS(s.TRUEUP) : '—'}</td>
+      <td style="text-align:right">${s.SREC ? fmt(s.SREC) : '—'}</td>
+      <td style="text-align:right">${s.CREDITS ? fmt(s.CREDITS) : '—'}</td>
+      <td style="text-align:right">${s.MAINT ? fmt(s.MAINT) : '—'}</td>
+      <td style="text-align:right">${s.SYSTEM ? fmt(s.SYSTEM) : '—'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" onclick="solarEditSummary('${escAttr(yr)}')">Edit</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="solarDeleteSummary('${escAttr(yr)}')">×</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const newSumRow = _sYearEdit === 'new' ? _solarSummaryEditRow('new', {}) : '';
+
+  const sumSection = `
+    <div class="card" style="margin-bottom:1rem">
+      <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem">
+        <h3 style="margin:0;font-size:1rem;font-weight:700">Historical Annual Summaries</h3>
+        <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="solarStartAddSummary()">+ Add Year</button>
+      </div>
+      ${!showSumTable ? `<p style="color:var(--text-muted);font-size:.88rem;margin:0">No historical summaries yet. Click + Add Year to enter past annual totals.</p>` : ''}
+      ${showSumTable ? `
+        <div style="overflow-x:auto">
+          <table class="summary-table">
+            <thead><tr>
+              <th>Year</th>
+              <th style="text-align:right">Elec Paid</th>
+              <th style="text-align:right">w/o Solar</th>
+              <th style="text-align:right">Savings</th>
+              <th style="text-align:right">True-Up</th>
+              <th style="text-align:right">SREC</th>
+              <th style="text-align:right">Credits</th>
+              <th style="text-align:right">Maint</th>
+              <th style="text-align:right">System</th>
+              <th></th>
+            </tr></thead>
+            <tbody>${sumRows}${newSumRow}</tbody>
+          </table>
+        </div>` : (newSumRow ? `
+        <div style="overflow-x:auto">
+          <table class="summary-table">
+            <thead><tr>
+              <th>Year</th><th>Elec Paid</th><th>w/o Solar</th><th>Savings</th>
+              <th>True-Up</th><th>SREC</th><th>Credits</th><th>Maint</th><th>System</th><th></th>
+            </tr></thead>
+            <tbody>${newSumRow}</tbody>
+          </table>
+        </div>` : '')}
+    </div>`;
+
+  // ── System config ────────────────────────────────────────────────────────
+  const cfgOpen = !!cfg._configOpen || Object.keys(cfg).filter(k => k !== '_configOpen').length === 0;
+  const cr = cfg.calcRates || {};
+  const cfgSection = `
+    <div class="card" style="margin-bottom:1rem">
+      <div style="display:flex;align-items:center;cursor:pointer;gap:.5rem" onclick="solarToggleConfig()">
+        <h3 style="margin:0;font-size:1rem;font-weight:700">System Configuration</h3>
+        <span style="margin-left:auto;font-size:.82rem;color:var(--text-muted)">${cfgOpen ? '▲ Collapse' : '▼ Edit'}</span>
+      </div>
+      ${cfgOpen ? `
+        <div style="margin-top:1rem">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.65rem;margin-bottom:.75rem">
+            <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
+              System Size (kW)<input type="number" id="scfg-size" class="form-input" step=".01" value="${escAttr(String(cfg.systemSize || ''))}">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
+              Install Date<input type="date" id="scfg-date" class="form-input" value="${escAttr(cfg.installDate || '')}">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
+              Panel Warranty (yr)<input type="number" id="scfg-pwarn" class="form-input" value="${escAttr(String(cfg.panelsWarranty || ''))}">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
+              Inverter Warranty (yr)<input type="number" id="scfg-iwarn" class="form-input" value="${escAttr(String(cfg.inverterWarranty || ''))}">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
+              Labor Warranty (yr)<input type="number" id="scfg-lwarn" class="form-input" value="${escAttr(String(cfg.laborWarranty || ''))}">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
+              SRECs / Year<input type="number" id="scfg-srecs" class="form-input" value="${escAttr(String(cfg.srecsPerYear || ''))}">
+            </label>
+          </div>
+          <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.04em;margin-bottom:.5rem">Billing Cycle Calculator Defaults (Delmarva Power)</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-bottom:.75rem">
+            <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.82rem">
+              Customer Charge ($)<input type="number" id="scfg-cust" class="form-input" step=".01" value="${escAttr(String(cr.customerCharge ?? 10.50))}">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.82rem">
+              Distribution ($/kWh)<input type="number" id="scfg-dist" class="form-input" step=".0001" value="${escAttr(String(cr.distRate ?? 0.0678))}">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.82rem">
+              Transmission ($/kWh)<input type="number" id="scfg-trans" class="form-input" step=".0001" value="${escAttr(String(cr.transRate ?? 0.0334))}">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.82rem">
+              Supply ($/kWh)<input type="number" id="scfg-supply" class="form-input" step=".0001" value="${escAttr(String(cr.supplyRate ?? 0.0852))}">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.82rem">
+              Tax &amp; Fees (%)<input type="number" id="scfg-tax" class="form-input" step=".1" value="${escAttr(String(cr.taxPct ?? 6.0))}">
+            </label>
+          </div>
+          <div id="solar-cfg-error" class="error-msg hidden"></div>
+          <div style="display:flex;gap:.5rem;margin-top:.5rem">
+            <button class="btn btn-primary btn-sm" onclick="saveSolarConfig()">Save Configuration</button>
+            <button class="btn btn-ghost btn-sm" onclick="solarToggleConfig()">Cancel</button>
+          </div>
+        </div>` : `
+        <div style="margin-top:.5rem;font-size:.85rem;color:var(--text-muted)">
+          ${cfg.systemSize ? `${cfg.systemSize} kW system` : ''}
+          ${cfg.installDate ? ` · installed ${fmtDate(cfg.installDate)}` : ''}
+          ${cfg.panelsWarranty ? ` · panels ${cfg.panelsWarranty}yr` : ''}
+          ${cfg.inverterWarranty ? `/ inverter ${cfg.inverterWarranty}yr` : ''}
+          ${cfg.laborWarranty ? `/ labor ${cfg.laborWarranty}yr warranty` : ''}
+          ${!cfg.systemSize && !cfg.installDate ? 'Click ▼ Edit to configure your solar system details.' : ''}
+        </div>`}
+    </div>`;
+
+  // ── Assemble page ─────────────────────────────────────────────────────────
+  document.getElementById('app').innerHTML = `
+    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="switchView('current-year')"
+        style="flex-shrink:0;background:linear-gradient(135deg,#f59e0b,#d97706);color:white;border:none;box-shadow:0 2px 8px rgba(245,158,11,.35);transition:transform .15s,box-shadow .15s">
+        ← Back to Properties</button>
+      <h2 style="margin:0;font-size:1.15rem;font-weight:700">☀️ Solar ROI — 731 Wye Oak Dr</h2>
+      <div style="margin-left:auto">
+        <button class="btn btn-ghost btn-sm" onclick="openSolarCalcModal()"
+          title="Billing Cycle Calculator" style="gap:.35rem">
+          🧮 Billing Cycle Calculator
+        </button>
+      </div>
+    </div>
+    ${roiHtml}
+    ${cySection}
+    ${sumSection}
+    ${cfgSection}
+  `;
+}
+
+// ── Solar: entry helpers ──────────────────────────────────────────────────────
+
+function solarStartAddEntry() {
+  _sEdit = { id: 'new', date: new Date().toISOString().slice(0, 10), code: 'ELECPAID', description: '', amount: '' };
+  _renderSolarHtml();
+  setTimeout(() => document.getElementById('sentry-amt')?.focus(), 50);
+}
+
+function solarEditEntry(id) {
+  const e = (state.solar.entries || []).find(x => x.id === id);
+  if (!e) return;
+  _sEdit = { ...e };
+  _renderSolarHtml();
+  setTimeout(() => document.getElementById('sentry-amt')?.focus(), 50);
+}
+
+function solarCancelEntry() {
+  _sEdit = null;
+  _renderSolarHtml();
+}
+
+async function solarSaveEntry(id) {
+  const date   = document.getElementById('sentry-date')?.value?.trim();
+  const code   = document.getElementById('sentry-code')?.value;
+  const desc   = document.getElementById('sentry-desc')?.value?.trim() || '';
+  const amount = parseFloat(document.getElementById('sentry-amt')?.value);
+
+  if (!date) { alert('Please enter a date.'); return; }
+  if (isNaN(amount) || amount < 0) { alert('Please enter a valid non-negative amount.'); return; }
+
+  try {
+    if (id === 'new') {
+      const r = await callApi({ action: 'add_solar_entry', entry: { date, description: desc, code, amount } });
+      state.solar.entries.push(r.entry);
+    } else {
+      const r = await callApi({ action: 'update_solar_entry', id, entry: { date, description: desc, code, amount } });
+      const idx = state.solar.entries.findIndex(e => e.id === id);
+      if (idx !== -1) state.solar.entries[idx] = r.entry;
+    }
+    state.solar.entries.sort((a, b) => a.date.localeCompare(b.date));
+    _sEdit = null;
+    _renderSolarHtml();
+  } catch (err) {
+    alert(`Save failed: ${err.message}`);
+  }
+}
+
+async function solarDeleteEntry(id) {
+  if (!confirm('Delete this entry?')) return;
+  try {
+    await callApi({ action: 'delete_solar_entry', id });
+    state.solar.entries = (state.solar.entries || []).filter(e => e.id !== id);
+    _renderSolarHtml();
+  } catch (err) {
+    alert(`Delete failed: ${err.message}`);
+  }
+}
+
+// ── Solar: summary helpers ────────────────────────────────────────────────────
+
+function solarStartAddSummary() {
+  _sYearEdit = 'new';
+  _renderSolarHtml();
+  setTimeout(() => document.getElementById('ssum-year')?.focus(), 50);
+}
+
+function solarEditSummary(year) {
+  _sYearEdit = year;
+  _renderSolarHtml();
+}
+
+function solarCancelSummary() {
+  _sYearEdit = null;
+  _renderSolarHtml();
+}
+
+async function solarSaveSummary(yearArg) {
+  const isNew = yearArg === 'new';
+  const yr = isNew
+    ? (document.getElementById('ssum-year')?.value?.trim() || '')
+    : yearArg;
+  if (!/^\d{4}$/.test(yr)) { alert('Please enter a valid 4-digit year.'); return; }
+
+  const data = {};
+  for (const sc of SOLAR_CODES) {
+    const val = parseFloat(document.getElementById(`ssum-${sc.code}`)?.value);
+    if (!isNaN(val) && val >= 0) data[sc.code] = val;
+  }
+
+  try {
+    await callApi({ action: 'save_solar_summary', year: yr, data });
+    state.solar.summaries[yr] = data;
+    _sYearEdit = null;
+    _renderSolarHtml();
+  } catch (err) {
+    alert(`Save failed: ${err.message}`);
+  }
+}
+
+async function solarDeleteSummary(year) {
+  if (!confirm(`Delete ${year} summary? This cannot be undone.`)) return;
+  try {
+    await callApi({ action: 'delete_solar_summary', year });
+    delete state.solar.summaries[year];
+    _renderSolarHtml();
+  } catch (err) {
+    alert(`Delete failed: ${err.message}`);
+  }
+}
+
+// ── Solar: config helpers ─────────────────────────────────────────────────────
+
+function solarToggleConfig() {
+  if (!state.solar.config) state.solar.config = {};
+  state.solar.config._configOpen = !state.solar.config._configOpen;
+  _renderSolarHtml();
+}
+
+async function saveSolarConfig() {
+  const systemSize       = parseFloat(document.getElementById('scfg-size')?.value);
+  const installDate      = document.getElementById('scfg-date')?.value?.trim() || null;
+  const panelsWarranty   = parseInt(document.getElementById('scfg-pwarn')?.value);
+  const inverterWarranty = parseInt(document.getElementById('scfg-iwarn')?.value);
+  const laborWarranty    = parseInt(document.getElementById('scfg-lwarn')?.value);
+  const srecsPerYear     = parseInt(document.getElementById('scfg-srecs')?.value);
+  const calcRates = {
+    customerCharge: parseFloat(document.getElementById('scfg-cust')?.value),
+    distRate:       parseFloat(document.getElementById('scfg-dist')?.value),
+    transRate:      parseFloat(document.getElementById('scfg-trans')?.value),
+    supplyRate:     parseFloat(document.getElementById('scfg-supply')?.value),
+    taxPct:         parseFloat(document.getElementById('scfg-tax')?.value),
+  };
+
+  const newCfg = {
+    ...(state.solar.config || {}),
+    ...(isNaN(systemSize) ? {} : { systemSize }),
+    ...(installDate ? { installDate } : {}),
+    ...(isNaN(panelsWarranty) ? {} : { panelsWarranty }),
+    ...(isNaN(inverterWarranty) ? {} : { inverterWarranty }),
+    ...(isNaN(laborWarranty) ? {} : { laborWarranty }),
+    ...(isNaN(srecsPerYear) ? {} : { srecsPerYear }),
+    calcRates,
+    _configOpen: false,
+  };
+
+  try {
+    const r = await callApi({ action: 'save_solar_config', config: newCfg });
+    state.solar.config = r.config;
+    _renderSolarHtml();
+  } catch (err) {
+    const errEl = document.getElementById('solar-cfg-error');
+    if (errEl) { errEl.textContent = err.message; errEl.classList.remove('hidden'); }
+  }
+}
+
+// ── Solar: billing cycle calculator ──────────────────────────────────────────
+
+function openSolarCalcModal() {
+  const cr = (state.solar.config || {}).calcRates || {};
+  document.getElementById('calc-cust').value   = cr.customerCharge ?? 10.50;
+  document.getElementById('calc-dist').value   = cr.distRate  ?? 0.0678;
+  document.getElementById('calc-trans').value  = cr.transRate ?? 0.0334;
+  document.getElementById('calc-supply').value = cr.supplyRate ?? 0.0852;
+  document.getElementById('calc-tax').value    = cr.taxPct ?? 6.0;
+  document.getElementById('calc-kwh').value    = '';
+  document.getElementById('calc-result-amount').textContent    = '—';
+  document.getElementById('calc-result-breakdown').textContent = '';
+  document.getElementById('calc-use-btn').disabled = true;
+  _sCalcAmt = null;
+  document.getElementById('solar-calc-modal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('calc-kwh')?.focus(), 50);
+}
+
+function closeSolarCalcModal() {
+  document.getElementById('solar-calc-modal').classList.add('hidden');
+}
+
+function updateCalcResult() {
+  const kwh    = parseFloat(document.getElementById('calc-kwh')?.value) || 0;
+  const cust   = parseFloat(document.getElementById('calc-cust')?.value) || 0;
+  const dist   = parseFloat(document.getElementById('calc-dist')?.value) || 0;
+  const trans  = parseFloat(document.getElementById('calc-trans')?.value) || 0;
+  const supply = parseFloat(document.getElementById('calc-supply')?.value) || 0;
+  const taxPct = parseFloat(document.getElementById('calc-tax')?.value) || 0;
+
+  if (!kwh) {
+    document.getElementById('calc-result-amount').textContent    = '—';
+    document.getElementById('calc-result-breakdown').textContent = '';
+    document.getElementById('calc-use-btn').disabled = true;
+    _sCalcAmt = null;
+    return;
+  }
+
+  const energyCharge = kwh * (dist + trans + supply);
+  const subtotal     = cust + energyCharge;
+  const tax          = subtotal * (taxPct / 100);
+  const total        = subtotal + tax;
+
+  document.getElementById('calc-result-amount').textContent = fmt(total);
+  document.getElementById('calc-result-breakdown').textContent =
+    `Customer: ${fmt(cust)} + Energy (${kwh} kWh × $${(dist+trans+supply).toFixed(4)}): ${fmt(energyCharge)} + Taxes: ${fmt(tax)}`;
+  document.getElementById('calc-use-btn').disabled = false;
+  _sCalcAmt = total;
+}
+
+function useCalcResult() {
+  if (!_sCalcAmt) return;
+  closeSolarCalcModal();
+  _sEdit = {
+    id: 'new',
+    date: new Date().toISOString().slice(0, 10),
+    code: 'ELECNOSOLAR',
+    description: 'Estimated bill without solar',
+    amount: Math.round(_sCalcAmt * 100) / 100,
+  };
+  _renderSolarHtml();
+  setTimeout(() => document.getElementById('sentry-date')?.focus(), 50);
+}
+
 async function renderTaxPlanning() {
   // Load all rental transaction + depreciation data
   const rentalPropsOnly = PROPERTIES.filter(p => !PRIMARY_PROPERTIES.has(p));
@@ -4122,12 +4761,29 @@ window.tpPayAmt                = tpPayAmt;
 window.saveInvestmentConfig    = saveInvestmentConfig;
 window.refreshZillowEstimate   = refreshZillowEstimate;
 window.toggleInvestmentConfig  = toggleInvestmentConfig;
+window.solarStartAddEntry      = solarStartAddEntry;
+window.solarEditEntry          = solarEditEntry;
+window.solarCancelEntry        = solarCancelEntry;
+window.solarSaveEntry          = solarSaveEntry;
+window.solarDeleteEntry        = solarDeleteEntry;
+window.solarStartAddSummary    = solarStartAddSummary;
+window.solarEditSummary        = solarEditSummary;
+window.solarCancelSummary      = solarCancelSummary;
+window.solarSaveSummary        = solarSaveSummary;
+window.solarDeleteSummary      = solarDeleteSummary;
+window.solarToggleConfig       = solarToggleConfig;
+window.saveSolarConfig         = saveSolarConfig;
+window.openSolarCalcModal      = openSolarCalcModal;
+window.closeSolarCalcModal     = closeSolarCalcModal;
+window.updateCalcResult        = updateCalcResult;
+window.useCalcResult           = useCalcResult;
 
 // Close modals on Escape
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     closeDeleteModal();
     closeEditModal();
+    closeSolarCalcModal();
   }
 });
 
