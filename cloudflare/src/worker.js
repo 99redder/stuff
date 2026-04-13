@@ -409,7 +409,7 @@ async function handleSaveInvestment(env, property, config) {
     return jsonResponse({ error: 'Missing config object' }, 400);
   }
 
-  const { purchasePrice, purchaseClosingCosts, saleClosingCostPct } = config;
+  const { purchasePrice, purchaseClosingCosts, saleClosingCostPct, stateCapGainsPct } = config;
 
   if (typeof purchasePrice !== 'number' || !isFinite(purchasePrice) || purchasePrice < 0) {
     return jsonResponse({ error: 'purchasePrice must be a non-negative number' }, 400);
@@ -420,6 +420,9 @@ async function handleSaveInvestment(env, property, config) {
   if (typeof saleClosingCostPct !== 'number' || !isFinite(saleClosingCostPct) || saleClosingCostPct < 0 || saleClosingCostPct > 20) {
     return jsonResponse({ error: 'saleClosingCostPct must be a number between 0 and 20' }, 400);
   }
+  if (typeof stateCapGainsPct !== 'number' || !isFinite(stateCapGainsPct) || stateCapGainsPct < 0 || stateCapGainsPct > 20) {
+    return jsonResponse({ error: 'stateCapGainsPct must be a number between 0 and 20' }, 400);
+  }
 
   // Merge into existing — preserve zillowEstimate/zillowFetchedAt unless manually overridden
   const existing = await env.RENTALS.get(`investment:${property}`, 'json') || {};
@@ -428,6 +431,7 @@ async function handleSaveInvestment(env, property, config) {
     purchasePrice,
     purchaseClosingCosts,
     saleClosingCostPct,
+    stateCapGainsPct,
     zillowUrl: typeof config.zillowUrl === 'string' ? config.zillowUrl.trim() : (existing.zillowUrl || ''),
   };
 

@@ -2189,6 +2189,9 @@ async function renderInvestmentReturn() {
   const purchasePrice      = inv.purchasePrice       || 0;
   const purchaseClosing    = inv.purchaseClosingCosts || 0;
   const saleClosingPct     = (typeof inv.saleClosingCostPct === 'number') ? inv.saleClosingCostPct : 6;
+  // State capital gains defaults: NH = 0%, VA = 5.75%
+  const STATE_CGT_DEFAULTS = { '6AL': 0, '95EB': 0, '446BB': 5.75 };
+  const stateCapGainsPct   = (typeof inv.stateCapGainsPct === 'number') ? inv.stateCapGainsPct : (STATE_CGT_DEFAULTS[prop] ?? 0);
 
   // Cumulative improvements: historical summaries + current-year transactions
   let cumulativeImprovements = 0;
@@ -2213,17 +2216,18 @@ async function renderInvestmentReturn() {
   const zillowFetchedAt = inv.zillowFetchedAt || null;
   const zillowUrl       = inv.zillowUrl || '';
 
-  let netSaleProceeds  = null;
-  let saleClosingAmt   = null;
-  let capitalGainsTax  = null;
+  let netSaleProceeds     = null;
+  let saleClosingAmt      = null;
+  let federalCapGainsTax  = null;
+  let stateCapGainsTax    = null;
   if (zillowEstimate) {
     saleClosingAmt  = zillowEstimate * (saleClosingPct / 100);
     const grossAfterClosing = zillowEstimate - saleClosingAmt;
-    // LTCG (15%) applies to appreciation above cost basis; depr recapture already handles
-    // the depreciation portion, so: capital gain = gross proceeds - total invested
-    const capitalGain = Math.max(0, grossAfterClosing - totalCapitalInvested);
-    capitalGainsTax  = capitalGain * 0.15;
-    netSaleProceeds  = grossAfterClosing - depreciationRecaptureTax - capitalGainsTax;
+    // Capital gain = gross proceeds - total invested (depr recapture is taxed separately)
+    const capitalGain   = Math.max(0, grossAfterClosing - totalCapitalInvested);
+    federalCapGainsTax  = capitalGain * 0.15;
+    stateCapGainsTax    = capitalGain * (stateCapGainsPct / 100);
+    netSaleProceeds     = grossAfterClosing - depreciationRecaptureTax - federalCapGainsTax - stateCapGainsTax;
   }
 
   // ── All-Years Cash Flow ───────────────────────────────────────────────────
@@ -2361,7 +2365,8 @@ async function renderInvestmentReturn() {
           ${row('Zillow Estimate', zillowEstimate, 'var(--success)')}
           ${row(`− Sale Closing Costs (${saleClosingPct}%)`, saleClosingAmt, 'var(--danger)')}
           ${row('− Depreciation Recapture Tax (25%)', depreciationRecaptureTax > 0 ? depreciationRecaptureTax : 0, 'var(--danger)')}
-          ${row('− Capital Gains Tax (15%)', capitalGainsTax, 'var(--danger)')}
+          ${row('− Federal Capital Gains Tax (15%)', federalCapGainsTax, 'var(--danger)')}
+          ${stateCapGainsPct > 0 ? row(`− State Capital Gains Tax (${stateCapGainsPct}%)`, stateCapGainsTax, 'var(--danger)') : ''}
           ${row('Estimated Net Proceeds', netSaleProceeds, netSaleProceeds !== null ? 'var(--success)' : 'var(--text-muted)', false, true)}
         </table>
         ${zillowEstimate === null ? `<div style="padding:.5rem .75rem;color:var(--text-muted);font-size:0.85rem">Configure a Zillow URL below and click Refresh to fetch the current estimate.</div>` : ''}
@@ -2405,6 +2410,11 @@ async function renderInvestmentReturn() {
             <div class="form-group">
               <label>Estimated Sale Closing Cost (%)</label>
               <input type="number" id="inv-sale-pct" step="0.1" min="0" max="20" value="${escAttr(String(saleClosingPct))}" placeholder="6">
+            </div>
+            <div class="form-group">
+              <label>State Capital Gains Rate (%)</label>
+              <input type="number" id="inv-state-cgt" step="0.01" min="0" max="20" value="${escAttr(String(stateCapGainsPct))}" placeholder="0">
+              <div style="font-size:0.78rem;color:var(--text-muted);margin-top:.2rem">NH: 0% &nbsp;|&nbsp; VA: 5.75%</div>
             </div>
             <div class="form-group" style="grid-column:1/-1">
               <label>Zillow Property URL</label>
@@ -2457,6 +2467,7 @@ async function saveInvestmentConfig() {
   const purchasePrice      = parseFloat(document.getElementById('inv-purchase-price').value) || 0;
   const purchaseClosing    = parseFloat(document.getElementById('inv-purchase-closing').value) || 0;
   const saleClosingCostPct = parseFloat(document.getElementById('inv-sale-pct').value);
+  const stateCapGainsPct   = parseFloat(document.getElementById('inv-state-cgt').value);
   const zillowUrl          = document.getElementById('inv-zillow-url').value.trim();
   const manualEstimate     = parseFloat(document.getElementById('inv-zillow-manual').value) || null;
 
@@ -2465,8 +2476,13 @@ async function saveInvestmentConfig() {
     errEl.classList.remove('hidden');
     return;
   }
+  if (isNaN(stateCapGainsPct) || stateCapGainsPct < 0 || stateCapGainsPct > 20) {
+    errEl.textContent = 'State capital gains rate must be between 0 and 20.';
+    errEl.classList.remove('hidden');
+    return;
+  }
 
-  const configToSave = { purchasePrice, purchaseClosingCosts: purchaseClosing, saleClosingCostPct, zillowUrl };
+  const configToSave = { purchasePrice, purchaseClosingCosts: purchaseClosing, saleClosingCostPct, stateCapGainsPct, zillowUrl };
   if (manualEstimate && manualEstimate > 0) {
     configToSave.zillowEstimate  = manualEstimate;
     configToSave.zillowFetchedAt = new Date().toISOString();
