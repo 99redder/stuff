@@ -2264,6 +2264,7 @@ async function renderInvestmentReturn() {
   const yearStr = String(CURRENT_YEAR);
 
   // ── Capital Invested ──────────────────────────────────────────────────────
+  const isPrimaryResidence = PRIMARY_PROPERTIES.has(prop);
   const purchasePrice      = inv.purchasePrice       || 0;
   const purchaseClosing    = inv.purchaseClosingCosts || 0;
   const saleClosingPct     = (typeof inv.saleClosingCostPct === 'number') ? inv.saleClosingCostPct : 6;
@@ -2358,8 +2359,6 @@ async function renderInvestmentReturn() {
   const fetchedLabel = zillowFetchedAt
     ? ` (fetched ${fmtDate(zillowFetchedAt.slice(0, 10))})`
     : '';
-
-  const isPrimaryResidence = PRIMARY_PROPERTIES.has(prop);
 
   // Row builder
   const row = (label, value, color, borderBottom = true, bold = false) => {
