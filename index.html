@@ -652,6 +652,7 @@
       <button class="prop-tab active" data-prop="6AL">6AL</button>
       <button class="prop-tab" data-prop="95EB">95EB</button>
       <button class="prop-tab" data-prop="446BB">446BB</button>
+      <button class="prop-tab" data-prop="731WO">731WO</button>
     </div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
       <button class="tp-header-btn" id="budget-btn" onclick="switchView('budget')">Monthly Budget</button>
@@ -774,7 +775,9 @@
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const API = 'https://rentals-api.99redder.workers.dev';
-const PROPERTIES = ['6AL', '95EB', '446BB'];
+const PROPERTIES = ['6AL', '95EB', '446BB', '731WO'];
+const PRIMARY_PROPERTIES = new Set(['731WO']); // primary residences: Investment Return + Maintenance only
+const PRIMARY_VIEWS = new Set(['investment-return', 'maintenance']);
 const CURRENT_YEAR = new Date().getFullYear();
 
 const CATEGORIES = {
@@ -1117,6 +1120,68 @@ const MAINT_SEED = {
     {date:'2024-06-01',description:'Smoke alarms inspected',cost:65.00,performedBy:'Taurus Property Inspections'},
     {date:'2024-11-18',description:'Bathroom exhaust fan installed, ceiling repaired and repainted',cost:1863.30,performedBy:'Inlet Realty Maintenance'},
     {date:'2025-11-10',description:'Water heater replaced',cost:1500.00,performedBy:'Claude Stevens'},
+  ],
+  '731WO': [
+    {date:'2019-02-22',description:'Closed on property',cost:0.00,performedBy:'Capitol Title',notes:''},
+    {date:'2019-02-23',description:'Installed Yale Electronic (Alexa enabled) deadbolt lock',cost:199.00,performedBy:'DIY',notes:''},
+    {date:'2019-03-02',description:'Installed Nest 3rd Generation Thermostat',cost:185.00,performedBy:'DIY',notes:''},
+    {date:'2019-03-02',description:'Painted Dining Room (Greek Villa)',cost:300.00,performedBy:'DIY',notes:'Greek Villa White Flat Valspar Infinity — main color for most rooms'},
+    {date:'2019-03-02',description:'Xfinity Internet Setup',cost:50.00,performedBy:'Comcast',notes:''},
+    {date:'2019-03-03',description:'Painted Part of Living Room (Greek Villa)',cost:0.00,performedBy:'DIY',notes:''},
+    {date:'2019-03-16',description:'Installed Amazon Basics 2.1 cubic ft safe in Master Bedroom closet',cost:220.00,performedBy:'DIY',notes:''},
+    {date:'2019-03-16',description:'Installed Garage Shelves',cost:55.00,performedBy:'DIY',notes:''},
+    {date:'2019-06-08',description:'Painted Kitchen area (Greek Villa)',cost:0.00,performedBy:'DIY',notes:''},
+    {date:'2019-06-22',description:'Painted Laundry Landing area (Greek Villa)',cost:0.00,performedBy:'DIY',notes:''},
+    {date:'2019-08-18',description:'Painted Master Bedroom and Master Bathroom (Greek Villa)',cost:50.00,performedBy:'DIY',notes:''},
+    {date:'2019-09-03',description:'Painted Living Room Closet Landing area (Greek Villa)',cost:0.00,performedBy:'DIY',notes:''},
+    {date:'2020-08-27',description:'6.84KW Solar PV system installed (18 REC 380 Solar Modules with 18 SolarEdge P400 optimizers and 1 SolarEdge 6000H US HD Inverter on a SnapNrack 100 Roof Mount System)',cost:18317.79,performedBy:'Solar Energy Services',notes:'SolarEdge Inverter installed 8/5/2020; panels and conduit installed 8/24–8/27/2020; system went live 9/21/2020'},
+    {date:'2021-01-08',description:'Installed 1 NEST Protect (Battery) in Upstairs hallway',cost:0.00,performedBy:'DIY',notes:''},
+    {date:'2021-01-12',description:'Installed 1 NEST Protect (Wired) in Living Room',cost:126.14,performedBy:'DIY',notes:''},
+    {date:'2021-01-16',description:'Installed 1 NEST Protect (Wired) in Kitchen',cost:126.14,performedBy:'DIY',notes:''},
+    {date:'2021-01-22',description:'Installed 1 NEST Protect (Battery) in Bedroom',cost:126.14,performedBy:'DIY',notes:''},
+    {date:'2021-07-20',description:'Replaced Dryer Vent Hose',cost:42.39,performedBy:'DIY',notes:''},
+    {date:'2021-07-25',description:'Power washed, sanded, and stained backyard stairs',cost:0.00,performedBy:'DIY',notes:'Cabot Gennex Red Cedar 1806 Neutral'},
+    {date:'2021-08-20',description:'Changed Air Filters',cost:20.00,performedBy:'DIY',notes:''},
+    {date:'2021-10-14',description:'Installed a NEST Protect (Wired) in Upstairs Bedroom and in the Office',cost:252.28,performedBy:'DIY',notes:''},
+    {date:'2021-10-15',description:'Installed a KIDDE smoke/carbon monoxide detector in the upstairs hallway',cost:33.93,performedBy:'DIY',notes:''},
+    {date:'2021-10-18',description:'Installed a NEST Protect (Battery) in Upstairs Hallway',cost:125.60,performedBy:'DIY',notes:''},
+    {date:'2022-01-09',description:'Replaced Stove with Whirlpool 5.3 cubic feet freestanding electric range',cost:820.85,performedBy:'DIY',notes:''},
+    {date:'2022-08-18',description:'Replaced blinds for the sliding door in the living room with motorized ones',cost:1307.77,performedBy:'3 Day Blinds',notes:'Roller Shade Motorized; Light Filtering; Tessuto - Hazelnut (93"); Order #906758'},
+    {date:'2022-10-04',description:'All cabinets sanded, primed, and sprayed white',cost:4000.00,performedBy:"Buddy's Custom Coatings",notes:'Super White'},
+    {date:'2022-10-04',description:'Hardware attached to cabinets and drawers',cost:85.00,performedBy:'DIY',notes:''},
+    {date:'2022-10-10',description:'Granite countertops (and new sink) installed (minus plumbing)',cost:5500.00,performedBy:'Royal Granite and Marble',notes:'Black Galaxy Level 5 Granite'},
+    {date:'2022-10-11',description:'New sink plumbing and faucet installed; dishwasher and garbage disposal re-attached',cost:425.00,performedBy:'Andrew Teal',notes:''},
+    {date:'2022-10-17',description:'Replaced Garbage Disposal (InSinkErator Badger 1 1/3HP Continuous Feed)',cost:98.84,performedBy:'DIY',notes:''},
+    {date:'2022-10-19',description:'Kitchen Backsplash installed and grouted',cost:975.00,performedBy:"Scott's Custom Tile",notes:'White Subway Tile with Silver Shadow Grout'},
+    {date:'2023-04-03',description:'Entire House Siding Power Washed',cost:300.00,performedBy:'Dale Feltzer',notes:''},
+    {date:'2023-05-26',description:'Replaced doorbell with Eufy Security WiFi Video Doorbell (2k Resolution)',cost:104.79,performedBy:'DIY',notes:''},
+    {date:'2023-06-18',description:'16x10 Composite (Trex Select Pebble Grey) Deck and 6ft Privacy Fence with 2 Gates installed',cost:15562.48,performedBy:'Matt Sachs',notes:'Fence: Freedom Emblem 6ft privacy panels; gates: Freedom Emblem 4ft wide (6ft high); deck solar post caps: GreenLighting Gala Solar LED #TN-1218177; fence posts 5"x5"; work 5/30–6/18/2023'},
+    {date:'2023-06-20',description:'Replaced back porch light with Eufy Security Floodlight Cam 2',cost:127.15,performedBy:'DIY',notes:''},
+    {date:'2023-07-05',description:'Installed Eufy Security System (keypad, motion sensor, alarm base, two window entry detectors)',cost:116.09,performedBy:'DIY',notes:''},
+    {date:'2023-07-07',description:'Installed Eufy Security System Part 2 (keypad at front door and two window entry detectors)',cost:116.09,performedBy:'DIY',notes:''},
+    {date:'2023-08-05',description:"Installed new cartridge in upstairs bath to fix 'only hot' issue",cost:245.00,performedBy:'Andrew Teal',notes:''},
+    {date:'2023-08-29',description:'AC and Furnace System Inspected',cost:199.00,performedBy:'Coastal Comfort',notes:''},
+    {date:'2023-09-29',description:'Replaced Master Bathroom toilet seat',cost:35.98,performedBy:'DIY',notes:''},
+    {date:'2023-10-04',description:'Replaced Upstairs Bathroom toilet seat',cost:22.43,performedBy:'DIY',notes:''},
+    {date:'2023-10-16',description:'Replaced light above garage with Eufy Floodlight Camera E220',cost:95.39,performedBy:'DIY',notes:''},
+    {date:'2023-10-28',description:'Replaced master bathroom shower head',cost:47.21,performedBy:'DIY',notes:'SparkPod High Pressure Shower Filter Head 9.5" (Luxury Polished Chrome)'},
+    {date:'2023-11-11',description:'Replaced mirror in master bathroom',cost:319.81,performedBy:'DIY',notes:'LUSABE 60x36 Black Bathroom Mirror, Metal Framed Anti-Rust Decorative'},
+    {date:'2023-11-15',description:'Replaced light above vanity in master bathroom',cost:220.47,performedBy:'DIY',notes:'Alfonzie Dimmable 47.24" LED Bath Bar, Brushed Nickel, Cold White 5000k (Ebern Designs)'},
+    {date:'2023-11-24',description:'Replaced Nest Protect and Kidde Smoke Detector in the Office (Gordie\'s Room)',cost:174.35,performedBy:'DIY',notes:''},
+    {date:'2023-12-29',description:'Painted Master Bathroom',cost:50.00,performedBy:'DIY',notes:'ACE Paint'},
+    {date:'2023-12-29',description:'Replaced Towel Rod in Master Bathroom',cost:43.29,performedBy:'DIY',notes:''},
+    {date:'2023-12-30',description:'Replaced vanity in Master Bathroom — Miranda 66"W x 22"D x 33.75"H Double Bath Vanity in Dark Blue with Carrara Cultured Marble Top',cost:2679.65,performedBy:'Andrew Teal',notes:'Bought on HomeDepot.com; labor $1,025; Store SKU #1007099795 / Internet #319151887'},
+    {date:'2024-02-08',description:'Replaced fridge with Whirlpool 24.5-cu ft 4-Door French Door Refrigerator with Ice Maker',cost:2322.05,performedBy:'DIY',notes:'Model #WRX735SDHZ (Lowes.com)'},
+    {date:'2024-07-05',description:'HVAC troubleshot (found faulty motor and capacitor)',cost:89.00,performedBy:'Coastal Comfort',notes:''},
+    {date:'2024-08-02',description:'Replaced HVAC motor and capacitor',cost:817.46,performedBy:'Coastal Comfort',notes:''},
+    {date:'2024-09-04',description:'Installed Liberty Safe Centurion 24 DLX safe',cost:1720.94,performedBy:'Liberty Safes of Delaware',notes:''},
+    {date:'2025-03-08',description:'Replaced over-the-range microwave and installed vent to the outside',cost:613.94,performedBy:'Ambient Home Solutions',notes:'Frigidaire 1.8-cu ft 29.88" Over-the-Range Microwave, Fingerprint Resistant SS, Model #FMOS184LBF; microwave $263.94 + $350 labor/vent install'},
+    {date:'2025-05-29',description:'Powerwashed house',cost:250.00,performedBy:'Fast Cans LLC',notes:''},
+    {date:'2025-06-06',description:'Rocks installed in backyard under deck and alongside in select areas',cost:842.92,performedBy:'DIY',notes:'0.4 cu ft 42-lb Marble chips (0.5–3.0" Rock Size), Model #SWM04RC; includes ~$200 in tools and supplies (wheelbarrow, spade, landscape fabric, edging)'},
+    {date:'2025-09-30',description:'Painted Garage White',cost:1160.00,performedBy:"Buddy's Custom Coatings",notes:''},
+    {date:'2025-09-30',description:'Installed Ladder and Equipment Hooks',cost:280.00,performedBy:'DIY',notes:''},
+    {date:'2025-11-05',description:'Plumbing line declogged (roots broke the piping causing a clog)',cost:250.00,performedBy:'RotoRooter',notes:''},
+    {date:'2025-11-11',description:'Front tree removed and broken plumbing pipe replaced',cost:2000.00,performedBy:"Johnson's Allscapes",notes:''},
   ]
 };
 
@@ -1129,7 +1194,8 @@ const state = {
   data: {
     '6AL':   { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
     '95EB':  { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
-    '446BB': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null }
+    '446BB': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
+    '731WO': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null }
   },
   pendingDefaultPrompt: null,  // { category, amount } after a save
   pendingMaintPrompt: null,    // { date, amount, description, category } after expense save
@@ -1211,6 +1277,18 @@ function switchProperty(prop) {
   document.querySelectorAll('.prop-tab').forEach(b => {
     b.classList.toggle('active', b.dataset.prop === prop);
   });
+  // Show/hide view tabs based on property type
+  const isPrimary = PRIMARY_PROPERTIES.has(prop);
+  document.querySelectorAll('.view-btn').forEach(b => {
+    b.style.display = (isPrimary && !PRIMARY_VIEWS.has(b.dataset.view)) ? 'none' : '';
+  });
+  // Redirect to a valid view if current one isn't available for this property
+  if (isPrimary && !PRIMARY_VIEWS.has(state.currentView)) {
+    state.currentView = 'investment-return';
+    document.querySelectorAll('.view-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.view === 'investment-return');
+    });
+  }
   renderView();
 }
 
@@ -2251,7 +2329,10 @@ async function renderInvestmentReturn() {
   // ── Total Return ──────────────────────────────────────────────────────────
   const hasEnoughData = totalCapitalInvested > 0;
   const propertyAppreciation = (netSaleProceeds !== null) ? netSaleProceeds - totalCapitalInvested : null;
-  const totalReturn = (propertyAppreciation !== null) ? propertyAppreciation + cumNetCashFlow : null;
+  // Primary residences have no rental cash flow component
+  const totalReturn = (propertyAppreciation !== null)
+    ? propertyAppreciation + (PRIMARY_PROPERTIES.has(prop) ? 0 : cumNetCashFlow)
+    : null;
   const roiPct = (totalReturn !== null && totalCapitalInvested > 0) ? (totalReturn / totalCapitalInvested) * 100 : null;
 
   // Annualized ROI — use purchaseDate from depreciation config
@@ -2306,11 +2387,11 @@ async function renderInvestmentReturn() {
         <div class="stat-value" style="color:${netSaleProceeds !== null ? 'var(--success)' : 'var(--text-muted)'}">${netSaleProceeds !== null ? fmt(netSaleProceeds) : '—'}</div>
         <div class="stat-sub">Zillow − Closing − Taxes</div>
       </div>
-      <div class="stat-card">
+      ${!isPrimaryResidence ? `<div class="stat-card">
         <div class="stat-label">Net Cash Flow</div>
         <div class="stat-value" style="color:${cumNetCashFlow >= 0 ? 'var(--success)' : 'var(--danger)'}">${cumNetCashFlow < 0 ? '−' : ''}${fmt(Math.abs(cumNetCashFlow))}</div>
         <div class="stat-sub">All Income − All Expenses</div>
-      </div>
+      </div>` : ''}
     </div>`;
 
   // ── Total Return card ─────────────────────────────────────────────────────
@@ -2323,7 +2404,7 @@ async function renderInvestmentReturn() {
       <div class="card-body" style="padding:0">
         <table style="width:100%;border-collapse:collapse">
           ${row('Property Appreciation (Net Proceeds − Invested)', propertyAppreciation, propertyAppreciation !== null && propertyAppreciation >= 0 ? 'var(--success)' : 'var(--danger)')}
-          ${row('+ Net Rental Cash Flow (All Years)', cumNetCashFlow, cumNetCashFlow >= 0 ? 'var(--success)' : 'var(--danger)')}
+          ${!isPrimaryResidence ? row('+ Net Rental Cash Flow (All Years)', cumNetCashFlow, cumNetCashFlow >= 0 ? 'var(--success)' : 'var(--danger)') : ''}
           ${row('Total Return', totalReturn, totalReturnColor, false, true)}
         </table>
         <div style="padding:.5rem .75rem;border-top:2px solid var(--border)">
@@ -2373,8 +2454,9 @@ async function renderInvestmentReturn() {
       </div>
     </div>`;
 
-  // ── Cash Flow card ────────────────────────────────────────────────────────
-  const cashFlowCard = `
+  // ── Cash Flow card (rental properties only) ──────────────────────────────
+  const isPrimaryResidence = PRIMARY_PROPERTIES.has(prop);
+  const cashFlowCard = isPrimaryResidence ? '' : `
     <div class="card" style="margin-bottom:1rem">
       <div class="card-header"><div class="card-title">Cumulative Rental Cash Flow (${yearRangeLabel})</div></div>
       <div class="card-body" style="padding:0">
@@ -2538,15 +2620,17 @@ function toggleInvestmentConfig() {
 // ── View: Portfolio (All Properties) ─────────────────────────────────────────
 
 async function renderPortfolio() {
-  // Load all properties' transactions and summaries in parallel
-  await Promise.all(PROPERTIES.flatMap(p => [
+  const rentalProps = PROPERTIES.filter(p => !PRIMARY_PROPERTIES.has(p));
+
+  // Load rental properties' transactions and summaries in parallel
+  await Promise.all(rentalProps.flatMap(p => [
     ensureLoaded(p, 'transactions'),
     ensureLoaded(p, 'summaries')
   ]));
 
   // ── Current year stats per property ──────────────────────────────────────
   const yearStr = String(CURRENT_YEAR);
-  const propStats = PROPERTIES.map(prop => {
+  const propStats = rentalProps.map(prop => {
     const txns = state.data[prop].transactions.filter(t => t.date.startsWith(yearStr));
     let rent = 0, income = 0, expenses = 0;
     for (const t of txns) {
@@ -2579,7 +2663,7 @@ async function renderPortfolio() {
   // ── Historical: combine summaries + current year from transactions ────────
   // Gather all years across all properties' summaries
   const histYears = new Set();
-  PROPERTIES.forEach(prop => Object.keys(state.data[prop].summaries).forEach(y => histYears.add(y)));
+  rentalProps.forEach(prop => Object.keys(state.data[prop].summaries).forEach(y => histYears.add(y)));
 
   // Sort descending; prepend current year (always shown from transactions)
   const sortedHistYears = [yearStr, ...[...histYears].filter(y => y !== yearStr).sort((a, b) => b - a)];
@@ -2587,7 +2671,7 @@ async function renderPortfolio() {
   const histRows = sortedHistYears.map(y => {
     const isCurrentYear = y === yearStr;
 
-    const yearly = PROPERTIES.map(prop => {
+    const yearly = rentalProps.map(prop => {
       if (isCurrentYear) {
         // Use live transactions for current year
         const txns = state.data[prop].transactions.filter(t => t.date.startsWith(yearStr));
@@ -2719,7 +2803,7 @@ async function renderPortfolio() {
               <th class="text-right">Income</th>
               <th class="text-right">Expenses</th>
               <th class="text-right">Net</th>
-              ${PROPERTIES.map(p => `<th class="text-right">${p} Net</th>`).join('')}
+              ${rentalProps.map(p => `<th class="text-right">${p} Net</th>`).join('')}
             </tr>
           </thead>
           <tbody>
@@ -2731,7 +2815,7 @@ async function renderPortfolio() {
               <td class="text-right amount-income">${fmtShort(grandIncome)}</td>
               <td class="text-right amount-expense">${fmtShort(grandExpenses)}</td>
               <td class="text-right ${gnc}">${grandNet < 0 ? '−' : ''}${fmtShort(Math.abs(grandNet))}</td>
-              ${PROPERTIES.map(() => '<td></td>').join('')}
+              ${rentalProps.map(() => '<td></td>').join('')}
             </tr>`}
           </tbody>
         </table>
@@ -3411,9 +3495,10 @@ async function _saveBudget() {
 
 async function renderTaxPlanning() {
   // Load all rental transaction + depreciation data
-  await Promise.all(PROPERTIES.flatMap(p => [ensureLoaded(p,'transactions'), ensureLoaded(p,'depreciation')]));
+  const rentalPropsOnly = PROPERTIES.filter(p => !PRIMARY_PROPERTIES.has(p));
+  await Promise.all(rentalPropsOnly.flatMap(p => [ensureLoaded(p,'transactions'), ensureLoaded(p,'depreciation')]));
 
-  const rentalRows = PROPERTIES.map(prop => {
+  const rentalRows = rentalPropsOnly.map(prop => {
     const txns = (state.data[prop].transactions || []).filter(t => t.date.startsWith(String(CURRENT_YEAR)));
     const income   = txns.filter(t => t.type === 'income').reduce((s,t) => s + t.amount, 0);
     const expenses = txns.filter(t => t.type === 'expense').reduce((s,t) => s + t.amount, 0);
