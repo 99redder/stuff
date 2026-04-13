@@ -2356,6 +2356,8 @@ async function renderInvestmentReturn() {
     ? ` (fetched ${fmtDate(zillowFetchedAt.slice(0, 10))})`
     : '';
 
+  const isPrimaryResidence = PRIMARY_PROPERTIES.has(prop);
+
   // Row builder
   const row = (label, value, color, borderBottom = true, bold = false) => {
     const borderStyle = borderBottom ? 'border-bottom:1px solid var(--border);' : '';
@@ -2455,7 +2457,6 @@ async function renderInvestmentReturn() {
     </div>`;
 
   // ── Cash Flow card (rental properties only) ──────────────────────────────
-  const isPrimaryResidence = PRIMARY_PROPERTIES.has(prop);
   const cashFlowCard = isPrimaryResidence ? '' : `
     <div class="card" style="margin-bottom:1rem">
       <div class="card-header"><div class="card-title">Cumulative Rental Cash Flow (${yearRangeLabel})</div></div>
