@@ -2059,6 +2059,12 @@ function renderMaintenanceSection(prop) {
 
   const rows = entries.map(e => `
     <tr${e.capitalImprovement ? ' style="background:color-mix(in srgb,var(--success) 6%,transparent)"' : ''}>
+      ${isPrimary ? `
+      <td class="text-center no-print" style="padding:.4rem .5rem" title="Mark as capital improvement — counts toward Investment Return ROI">
+        <input type="checkbox" ${e.capitalImprovement ? 'checked' : ''}
+          onchange="toggleMaintImprovement('${escAttr(e.id)}')"
+          style="cursor:pointer;width:15px;height:15px;accent-color:var(--success)">
+      </td>` : ''}
       <td style="white-space:nowrap;padding:.4rem .5rem">${fmtDate(e.date)}</td>
       <td style="padding:.4rem .5rem">
         ${escHtml(e.description)}
@@ -2066,15 +2072,6 @@ function renderMaintenanceSection(prop) {
       </td>
       <td class="text-right" style="white-space:nowrap;padding:.4rem .5rem">${e.cost > 0 ? fmt(e.cost) : '—'}</td>
       <td style="padding:.4rem .5rem;color:var(--text-muted);font-size:.85rem">${escHtml(e.performedBy)}</td>
-      ${isPrimary ? `
-      <td class="text-center no-print" style="padding:.4rem .5rem" title="Mark as capital improvement — counts toward Investment Return ROI">
-        <label style="display:inline-flex;align-items:center;gap:.3rem;cursor:pointer;font-size:.8rem;color:${e.capitalImprovement ? 'var(--success)' : 'var(--text-muted)'}">
-          <input type="checkbox" ${e.capitalImprovement ? 'checked' : ''}
-            onchange="toggleMaintImprovement('${escAttr(e.id)}')"
-            style="cursor:pointer;width:15px;height:15px;accent-color:var(--success)">
-          Cap. Imp.
-        </label>
-      </td>` : ''}
       <td class="text-right no-print" style="padding:.4rem .5rem;white-space:nowrap">
         <button class="btn btn-ghost btn-sm" style="padding:.15rem .4rem"
                 onclick="editMaintEntry('${escAttr(e.id)}')">Edit</button>
@@ -2110,9 +2107,9 @@ function renderMaintenanceSection(prop) {
         ? `<div class="card-body"><div class="empty-state" style="padding:1.5rem;text-align:center">No maintenance entries yet.${hasSeed ? ' Click "Load Historical Records" to import from CSV data.' : ' Click "+ Add Entry" to log the first entry.'}</div></div>`
         : `<div class="table-wrap"><table class="hist-table">
             <thead><tr>
+              ${isPrimary ? `<th class="text-center no-print" title="Capital Improvement — counts toward Investment Return ROI">Cap. Imp.</th>` : ''}
               <th>Date</th><th>Work Done</th>
               <th class="text-right">Cost</th><th>Performed By</th>
-              ${isPrimary ? `<th class="text-center no-print" title="Capital Improvement — counts toward Investment Return ROI">Cap. Imp.</th>` : ''}
               <th class="no-print"></th>
             </tr></thead>
             <tbody>${rows}</tbody>
