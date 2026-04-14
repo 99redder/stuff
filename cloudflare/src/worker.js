@@ -336,7 +336,8 @@ async function handleAddMaintenanceEntry(env, property, entry) {
     description: String(entry.description || '').trim(),
     cost: typeof entry.cost === 'number' && isFinite(entry.cost) ? entry.cost : 0,
     performedBy: String(entry.performedBy || '').trim(),
-    notes: String(entry.notes || '').trim()
+    notes: String(entry.notes || '').trim(),
+    capitalImprovement: !!entry.capitalImprovement,
   };
   const entries = await env.RENTALS.get(`maintenance:${property}`, 'json') || [];
   entries.push(newEntry);
@@ -356,7 +357,8 @@ async function handleUpdateMaintenanceEntry(env, property, id, entry) {
     description: String(entry.description || '').trim(),
     cost: typeof entry.cost === 'number' && isFinite(entry.cost) ? entry.cost : entries[idx].cost,
     performedBy: String(entry.performedBy || '').trim(),
-    notes: String(entry.notes || '').trim()
+    notes: String(entry.notes || '').trim(),
+    capitalImprovement: 'capitalImprovement' in entry ? !!entry.capitalImprovement : !!entries[idx].capitalImprovement,
   };
   await env.RENTALS.put(`maintenance:${property}`, JSON.stringify(entries));
   return jsonResponse({ entry: entries[idx] });

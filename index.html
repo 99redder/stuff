@@ -2052,9 +2052,13 @@ function renderMaintenanceSection(prop) {
   const total = entries.reduce((s, e) => s + (e.cost || 0), 0);
   const hasSeed = !!(MAINT_SEED[prop] && MAINT_SEED[prop].length);
   const isEmpty = entries.length === 0;
+  const isPrimary = PRIMARY_PROPERTIES.has(prop);
+
+  const capImprovEntries = isPrimary ? entries.filter(e => e.capitalImprovement) : [];
+  const capImprovTotal   = capImprovEntries.reduce((s, e) => s + (e.cost || 0), 0);
 
   const rows = entries.map(e => `
-    <tr>
+    <tr${e.capitalImprovement ? ' style="background:color-mix(in srgb,var(--success) 6%,transparent)"' : ''}>
       <td style="white-space:nowrap;padding:.4rem .5rem">${fmtDate(e.date)}</td>
       <td style="padding:.4rem .5rem">
         ${escHtml(e.description)}
@@ -2062,6 +2066,15 @@ function renderMaintenanceSection(prop) {
       </td>
       <td class="text-right" style="white-space:nowrap;padding:.4rem .5rem">${e.cost > 0 ? fmt(e.cost) : '—'}</td>
       <td style="padding:.4rem .5rem;color:var(--text-muted);font-size:.85rem">${escHtml(e.performedBy)}</td>
+      ${isPrimary ? `
+      <td class="text-center no-print" style="padding:.4rem .5rem" title="Mark as capital improvement — counts toward Investment Return ROI">
+        <label style="display:inline-flex;align-items:center;gap:.3rem;cursor:pointer;font-size:.8rem;color:${e.capitalImprovement ? 'var(--success)' : 'var(--text-muted)'}">
+          <input type="checkbox" ${e.capitalImprovement ? 'checked' : ''}
+            onchange="toggleMaintImprovement('${escAttr(e.id)}')"
+            style="cursor:pointer;width:15px;height:15px;accent-color:var(--success)">
+          Cap. Imp.
+        </label>
+      </td>` : ''}
       <td class="text-right no-print" style="padding:.4rem .5rem;white-space:nowrap">
         <button class="btn btn-ghost btn-sm" style="padding:.15rem .4rem"
                 onclick="editMaintEntry('${escAttr(e.id)}')">Edit</button>
@@ -2074,12 +2087,19 @@ function renderMaintenanceSection(prop) {
     ? `<button class="btn btn-ghost btn-sm" onclick="seedMaintData('${escAttr(prop)}')">Load Historical Records</button>`
     : '';
 
+  const capImprovNote = isPrimary && capImprovEntries.length > 0
+    ? `<div style="font-size:.8rem;color:var(--success);margin-top:.1rem">
+        ✓ ${capImprovEntries.length} capital improvement${capImprovEntries.length > 1 ? 's' : ''} · ${fmt(capImprovTotal)} → Investment Return ROI
+       </div>`
+    : (isPrimary ? `<div style="font-size:.8rem;color:var(--text-muted);margin-top:.1rem">Check "Cap. Imp." on entries to include them in Investment Return ROI</div>` : '');
+
   return `
     <div class="card mt-2">
       <div class="card-header">
         <div>
           <div class="card-title">Maintenance Log — ${escHtml(prop)}</div>
           ${entries.length > 0 ? `<div style="font-size:.8rem;color:var(--text-muted);margin-top:.1rem">Total spent: ${fmt(total)} across ${entries.length} entries</div>` : ''}
+          ${capImprovNote}
         </div>
         <div style="display:flex;gap:.5rem;align-items:center">
           ${seedBtn}
@@ -2092,6 +2112,7 @@ function renderMaintenanceSection(prop) {
             <thead><tr>
               <th>Date</th><th>Work Done</th>
               <th class="text-right">Cost</th><th>Performed By</th>
+              ${isPrimary ? `<th class="text-center no-print" title="Capital Improvement — counts toward Investment Return ROI">Cap. Imp.</th>` : ''}
               <th class="no-print"></th>
             </tr></thead>
             <tbody>${rows}</tbody>
@@ -2128,6 +2149,13 @@ function renderMaintenanceSection(prop) {
             <textarea id="mf-notes" rows="2" placeholder="Optional — warranty info, paint colors, part numbers, etc."
                       style="resize:vertical;font-family:inherit;font-size:.875rem;padding:.4rem .6rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);width:100%;box-sizing:border-box"></textarea>
           </div>
+          ${PRIMARY_PROPERTIES.has(prop) ? `
+          <div class="form-group" style="grid-column:1/-1">
+            <label style="flex-direction:row;align-items:center;gap:.5rem;cursor:pointer;font-weight:400">
+              <input type="checkbox" id="mf-capital-improvement" style="width:15px;height:15px;accent-color:var(--success);cursor:pointer">
+              <span><strong>Capital Improvement</strong> — count this cost toward Investment Return ROI</span>
+            </label>
+          </div>` : ''}
         </div>
         <div class="form-actions mt-2">
           <button class="btn btn-primary" id="maint-form-submit" onclick="saveMaintEntry()">Save Entry</button>
@@ -2164,6 +2192,8 @@ function editMaintEntry(id) {
   document.getElementById('mf-cost').value = entry.cost || 0;
   document.getElementById('mf-performed-by').value = entry.performedBy || '';
   document.getElementById('mf-notes').value = entry.notes || '';
+  const capImpEl = document.getElementById('mf-capital-improvement');
+  if (capImpEl) capImpEl.checked = !!entry.capitalImprovement;
   document.getElementById('maint-form-title').textContent = 'Edit Maintenance Entry';
   document.getElementById('maint-form-submit').textContent = 'Update Entry';
   openAddMaint();
@@ -2178,6 +2208,7 @@ async function saveMaintEntry() {
   const cost = parseFloat(document.getElementById('mf-cost').value) || 0;
   const performedBy = document.getElementById('mf-performed-by').value.trim();
   const notes = document.getElementById('mf-notes').value.trim();
+  const capitalImprovement = !!(document.getElementById('mf-capital-improvement')?.checked);
   const errEl = document.getElementById('maint-form-error');
 
   if (!description) { errEl.textContent = 'Description is required.'; errEl.classList.remove('hidden'); return; }
@@ -2185,11 +2216,11 @@ async function saveMaintEntry() {
 
   try {
     if (editId) {
-      const result = await callApi({ action: 'update_maintenance_entry', property: prop, id: editId, entry: { date, description, cost, performedBy, notes } });
+      const result = await callApi({ action: 'update_maintenance_entry', property: prop, id: editId, entry: { date, description, cost, performedBy, notes, capitalImprovement } });
       const idx = state.data[prop].maintenance.findIndex(e => e.id === editId);
       if (idx !== -1) state.data[prop].maintenance[idx] = result.entry;
     } else {
-      const result = await callApi({ action: 'add_maintenance_entry', property: prop, entry: { date, description, cost, performedBy, notes } });
+      const result = await callApi({ action: 'add_maintenance_entry', property: prop, entry: { date, description, cost, performedBy, notes, capitalImprovement } });
       state.data[prop].maintenance.push(result.entry);
     }
     closeMaintForm();
@@ -2197,6 +2228,28 @@ async function saveMaintEntry() {
   } catch (e) {
     errEl.textContent = 'Save failed: ' + e.message;
     errEl.classList.remove('hidden');
+  }
+}
+
+async function toggleMaintImprovement(id) {
+  const prop = state.currentProperty;
+  const entries = state.data[prop].maintenance || [];
+  const entry = entries.find(e => e.id === id);
+  if (!entry) return;
+  const newVal = !entry.capitalImprovement;
+  try {
+    const result = await callApi({
+      action: 'update_maintenance_entry', property: prop, id,
+      entry: { ...entry, capitalImprovement: newVal }
+    });
+    const idx = entries.findIndex(e => e.id === id);
+    if (idx !== -1) state.data[prop].maintenance[idx] = result.entry;
+    // Invalidate investment cache so ROI recalculates on next view
+    state.data[prop].investment = null;
+    renderMaintenance();
+  } catch (err) {
+    alert(`Failed to update: ${err.message}`);
+    renderMaintenance(); // revert checkbox
   }
 }
 
@@ -2318,12 +2371,9 @@ async function renderTaxSummary() {
 
 async function renderInvestmentReturn() {
   const prop = state.currentProperty;
-  await Promise.all([
-    ensureLoaded(prop, 'transactions'),
-    ensureLoaded(prop, 'summaries'),
-    ensureLoaded(prop, 'depreciation'),
-    ensureLoaded(prop, 'investment'),
-  ]);
+  const loadKeys = ['transactions', 'summaries', 'depreciation', 'investment'];
+  if (PRIMARY_PROPERTIES.has(prop)) loadKeys.push('maintenance');
+  await Promise.all(loadKeys.map(k => ensureLoaded(prop, k)));
 
   const inv    = state.data[prop].investment || {};
   const dc     = state.data[prop].depreciation;
@@ -2347,6 +2397,12 @@ async function renderInvestmentReturn() {
   }
   for (const t of txns) {
     if (t.date.startsWith(yearStr) && t.category === 'improvements') cumulativeImprovements += t.amount;
+  }
+  // For primary residences: also sum maintenance entries flagged as capital improvements
+  if (isPrimaryResidence) {
+    for (const e of (state.data[prop].maintenance || [])) {
+      if (e.capitalImprovement) cumulativeImprovements += (e.cost || 0);
+    }
   }
   const totalCapitalInvested = purchasePrice + purchaseClosing + cumulativeImprovements;
 
@@ -4762,6 +4818,7 @@ window.tpAddPayment            = tpAddPayment;
 window.tpRemovePayment         = tpRemovePayment;
 window.tpPayDate               = tpPayDate;
 window.tpPayAmt                = tpPayAmt;
+window.toggleMaintImprovement  = toggleMaintImprovement;
 window.saveInvestmentConfig    = saveInvestmentConfig;
 window.refreshZillowEstimate   = refreshZillowEstimate;
 window.toggleInvestmentConfig  = toggleInvestmentConfig;
