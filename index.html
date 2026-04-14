@@ -3672,51 +3672,55 @@ function _renderSolarHtml() {
   const hasSystem = totals.SYSTEM > 0;
   const roiHtml = `
     <div class="card" style="margin-bottom:1rem">
-      <h3 style="margin:0 0 .9rem;font-size:1rem;font-weight:700">All-Time Investment ROI</h3>
-      <div class="stats-row" style="margin-bottom:.9rem">
-        <div class="stat-card">
-          <div class="stat-label">Total Invested</div>
-          <div class="stat-value">${hasSystem ? fmt(totals.SYSTEM) : '—'}</div>
-          <div class="stat-sub">System cost</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Elec Savings</div>
-          <div class="stat-value ${electricSavings >= 0 ? 'income' : 'expense'}">${fmtS(electricSavings, hasSystem)}</div>
-          <div class="stat-sub">w/o Solar − Paid + True-Up</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">SREC + Credits</div>
-          <div class="stat-value income">${fmt(totals.SREC + totals.CREDITS)}</div>
-          <div class="stat-sub">Extra income</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Net Profit</div>
-          <div class="stat-value ${netProfit >= 0 ? 'income' : 'expense'}">${fmtS(netProfit, hasSystem)}</div>
-          <div class="stat-sub">After all costs</div>
+      <div class="card-header"><div class="card-title">All-Time Investment ROI</div></div>
+      <div class="card-body">
+        <div class="stats-row" style="margin-bottom:1.25rem">
+          <div class="stat-card">
+            <div class="stat-label">Total Invested</div>
+            <div class="stat-value">${hasSystem ? fmt(totals.SYSTEM) : '—'}</div>
+            <div class="stat-sub">System cost</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Elec Savings</div>
+            <div class="stat-value ${electricSavings >= 0 ? 'income' : 'expense'}">${fmtS(electricSavings, hasSystem)}</div>
+            <div class="stat-sub">w/o Solar − Paid + True-Up</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">SREC + Credits</div>
+            <div class="stat-value income">${fmt(totals.SREC + totals.CREDITS)}</div>
+            <div class="stat-sub">Extra income</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Net Profit</div>
+            <div class="stat-value ${netProfit >= 0 ? 'income' : 'expense'}">${fmtS(netProfit, hasSystem)}</div>
+            <div class="stat-sub">After all costs</div>
+          </div>
         </div>
       </div>
-      <table class="summary-table" style="margin-bottom:.25rem">
-        <tbody>
-          <tr><td>Elec Savings (w/o Solar − Paid)</td><td style="text-align:right">${fmtS(totals.ELECNOSOLAR - totals.ELECPAID)}</td></tr>
-          <tr><td>+ True-Up Credits</td><td style="text-align:right">${fmtS(totals.TRUEUP)}</td></tr>
-          <tr><td>+ SREC Income</td><td style="text-align:right">${fmt(totals.SREC)}</td></tr>
-          <tr><td>+ Tax Credits</td><td style="text-align:right">${fmt(totals.CREDITS)}</td></tr>
-          <tr><td>− Maintenance Costs</td><td style="text-align:right">−${fmt(totals.MAINT)}</td></tr>
-          <tr><td>− System Cost</td><td style="text-align:right">−${fmt(totals.SYSTEM)}</td></tr>
-          <tr style="font-weight:700;border-top:2px solid var(--border)">
-            <td>Net Profit</td>
-            <td style="text-align:right;color:${hasSystem ? pc(netProfit) : 'inherit'}">${fmtS(netProfit, hasSystem)}</td>
-          </tr>
-          <tr style="font-weight:700">
-            <td>ROI (on system cost)</td>
-            <td style="text-align:right;color:${roiPct !== null ? pc(roiPct) : 'inherit'}">${fmtP(roiPct)}</td>
-          </tr>
-          <tr style="font-weight:700">
-            <td>Annualized Return${yearsHeld ? ` (${yearsHeld.toFixed(1)}y since ${fmtDate(installDateStr)})` : ''}</td>
-            <td style="text-align:right;color:${annualizedROI !== null ? pc(annualizedROI) : 'inherit'}">${fmtP(annualizedROI)}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="table-wrap">
+        <table>
+          <tbody>
+            <tr><td>Elec Savings (w/o Solar − Paid)</td><td style="text-align:right">${fmtS(totals.ELECNOSOLAR - totals.ELECPAID)}</td></tr>
+            <tr><td>+ True-Up Credits</td><td style="text-align:right">${fmtS(totals.TRUEUP)}</td></tr>
+            <tr><td>+ SREC Income</td><td style="text-align:right">${fmt(totals.SREC)}</td></tr>
+            <tr><td>+ Tax Credits</td><td style="text-align:right">${fmt(totals.CREDITS)}</td></tr>
+            <tr><td>− Maintenance Costs</td><td style="text-align:right">−${fmt(totals.MAINT)}</td></tr>
+            <tr><td>− System Cost</td><td style="text-align:right">−${fmt(totals.SYSTEM)}</td></tr>
+            <tr style="font-weight:700;background:var(--surface2)">
+              <td>Net Profit</td>
+              <td style="text-align:right;color:${hasSystem ? pc(netProfit) : 'inherit'}">${fmtS(netProfit, hasSystem)}</td>
+            </tr>
+            <tr style="font-weight:700">
+              <td>ROI (on system cost)</td>
+              <td style="text-align:right;color:${roiPct !== null ? pc(roiPct) : 'inherit'}">${fmtP(roiPct)}</td>
+            </tr>
+            <tr style="font-weight:700">
+              <td>Annualized Return${yearsHeld ? ` (${yearsHeld.toFixed(1)}y since ${fmtDate(installDateStr)})` : ''}</td>
+              <td style="text-align:right;color:${annualizedROI !== null ? pc(annualizedROI) : 'inherit'}">${fmtP(annualizedROI)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>`;
 
   // ── Current-year ledger ────────────────────────────────────────────────────
@@ -3746,14 +3750,14 @@ function _renderSolarHtml() {
 
   const cySection = `
     <div class="card" style="margin-bottom:1rem">
-      <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem">
-        <h3 style="margin:0;font-size:1rem;font-weight:700">${curYear} Ledger</h3>
-        <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="solarStartAddEntry()">+ Add Entry</button>
+      <div class="card-header">
+        <div class="card-title">${curYear} Ledger</div>
+        <button class="btn btn-primary btn-sm" onclick="solarStartAddEntry()">+ Add Entry</button>
       </div>
-      ${!showEntryTable ? `<p style="color:var(--text-muted);font-size:.88rem;margin:0">No entries yet for ${curYear}. Click + Add Entry or use the 🧮 Billing Cycle Calculator above.</p>` : ''}
+      ${!showEntryTable ? `<div class="card-body"><p style="color:var(--text-muted);font-size:.88rem;margin:0">No entries yet for ${curYear}. Click + Add Entry or use the 🧮 Billing Cycle Calculator above.</p></div>` : ''}
       ${showEntryTable ? `
-        <div style="overflow-x:auto">
-          <table class="summary-table">
+        <div class="table-wrap">
+          <table>
             <thead><tr>
               <th>Date</th><th>Code</th><th>Description</th>
               <th style="text-align:right">Amount</th><th></th>
@@ -3761,8 +3765,8 @@ function _renderSolarHtml() {
             <tbody>${entryRows}${addNewRow}</tbody>
           </table>
         </div>` : (_sEdit?.id === 'new' ? `
-        <div style="overflow-x:auto">
-          <table class="summary-table">
+        <div class="table-wrap">
+          <table>
             <thead><tr>
               <th>Date</th><th>Code</th><th>Description</th>
               <th style="text-align:right">Amount</th><th></th>
@@ -3804,14 +3808,14 @@ function _renderSolarHtml() {
 
   const sumSection = `
     <div class="card" style="margin-bottom:1rem">
-      <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem">
-        <h3 style="margin:0;font-size:1rem;font-weight:700">Historical Annual Summaries</h3>
-        <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="solarStartAddSummary()">+ Add Year</button>
+      <div class="card-header">
+        <div class="card-title">Historical Annual Summaries</div>
+        <button class="btn btn-primary btn-sm" onclick="solarStartAddSummary()">+ Add Year</button>
       </div>
-      ${!showSumTable ? `<p style="color:var(--text-muted);font-size:.88rem;margin:0">No historical summaries yet. Click + Add Year to enter past annual totals.</p>` : ''}
+      ${!showSumTable ? `<div class="card-body"><p style="color:var(--text-muted);font-size:.88rem;margin:0">No historical summaries yet. Click + Add Year to enter past annual totals.</p></div>` : ''}
       ${showSumTable ? `
-        <div style="overflow-x:auto">
-          <table class="summary-table">
+        <div class="table-wrap">
+          <table>
             <thead><tr>
               <th>Year</th>
               <th style="text-align:right">Elec Paid</th>
@@ -3827,8 +3831,8 @@ function _renderSolarHtml() {
             <tbody>${sumRows}${newSumRow}</tbody>
           </table>
         </div>` : (newSumRow ? `
-        <div style="overflow-x:auto">
-          <table class="summary-table">
+        <div class="table-wrap">
+          <table>
             <thead><tr>
               <th>Year</th><th>Elec Paid</th><th>w/o Solar</th><th>Savings</th>
               <th>True-Up</th><th>SREC</th><th>Credits</th><th>Maint</th><th>System</th><th></th>
@@ -3843,12 +3847,12 @@ function _renderSolarHtml() {
   const cr = cfg.calcRates || {};
   const cfgSection = `
     <div class="card" style="margin-bottom:1rem">
-      <div style="display:flex;align-items:center;cursor:pointer;gap:.5rem" onclick="solarToggleConfig()">
-        <h3 style="margin:0;font-size:1rem;font-weight:700">System Configuration</h3>
-        <span style="margin-left:auto;font-size:.82rem;color:var(--text-muted)">${cfgOpen ? '▲ Collapse' : '▼ Edit'}</span>
+      <div class="card-header" style="cursor:pointer" onclick="solarToggleConfig()">
+        <div class="card-title">System Configuration</div>
+        <span style="font-size:.82rem;color:var(--text-muted);font-weight:400">${cfgOpen ? '▲ Collapse' : '▼ Edit'}</span>
       </div>
       ${cfgOpen ? `
-        <div style="margin-top:1rem">
+        <div class="card-body">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.65rem;margin-bottom:.75rem">
             <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
               System Size (kW)<input type="number" id="scfg-size" class="form-input" step=".01" value="${escAttr(String(cfg.systemSize || ''))}">
@@ -3893,7 +3897,7 @@ function _renderSolarHtml() {
             <button class="btn btn-ghost btn-sm" onclick="solarToggleConfig()">Cancel</button>
           </div>
         </div>` : `
-        <div style="margin-top:.5rem;font-size:.85rem;color:var(--text-muted)">
+        <div class="card-body" style="font-size:.85rem;color:var(--text-muted)">
           ${cfg.systemSize ? `${cfg.systemSize} kW system` : ''}
           ${cfg.installDate ? ` · installed ${fmtDate(cfg.installDate)}` : ''}
           ${cfg.panelsWarranty ? ` · panels ${cfg.panelsWarranty}yr` : ''}
