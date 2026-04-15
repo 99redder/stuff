@@ -159,7 +159,7 @@
     .view-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
 
     .page {
-      max-width: 1800px;
+      max-width: 1200px;
       margin: 0 auto;
       padding: 1.5rem 1.25rem;
     }
@@ -195,10 +195,10 @@
     /* ── Stat Cards ─────────────────────────────────────────────────────── */
     .stats-row {
       display: grid;
-      grid-template-columns: repeat(4, minmax(350px, 1fr));
+      grid-template-columns: repeat(4, 1fr);
       gap: 1.5rem;
       margin: 0 auto 1.25rem;
-      max-width: 1800px;
+      max-width: 1200px;
     }
 
     .stat-card {
@@ -207,6 +207,8 @@
       border-radius: var(--radius-lg);
       padding: 1.1rem 1.25rem;
       box-shadow: var(--shadow);
+      width: 100%;
+      min-width: 280px;
     }
 
     .stat-label {
