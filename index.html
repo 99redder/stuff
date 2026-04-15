@@ -205,10 +205,10 @@
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius-lg);
-      padding: 1.1rem 1.25rem;
+      padding: 0.75rem 1rem;
       box-shadow: var(--shadow);
       width: 100%;
-      min-width: 320px;
+      min-width: 280px;
     }
 
     .stat-label {
@@ -2659,7 +2659,7 @@ async function renderInvestmentReturn() {
     </div>`;
 
   document.getElementById('app').innerHTML = `
-    <div class="card" style="max-width:1400px">
+    <div class="card" style="max-width:1600px">
       <div class="card-header">
         <div class="card-title">Investment Return — ${escHtml(prop)}</div>
         <button class="btn btn-ghost btn-sm no-print" onclick="window.print()">Print</button>
