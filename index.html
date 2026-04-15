@@ -2670,7 +2670,7 @@ async function renderInvestmentReturn() {
             Enter the purchase price and closing costs below to calculate your all-time investment return.
           </div>` : ''}
         ${statCards}
-        ${isConfigured ? totalReturnCard : ''}
+        <div style="max-width:50%">${isConfigured ? totalReturnCard : ''}</div>
         ${capitalCard}
         ${currentValueCard}
         ${cashFlowCard}
