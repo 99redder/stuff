@@ -103,6 +103,12 @@
 
     .app-title span { color: var(--success); }
 
+    .app-title a {
+      display: flex;
+      align-items: center;
+      text-decoration: none;
+      color: inherit;
+    }
     .app-title .house-icon {
       font-size: 1.2rem;
       line-height: 1;
@@ -648,10 +654,10 @@
 
 <header class="app-header">
   <div class="header-top">
-    <div class="app-title">
+    <a href="." class="app-title">
       <span class="house-icon">🏠</span>
       Rental <span>Property Manager</span>
-    </div>
+    </a>
     <div class="property-tabs" id="property-tabs">
       <button class="prop-tab active" data-prop="6AL">6AL</button>
       <button class="prop-tab" data-prop="95EB">95EB</button>
