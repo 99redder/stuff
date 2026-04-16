@@ -2804,7 +2804,10 @@ async function renderPortfolio() {
   // ── Historical: combine summaries + current year from transactions ────────
   // Gather all years across all properties' summaries
   const histYears = new Set();
-  rentalProps.forEach(prop => Object.keys(state.data[prop].summaries).forEach(y => histYears.add(y)));
+  rentalProps.forEach(prop => {
+    const s = state.data[prop]?.summaries;
+    if (s) Object.keys(s).forEach(y => histYears.add(y));
+  });
 
   // Sort descending; prepend current year (always shown from transactions)
   const sortedHistYears = [yearStr, ...[...histYears].filter(y => y !== yearStr).sort((a, b) => b - a)];
@@ -2823,7 +2826,7 @@ async function renderPortfolio() {
         }
         return { income, expenses, net: income - expenses, rent };
       } else {
-        const d = state.data[prop].summaries[y] || {};
+        const d = (state.data[prop]?.summaries || {})[y] || {};
         const income   = CATEGORIES.income.reduce((s, c)  => s + (d[c.code] || 0), 0);
         const expenses = CATEGORIES.expense.reduce((s, c) => s + (d[c.code] || 0), 0);
         return { income, expenses, net: income - expenses, rent: d.rent || 0 };
@@ -2858,14 +2861,14 @@ async function renderPortfolio() {
   // Grand total row (summaries only — excludes current year to avoid double-counting)
   const grandIncome   = sortedHistYears.filter(y => y !== yearStr).reduce((s, y) => {
     return s + PROPERTIES.reduce((ps, prop) => {
-      const d = state.data[prop].summaries[y] || {};
+      const d = (state.data[prop]?.summaries || {})[y] || {};
       return ps + CATEGORIES.income.reduce((cs, c) => cs + (d[c.code] || 0), 0);
     }, 0);
   }, 0) + totals.income;
 
   const grandExpenses = sortedHistYears.filter(y => y !== yearStr).reduce((s, y) => {
     return s + PROPERTIES.reduce((ps, prop) => {
-      const d = state.data[prop].summaries[y] || {};
+      const d = (state.data[prop]?.summaries || {})[y] || {};
       return ps + CATEGORIES.expense.reduce((cs, c) => cs + (d[c.code] || 0), 0);
     }, 0);
   }, 0) + totals.expenses;
