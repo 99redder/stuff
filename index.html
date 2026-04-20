@@ -62,6 +62,21 @@
     }
     .theme-toggle:hover { background: var(--border); }
 
+    .btn-signout {
+      background: var(--danger);
+      color: white;
+      border: 1px solid var(--danger);
+      border-radius: var(--radius);
+      padding: 0.35rem 0.7rem;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      line-height: 1;
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+    .btn-signout:hover { background: #dc2626; }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
@@ -302,7 +317,7 @@
     }
 
     .btn-primary { background: var(--success); color: white; }
-    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-primary:hover { background: #22c55e; }
     .btn-success { background: var(--success); color: white; }
     .btn-success:hover { background: #15803d; }
     .btn-danger { background: var(--danger); color: white; }
@@ -670,6 +685,7 @@
       <button class="tp-header-btn" id="solar-btn" onclick="switchView('solar')">☀️ Solar</button>
       <button class="tp-header-btn" id="tax-planning-btn" onclick="switchView('tax-planning')">Tax Planning</button>
       <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
+      <button class="btn-signout" id="signout-btn" onclick="signOut()" title="Sign out">Sign Out</button>
     </div>
   </div>
   <div class="view-nav" id="view-nav">
@@ -4789,6 +4805,17 @@ function toggleTheme() {
 
 // Apply persisted theme on load (icon sync — data-theme already set by <head> script)
 applyTheme(localStorage.getItem('theme') || 'light');
+
+// ── Sign Out ─────────────────────────────────────────────────────────────────
+
+function signOut() {
+  sessionStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem('rentals_pw');
+  state.password = '';
+  showLoginGate();
+}
+
+window.signOut = signOut;
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
