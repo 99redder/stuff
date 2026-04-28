@@ -3583,7 +3583,7 @@ function _renderBudgetHtml() {
     const displayName = isPropIncome
       ? (item.name.includes('(worksheet)') ? item.name : `${item.name} (worksheet)`)
       : item.name;
-    const clickableClass = isPropIncome ? 'style="cursor:pointer;text-decoration:underline dotted" onclick="openBudgetWorksheetModal(\'${item.id}\')"' : '';
+    const clickableClass = isPropIncome ? `style="cursor:pointer;text-decoration:underline dotted" onclick="openBudgetWorksheetModal('${item.id}')"` : '';
     const lockTitle = isPropIncome ? `${item.locked?'Unlock worksheet':'Lock worksheet'}` : (item.locked?'Unlock':'Lock');
     return `<div class="budget-item">
       <span class="budget-item-name" ${clickableClass}>${escHtml(displayName)}</span>
