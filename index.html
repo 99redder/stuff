@@ -797,6 +797,24 @@
   </div>
 </div>
 
+<!-- ── Property Income Worksheet Modal ── -->
+<div class="modal-overlay hidden" id="budget-worksheet-modal" onclick="handleModalOverlayClick(event,'budget-worksheet-modal')">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ws-title" style="max-width:560px">
+    <div class="modal-header">
+      <div class="modal-icon primary">📊</div>
+      <div>
+        <div class="modal-title" id="ws-title">Property Income Worksheet</div>
+        <div class="modal-subtitle" id="ws-subtitle"></div>
+      </div>
+    </div>
+    <div class="modal-body" id="ws-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeBudgetWorksheetModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveBudgetWorksheet()">Save &amp; Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Billing Cycle Calculator Modal ── -->
 <div class="modal-overlay hidden" id="solar-calc-modal" onclick="handleModalOverlayClick(event,'solar-calc-modal')">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="solar-calc-title" style="max-width:500px">
@@ -3434,6 +3452,29 @@ const BUDGET_EXPENSE_CATS = [
 
 let _bEdit = null; // { section: 'income'|catName, id: uuid|'new' }
 let _bSort = 'alpha'; // 'alpha' | 'asc' | 'desc' — sorts the category cards themselves
+let _bModal = null; // { incomeItemId, property } — property worksheet modal state
+
+const PROP_INCOME_PROPS = ['95EB', '6AL', '446BB'];
+
+const PROP_INCOME_FIELDS = [
+  { key: 'rent',              label: 'Rent' },
+  { key: 'mgmtFees',          label: 'Management Fees' },
+  { key: 'hoaFees',           label: 'HOA Fees' },
+  { key: 'taxes',             label: 'Taxes' },
+  { key: 'insurance',         label: 'Insurance' },
+  { key: 'maintSavings',      label: 'Maintenance Savings' },
+  { key: 'turnoverSavings',   label: 'Tenant Turnover Savings' },
+  { key: 'incomeTaxSavings',  label: 'Income Tax Savings' },
+  { key: 'umbrellaInsurance', label: 'Umbrella Insurance' },
+];
+
+function calcPropertyNet(worksheet) {
+  const rent = worksheet.rent || 0;
+  const deductions = PROP_INCOME_FIELDS
+    .filter(f => f.key !== 'rent')
+    .reduce((s, f) => s + (worksheet[f.key] || 0), 0);
+  return rent - deductions;
+}
 
 async function renderBudget() {
   if (!state.budget) {
@@ -3479,11 +3520,24 @@ function _renderBudgetHtml() {
     if (_bEdit?.section === 'income' && _bEdit?.id === item.id) {
       return _budgetEditRow('income', item);
     }
+    // Detect property-based income: by property field or by name matching a property code
+    let isPropIncome = item.property && PROP_INCOME_PROPS.includes(item.property);
+    if (!isPropIncome) {
+      const propName = item.name.replace(/\s*\(worksheet\)/g, '').trim();
+      isPropIncome = PROP_INCOME_PROPS.includes(propName);
+      // Auto-tag if name matches a property
+      if (isPropIncome && !item.property) {
+        item.property = propName;
+      }
+    }
+    const displayName = isPropIncome ? `${item.name} (worksheet)` : item.name;
+    const clickableClass = isPropIncome ? 'style="cursor:pointer;text-decoration:underline dotted" onclick="openBudgetWorksheetModal(\'${item.id}\')"' : '';
+    const lockTitle = isPropIncome ? `${item.locked?'Unlock worksheet':'Lock worksheet'}` : (item.locked?'Unlock':'Lock');
     return `<div class="budget-item">
-      <span class="budget-item-name">${escHtml(item.name)}</span>
+      <span class="budget-item-name" ${clickableClass}>${escHtml(displayName)}</span>
       <span class="budget-item-amt">${fmt(item.amount)}/mo</span>
       <span class="budget-item-lock">
-        <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem;font-size:.8rem;opacity:.6" title="${item.locked?'Unlock':'Lock'}"
+        <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem;font-size:.8rem;opacity:.6" title="${lockTitle}"
                 onclick="budgetToggleLock('income','${item.id}')">${item.locked ? '🔒' : '🔓'}</button>
       </span>
       <span class="budget-item-actions">
@@ -3496,8 +3550,22 @@ function _renderBudgetHtml() {
   }).join('');
 
   const incomeAddRow = (_bEdit?.section === 'income' && _bEdit?.id === 'new')
-    ? _budgetEditRow('income', null)
+    ? _budgetAddRowHtml()
     : `<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:.5rem;justify-content:flex-start" onclick="budgetAdd('income')">+ Add Income Source</button>`;
+
+  function _budgetAddRowHtml() {
+    const propOpts = PROP_INCOME_PROPS.map(p => `<option value="${p}">${p}</option>`).join('');
+    return `
+      <div class="budget-item budget-edit-row" style="flex-wrap:wrap;gap:.3rem">
+        <input type="text" id="bedit-name" placeholder="Name (e.g. ${PROP_INCOME_PROPS[0]} rent)" value="" style="flex:1;min-width:120px;padding:.3rem .5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);font-size:.875rem">
+        <select id="bedit-property" style="padding:.3rem .4rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);font-size:.8rem;min-width:80px">
+          <option value="">— no property —</option>
+          ${propOpts}
+        </select>
+        <button class="btn btn-primary btn-sm" style="padding:.3rem .6rem" onclick="budgetSave('income','new')">Add</button>
+        <button class="btn btn-ghost btn-sm" style="padding:.3rem .5rem" onclick="budgetCancelEdit()">✕</button>
+      </div>`;
+  }
 
   const incomeCard = `
     <div class="card" style="height:fit-content">
@@ -3646,6 +3714,110 @@ function budgetSort(mode) {
   _renderBudgetHtml();
 }
 
+// ── Property Income Worksheet Modal ──────────────────────────────────────────
+
+function openBudgetWorksheetModal(incomeItemId) {
+  const b = state.budget;
+  const item = b.income.find(i => i.id === incomeItemId);
+  if (!item || !item.property || !PROP_INCOME_PROPS.includes(item.property)) return;
+  if (item.locked) return;
+
+  // Load or initialize worksheet data
+  if (!state.budget.worksheets) state.budget.worksheets = {};
+  if (!state.budget.worksheets[incomeItemId]) {
+    state.budget.worksheets[incomeItemId] = {
+      rent: 0, mgmtFees: 0, hoaFees: 0, taxes: 0, insurance: 0,
+      maintSavings: 0, turnoverSavings: 0, incomeTaxSavings: 0, umbrellaInsurance: 0
+    };
+  }
+
+  _bModal = { incomeItemId, property: item.property };
+  _renderBudgetWorksheetModal();
+  document.getElementById('budget-worksheet-modal').classList.remove('hidden');
+}
+
+function closeBudgetWorksheetModal() {
+  _bModal = null;
+  document.getElementById('budget-worksheet-modal').classList.add('hidden');
+}
+
+function _renderBudgetWorksheetModal() {
+  if (!_bModal) return;
+  const { incomeItemId, property } = _bModal;
+  const b = state.budget;
+  const item = b.income.find(i => i.id === incomeItemId);
+  const ws = state.budget.worksheets?.[incomeItemId] || {};
+  const net = calcPropertyNet(ws);
+
+  document.getElementById('ws-subtitle').textContent = property;
+
+  let rows = PROP_INCOME_FIELDS.map(f => {
+    const val = ws[f.key] || 0;
+    const isIncome = f.key === 'rent';
+    const sign = isIncome ? '+' : '-';
+    return `
+      <div style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid var(--border);font-size:.875rem">
+        <span style="flex:1">${escHtml(f.label)}</span>
+        <span style="font-size:.75rem;color:var(--text-muted);width:1.5rem;text-align:center">${sign}</span>
+        <input type="number" id="ws-${f.key}" value="${val}" step="1" min="0"
+               style="width:110px;padding:.25rem .4rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);font-size:.85rem;text-align:right"
+               oninput="updateWsNet()">
+        <span class="budget-item-amt" id="ws-amt-${f.key}">${fmt(val)}</span>
+      </div>`;
+  }).join('');
+
+  const netColor = net >= 0 ? 'var(--success)' : 'var(--danger)';
+  document.getElementById('ws-body').innerHTML = `
+    <div style="margin-bottom:.75rem;padding:.65rem 1rem;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius)">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:700;font-size:.85rem">Net Monthly Income</span>
+        <span style="font-size:1.3rem;font-weight:700;color:${netColor}" id="ws-net">${net < 0 ? '−' : ''}${fmt(Math.abs(net))}</span>
+      </div>
+    </div>
+    ${rows}`;
+  updateWsNet();
+}
+
+function updateWsNet() {
+  if (!_bModal) return;
+  const ws = state.budget.worksheets?.[_bModal.incomeItemId] || {};
+  PROP_INCOME_FIELDS.forEach(f => {
+    const input = document.getElementById(`ws-${f.key}`);
+    if (input) ws[f.key] = parseFloat(input.value) || 0;
+  });
+  const net = calcPropertyNet(ws);
+  const netEl = document.getElementById('ws-net');
+  if (netEl) {
+    netEl.textContent = `${net < 0 ? '−' : ''}${fmt(Math.abs(net))}`;
+    netEl.style.color = net >= 0 ? 'var(--success)' : 'var(--danger)';
+  }
+  PROP_INCOME_FIELDS.forEach(f => {
+    const amtEl = document.getElementById(`ws-amt-${f.key}`);
+    if (amtEl) amtEl.textContent = fmt(ws[f.key] || 0);
+  });
+}
+
+async function saveBudgetWorksheet() {
+  if (!_bModal) return;
+  const { incomeItemId } = _bModal;
+  const ws = state.budget.worksheets?.[incomeItemId] || {};
+  const net = calcPropertyNet(ws);
+
+  // Update the income item amount
+  const b = state.budget;
+  const item = b.income.find(i => i.id === incomeItemId);
+  if (item) item.amount = net;
+
+  // Save worksheet data
+  if (!b.worksheets) b.worksheets = {};
+  b.worksheets[incomeItemId] = ws;
+
+  _bModal = null;
+  closeBudgetWorksheetModal();
+  _renderBudgetHtml();
+  await _saveBudget();
+}
+
 async function budgetSave(section, id) {
   const name = document.getElementById('bedit-name')?.value.trim();
   const amount = parseFloat(document.getElementById('bedit-amt')?.value) || 0;
@@ -3654,8 +3826,16 @@ async function budgetSave(section, id) {
   const b = state.budget;
   if (id === 'new') {
     const newItem = { id: crypto.randomUUID(), name, amount };
-    if (section === 'income') b.income.push(newItem);
-    else { if (!b.expenses[section]) b.expenses[section] = []; b.expenses[section].push(newItem); }
+    if (section === 'income') {
+      const propSelect = document.getElementById('bedit-property');
+      if (propSelect && PROP_INCOME_PROPS.includes(propSelect.value)) {
+        newItem.property = propSelect.value;
+      }
+      b.income.push(newItem);
+    } else {
+      if (!b.expenses[section]) b.expenses[section] = [];
+      b.expenses[section].push(newItem);
+    }
   } else {
     const list = section === 'income' ? b.income : (b.expenses[section] || []);
     const item = list.find(i => i.id === id);
