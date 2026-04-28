@@ -3433,6 +3433,7 @@ const BUDGET_EXPENSE_CATS = [
 ];
 
 let _bEdit = null; // { section: 'income'|catName, id: uuid|'new' }
+let _bSort = {}; // { [catName]: 'asc'|'desc'|'alpha' }
 
 async function renderBudget() {
   if (!state.budget) {
@@ -3514,7 +3515,13 @@ function _renderBudgetHtml() {
   const expenseCards = BUDGET_EXPENSE_CATS.map(cat => {
     const items = b.expenses[cat] || [];
     const catTotal = catTotals[cat];
-    const rows = items.map(item => {
+    const sortMode = _bSort[cat] || 'alpha';
+    const sorted = [...items].sort((a, b) => {
+      if (sortMode === 'desc') return (b.amount || 0) - (a.amount || 0);
+      if (sortMode === 'asc') return (a.amount || 0) - (b.amount || 0);
+      return (a.name || '').localeCompare(b.name || '');
+    });
+    const rows = sorted.map(item => {
       if (_bEdit?.section === cat && _bEdit?.id === item.id) {
         return _budgetEditRow(cat, item);
       }
@@ -3538,12 +3545,22 @@ function _renderBudgetHtml() {
       ? _budgetEditRow(cat, null)
       : `<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:.25rem;justify-content:flex-start" onclick="budgetAdd('${escAttr(cat)}')">+ Add Item</button>`;
 
+    const sortBtns = `
+      <div style="display:flex;gap:.15rem;flex-shrink:0">
+        <button class="btn btn-ghost" style="padding:.15rem .35rem;font-size:.7rem;opacity:${sortMode==='alpha'?1:.4}" title="A→Z" onclick="budgetSort('${escAttr(cat)}','alpha')">A↑</button>
+        <button class="btn btn-ghost" style="padding:.15rem .35rem;font-size:.7rem;opacity:${sortMode==='asc'?1:.4}" title="Low→High" onclick="budgetSort('${escAttr(cat)}','asc')">↑$</button>
+        <button class="btn btn-ghost" style="padding:.15rem .35rem;font-size:.7rem;opacity:${sortMode==='desc'?1:.4}" title="High→Low" onclick="budgetSort('${escAttr(cat)}','desc')">$↑</button>
+      </div>`;
+
     return `
       <div class="card" style="margin-bottom:.75rem">
-        <div class="card-header" style="padding:.6rem 1rem">
+        <div class="card-header" style="padding:.6rem 1rem;display:flex;justify-content:space-between;align-items:center">
           <div style="font-weight:700;font-size:.9rem">${escHtml(cat)}</div>
-          <div style="font-weight:700;color:${catTotal > 0 ? 'var(--danger)' : 'var(--text-muted)'}">
-            ${catTotal > 0 ? fmt(catTotal) + '/mo' : '—'}
+          <div style="display:flex;align-items:center;gap:.5rem">
+            ${sortBtns}
+            <div style="font-weight:700;color:${catTotal > 0 ? 'var(--danger)' : 'var(--text-muted)'}">
+              ${catTotal > 0 ? fmt(catTotal) + '/mo' : '—'}
+            </div>
           </div>
         </div>
         ${items.length > 0 || (_bEdit?.section === cat) ? `
@@ -3621,6 +3638,11 @@ function budgetEdit(section, id) {
 
 function budgetCancelEdit() {
   _bEdit = null;
+  _renderBudgetHtml();
+}
+
+function budgetSort(cat, mode) {
+  _bSort[cat] = _bSort[cat] === mode ? 'alpha' : mode;
   _renderBudgetHtml();
 }
 
