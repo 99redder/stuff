@@ -3500,7 +3500,7 @@ const BUDGET_EXPENSE_CATS = [
 ];
 
 let _bEdit = null; // { section: 'income'|catName, id: uuid|'new' }
-let _bSort = 'alpha'; // 'alpha' | 'asc' | 'desc' — sorts the category cards themselves
+let _bSort = 'desc'; // 'alpha' | 'asc' | 'desc' — sorts the category cards themselves
 let _bModal = null; // { incomeItemId, property } — property worksheet modal state
 
 const PROP_INCOME_PROPS = ['95EB', '6AL', '446BB'];
@@ -3570,17 +3570,19 @@ function _renderBudgetHtml() {
     if (_bEdit?.section === 'income' && _bEdit?.id === item.id) {
       return _budgetEditRow('income', item);
     }
-    // Detect property-based income: by property field or by name matching a property code
+    // Detect property-based income: by property field, or by name containing a property code
     let isPropIncome = item.property && PROP_INCOME_PROPS.includes(item.property);
     if (!isPropIncome) {
-      const propName = item.name.replace(/\s*\(worksheet\)/g, '').trim();
-      isPropIncome = PROP_INCOME_PROPS.includes(propName);
-      // Auto-tag if name matches a property
-      if (isPropIncome && !item.property) {
-        item.property = propName;
+      const nameClean = item.name.replace(/\s*\(worksheet\)/g, '').trim().toLowerCase();
+      const matchedProp = PROP_INCOME_PROPS.find(p => nameClean.includes(p.toLowerCase()));
+      if (matchedProp) {
+        isPropIncome = true;
+        if (!item.property) item.property = matchedProp;
       }
     }
-    const displayName = isPropIncome ? `${item.name} (worksheet)` : item.name;
+    const displayName = isPropIncome
+      ? (item.name.includes('(worksheet)') ? item.name : `${item.name} (worksheet)`)
+      : item.name;
     const clickableClass = isPropIncome ? 'style="cursor:pointer;text-decoration:underline dotted" onclick="openBudgetWorksheetModal(\'${item.id}\')"' : '';
     const lockTitle = isPropIncome ? `${item.locked?'Unlock worksheet':'Lock worksheet'}` : (item.locked?'Unlock':'Lock');
     return `<div class="budget-item">
@@ -3779,7 +3781,7 @@ async function openBudgetWorksheetModal(incomeItemId) {
   if (!state.budget.worksheets) state.budget.worksheets = {};
   if (!state.budget.worksheets[incomeItemId]) {
     // Pre-populate from stored defaults (rent) and NORMAL_MONTH_CONFIG (mgmt %, HOA)
-    await ensureLoaded(item.property, 'defaults');
+    try { await ensureLoaded(item.property, 'defaults'); } catch { /* use 0 for rent */ }
     const cfg = NORMAL_MONTH_CONFIG[item.property] || { mgmtPct: 0, hoa: [] };
     const rent = state.data[item.property]?.defaults?.rent || 0;
     const mgmtFees = Math.round(rent * cfg.mgmtPct * 100) / 100;
