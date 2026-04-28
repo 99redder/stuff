@@ -5083,7 +5083,7 @@ function signOut() {
   sessionStorage.removeItem(SESSION_KEY);
   sessionStorage.removeItem('rentals_pw');
   state.password = '';
-  showLoginGate();
+  showPasswordGate();
 }
 
 window.signOut = signOut;
