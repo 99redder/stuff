@@ -3775,15 +3775,22 @@ function budgetSort(mode) {
 async function openBudgetWorksheetModal(incomeItemId) {
   const b = state.budget;
   const item = b.income.find(i => i.id === incomeItemId);
-  if (!item || !item.property || !PROP_INCOME_PROPS.includes(item.property)) return;
-  if (item.locked) return;
+  if (!item || item.locked) return;
+
+  // Derive property from item.property or by scanning the name — same logic as rendering
+  let prop = PROP_INCOME_PROPS.includes(item.property) ? item.property : null;
+  if (!prop) {
+    const nameClean = item.name.replace(/\s*\(worksheet\)/g, '').trim().toLowerCase();
+    prop = PROP_INCOME_PROPS.find(p => nameClean.includes(p.toLowerCase())) || null;
+  }
+  if (!prop) return;
 
   if (!state.budget.worksheets) state.budget.worksheets = {};
   if (!state.budget.worksheets[incomeItemId]) {
     // Pre-populate from stored defaults (rent) and NORMAL_MONTH_CONFIG (mgmt %, HOA)
-    try { await ensureLoaded(item.property, 'defaults'); } catch { /* use 0 for rent */ }
-    const cfg = NORMAL_MONTH_CONFIG[item.property] || { mgmtPct: 0, hoa: [] };
-    const rent = state.data[item.property]?.defaults?.rent || 0;
+    try { await ensureLoaded(prop, 'defaults'); } catch { /* use 0 for rent */ }
+    const cfg = NORMAL_MONTH_CONFIG[prop] || { mgmtPct: 0, hoa: [] };
+    const rent = state.data[prop]?.defaults?.rent || 0;
     const mgmtFees = Math.round(rent * cfg.mgmtPct * 100) / 100;
     const hoaFees = cfg.hoa.reduce((s, h) => s + h.amount, 0);
     state.budget.worksheets[incomeItemId] = {
@@ -3792,7 +3799,7 @@ async function openBudgetWorksheetModal(incomeItemId) {
     };
   }
 
-  _bModal = { incomeItemId, property: item.property };
+  _bModal = { incomeItemId, property: prop };
   _renderBudgetWorksheetModal();
   document.getElementById('budget-worksheet-modal').classList.remove('hidden');
 }
