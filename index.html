@@ -868,6 +868,50 @@
 <script>
 'use strict';
 
+/*
+ * NAVIGATION GUIDE (for AI agents)
+ *
+ * ARCHITECTURE
+ *   Single-file SPA — all HTML, CSS, and JS live in this file; no build step.
+ *   API: POST https://rentals-api.99redder.workers.dev/api/data  (see cloudflare/src/worker.js)
+ *   All API calls go through callApi(body), which adds X-Password and handles 401 → login.
+ *   Amounts are always US dollars as plain numbers (never cents, never ×100).
+ *   All user-supplied strings rendered into HTML must use escHtml() or escAttr().
+ *
+ * HTML SECTIONS  (search <!-- ── to jump)
+ *   <style>          CSS variables, reset, component classes, print styles
+ *   <header>         Property tabs (6AL/95EB/446BB/731WO) + view tabs + utility buttons
+ *   <main #app>      View container — empty shell filled by renderView()
+ *   Modals:          delete (2-step confirm), edit transaction,
+ *                    property income worksheet (#budget-worksheet-modal),
+ *                    solar billing cycle calculator (#solar-calc-modal)
+ *
+ * JS SECTIONS  (search // ── to jump)
+ *   Constants          API URL, PROPERTIES, CATEGORIES, NORMAL_MONTH_CONFIG, tax brackets
+ *   Tax Planning Const Maryland tax brackets and calcMarylandTax()
+ *   Maintenance Seed   MAINT_SEED: pre-loaded per-property maintenance history from CSV
+ *   State              state object — currentProperty, currentView, password, data cache
+ *   API                callApi(), ensureLoaded() — lazy-fetch + cache one key per property
+ *   Formatting         fmt(), fmtShort(), fmtDate()
+ *   Navigation         switchProperty(), switchView(), renderView() dispatcher
+ *   Current Year       renderCurrentYear(): YTD stat cards + transaction list
+ *   Delete Modal       openDeleteModal() → deleteModalStep2() → executeDelete()
+ *   Edit Modal         openEditModal(), saveEditTransaction()
+ *   Historical         renderHistorical(), depreciation schedule (MACRS 27.5yr mid-month)
+ *   Maintenance Log    renderMaintenance(): add/edit/delete/seed maintenance entries
+ *   Tax Summary        renderTaxSummary(): per-category YTD totals, print-ready
+ *   Investment Return  renderInvestmentReturn(): IRR, equity, Zillow estimate, config
+ *   Portfolio          renderPortfolio(): cross-property stats + multi-year history
+ *   Add Entry          renderAddEntry(): transaction form with "Use Default" and "Post Normal Month"
+ *   Tax Planning       renderTaxPlanning(): projected federal/state liability with live inputs
+ *   Monthly Budget     renderBudget(): monthly planner; property income rows open worksheet modal
+ *   Property Worksheet openBudgetWorksheetModal(): per-property net income calculator
+ *   Solar ROI          renderSolar(): solar panel ROI tracking + billing cycle calculator
+ *   Security           escHtml(), escAttr() — always use on user-supplied content
+ *   Password Gate      session-based auth via sessionStorage; callApi() auto-redirects on 401
+ *   Theme / Sign Out / Init
+ */
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const API = 'https://rentals-api.99redder.workers.dev';
@@ -3443,6 +3487,11 @@ function tpBuildPayments(payments) {
 }
 
 // ── View: Monthly Budget ──────────────────────────────────────────────────────
+// Budget data is one global KV record ("budget") with shape:
+//   { income: [...], expenses: { [cat]: [...] }, worksheets: { [incomeItemId]: {...} } }
+// Income items for 95EB/6AL/446BB are auto-detected by item.property or matching name,
+// and render as clickable "(worksheet)" links that open the property income modal.
+// Worksheet fields: rent (+), everything else (-) → net = income item's saved amount.
 
 const BUDGET_EXPENSE_CATS = [
   'Weekly Spending',
@@ -3482,7 +3531,8 @@ async function renderBudget() {
     const raw = result.data || {};
     state.budget = {
       income: raw.income || [],
-      expenses: {}
+      expenses: {},
+      worksheets: raw.worksheets || {}
     };
     for (const cat of BUDGET_EXPENSE_CATS) {
       state.budget.expenses[cat] = raw.expenses?.[cat] || [];
@@ -3715,18 +3765,27 @@ function budgetSort(mode) {
 }
 
 // ── Property Income Worksheet Modal ──────────────────────────────────────────
+// Opens #budget-worksheet-modal for 95EB, 6AL, or 446BB income items.
+// On first open: pre-populates rent from stored defaults, mgmtFees from
+// NORMAL_MONTH_CONFIG[property].mgmtPct, and hoaFees from .hoa[].amount.
+// Saving writes the net (rent minus all deductions) back as the income item's amount.
 
-function openBudgetWorksheetModal(incomeItemId) {
+async function openBudgetWorksheetModal(incomeItemId) {
   const b = state.budget;
   const item = b.income.find(i => i.id === incomeItemId);
   if (!item || !item.property || !PROP_INCOME_PROPS.includes(item.property)) return;
   if (item.locked) return;
 
-  // Load or initialize worksheet data
   if (!state.budget.worksheets) state.budget.worksheets = {};
   if (!state.budget.worksheets[incomeItemId]) {
+    // Pre-populate from stored defaults (rent) and NORMAL_MONTH_CONFIG (mgmt %, HOA)
+    await ensureLoaded(item.property, 'defaults');
+    const cfg = NORMAL_MONTH_CONFIG[item.property] || { mgmtPct: 0, hoa: [] };
+    const rent = state.data[item.property]?.defaults?.rent || 0;
+    const mgmtFees = Math.round(rent * cfg.mgmtPct * 100) / 100;
+    const hoaFees = cfg.hoa.reduce((s, h) => s + h.amount, 0);
     state.budget.worksheets[incomeItemId] = {
-      rent: 0, mgmtFees: 0, hoaFees: 0, taxes: 0, insurance: 0,
+      rent, mgmtFees, hoaFees, taxes: 0, insurance: 0,
       maintSavings: 0, turnoverSavings: 0, incomeTaxSavings: 0, umbrellaInsurance: 0
     };
   }
@@ -3759,7 +3818,7 @@ function _renderBudgetWorksheetModal() {
       <div style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid var(--border);font-size:.875rem">
         <span style="flex:1">${escHtml(f.label)}</span>
         <span style="font-size:.75rem;color:var(--text-muted);width:1.5rem;text-align:center">${sign}</span>
-        <input type="number" id="ws-${f.key}" value="${val}" step="1" min="0"
+        <input type="number" id="ws-${f.key}" value="${val}" step="0.01" min="0"
                style="width:110px;padding:.25rem .4rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);font-size:.85rem;text-align:right"
                oninput="updateWsNet()">
         <span class="budget-item-amt" id="ws-amt-${f.key}">${fmt(val)}</span>
