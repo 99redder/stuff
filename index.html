@@ -3773,9 +3773,15 @@ function budgetSort(mode) {
 // Saving writes the net (rent minus all deductions) back as the income item's amount.
 
 async function openBudgetWorksheetModal(incomeItemId) {
+  // DEBUG — temporary, remove once worksheet modal confirmed working
+  const _dbg = (msg) => alert('[worksheet] ' + msg);
+  _dbg('clicked, id=' + incomeItemId);
+
   const b = state.budget;
+  if (!b) { _dbg('state.budget is null'); return; }
   const item = b.income.find(i => i.id === incomeItemId);
-  if (!item || item.locked) return;
+  if (!item) { _dbg('item not found in b.income (count=' + b.income.length + ')'); return; }
+  if (item.locked) { _dbg('item is locked — unlock it first'); return; }
 
   // Derive property from item.property or by scanning the name — same logic as rendering
   let prop = PROP_INCOME_PROPS.includes(item.property) ? item.property : null;
@@ -3783,7 +3789,8 @@ async function openBudgetWorksheetModal(incomeItemId) {
     const nameClean = item.name.replace(/\s*\(worksheet\)/g, '').trim().toLowerCase();
     prop = PROP_INCOME_PROPS.find(p => nameClean.includes(p.toLowerCase())) || null;
   }
-  if (!prop) return;
+  if (!prop) { _dbg('could not derive property from item: ' + JSON.stringify({ name: item.name, property: item.property })); return; }
+  _dbg('opening modal for ' + prop);
 
   if (!state.budget.worksheets) state.budget.worksheets = {};
   if (!state.budget.worksheets[incomeItemId]) {
