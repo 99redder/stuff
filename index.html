@@ -681,6 +681,7 @@
       <button class="prop-tab" data-prop="731WO">731WO</button>
     </div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
+      <button class="tp-header-btn" id="deductions-btn" onclick="switchView('deductions')">Deductions Tracker</button>
       <button class="tp-header-btn" id="budget-btn" onclick="switchView('budget')">Monthly Budget</button>
       <button class="tp-header-btn" id="solar-btn" onclick="switchView('solar')">☀️ Solar</button>
       <button class="tp-header-btn" id="tax-planning-btn" onclick="switchView('tax-planning')">Tax Planning</button>
@@ -1455,7 +1456,8 @@ function switchView(view) {
   const isTaxPlanning = view === 'tax-planning';
   const isBudget = view === 'budget';
   const isSolar = view === 'solar';
-  const isFullscreen = isTaxPlanning || isBudget || isSolar;
+  const isDeductions = view === 'deductions';
+  const isFullscreen = isTaxPlanning || isBudget || isSolar || isDeductions;
   // Hide property tabs for portfolio, tax planning, budget, and solar
   document.getElementById('property-tabs').style.display =
     (view === 'portfolio' || isFullscreen) ? 'none' : '';
@@ -1468,6 +1470,8 @@ function switchView(view) {
   if (budgetBtn) budgetBtn.classList.toggle('active', isBudget);
   const solarBtn = document.getElementById('solar-btn');
   if (solarBtn) solarBtn.classList.toggle('active', isSolar);
+  const dedBtn = document.getElementById('deductions-btn');
+  if (dedBtn) dedBtn.classList.toggle('active', isDeductions);
   renderView();
 }
 
@@ -1484,9 +1488,10 @@ async function renderView() {
       case 'maintenance':   await renderMaintenance();  break;
       case 'add-entry':     await renderAddEntry();     break;
       case 'portfolio':     await renderPortfolio();    break;
-      case 'tax-planning':  await renderTaxPlanning();  break;
+      case 'tax-planning':  await renderTaxPlanning();   break;
       case 'budget':        await renderBudget();        break;
       case 'solar':         await renderSolar();         break;
+      case 'deductions':    await renderDeductions();    break;
     }
   } catch (e) {
     app.innerHTML = `<div class="error-msg">Failed to load: ${escHtml(e.message)}</div>`;
@@ -4800,6 +4805,312 @@ async function renderTaxPlanning() {
   tpUpdateResults();
 }
 
+// ── View: Deductions Tracker ──────────────────────────────────────────────────
+
+const DEDUCTION_CATEGORIES = [
+  'Mortgage Interest',
+  'Property Taxes',
+  'Insurance Premiums',
+  'Depreciation',
+  'Repairs & Maintenance',
+  'Improvements',
+  'Utilities',
+  'HOA Fees',
+  'Property Management',
+  'Advertising / Marketing',
+  'Legal & Professional',
+  'Auto / Vehicle',
+  'Travel',
+  'Office Supplies',
+  'Equipment',
+  'Other'
+];
+
+let _dEdit = null; // { id: uuid|'new' }
+let _dSort = 'date'; // 'date' | 'amount' | 'alpha'
+
+async function renderDeductions() {
+  const prop = state.currentProperty;
+  const key = `deductions:${prop}`;
+  const raw = await envRENTALS_get(key);
+  const all = Array.isArray(raw) ? raw : [];
+  const year = String(CURRENT_YEAR);
+  const yearDeductions = all.filter(d => d.date && d.date.startsWith(year));
+  yearDeductions.sort((a, b) => {
+    if (_dSort === 'date') return b.date.localeCompare(a.date);
+    if (_dSort === 'amount') return (b.amount || 0) - (a.amount || 0);
+    if (_dSort === 'alpha') return (a.description || '').localeCompare(b.description || '');
+    return 0;
+  });
+
+  const totalAmt = yearDeductions.reduce((s, d) => s + (d.amount || 0), 0);
+  const catTotals = {};
+  for (const d of yearDeductions) {
+    const cat = d.category || 'Other';
+    catTotals[cat] = (catTotals[cat] || 0) + (d.amount || 0);
+  }
+
+  const rows = yearDeductions.length === 0
+    ? `<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--text-muted)">No deductions recorded for ${year} yet.</td></tr>`
+    : yearDeductions.map(d => {
+        if (_dEdit && _dEdit.id === d.id) {
+          return _deductionEditRow(d);
+        }
+        return `<tr>
+          <td style="padding:.45rem .5rem;white-space:nowrap">${fmtDate(d.date)}</td>
+          <td style="padding:.45rem .5rem">${escHtml(d.description)}</td>
+          <td style="padding:.45rem .5rem">${escHtml(d.category || 'Other')}</td>
+          <td style="padding:.45rem .5rem;text-align:right;font-weight:600">${fmt(d.amount)}</td>
+          <td style="padding:.45rem .5rem;text-align:right;white-space:nowrap">
+            ${!d.locked ? `
+              <button class="btn btn-ghost btn-sm" style="padding:.15rem .35rem;font-size:.75rem" onclick="dedEdit('${d.id}')">Edit</button>
+              <button class="btn btn-ghost btn-sm" style="padding:.15rem .35rem;font-size:.75rem;color:var(--danger)" onclick="dedOpenDelete('${d.id}')">×</button>
+              <button class="btn btn-ghost btn-sm" style="padding:.15rem .35rem;font-size:.75rem;opacity:.5" title="Lock" onclick="dedToggleLock('${d.id}')">🔓</button>
+            ` : `
+              <button class="btn btn-ghost btn-sm" style="padding:.15rem .35rem;font-size:.75rem;opacity:.5" title="Unlock" onclick="dedToggleLock('${d.id}')">🔒</button>
+            `}
+          </td>
+        </tr>`;
+      }).join('');
+
+  const catRows = Object.entries(catTotals)
+    .sort((a, b) => b[1] - a[1])
+    .map(([cat, amt]) => `<tr>
+      <td style="padding:.35rem .5rem">${escHtml(cat)}</td>
+      <td style="padding:.35rem .5rem;text-align:right;font-weight:600">${fmt(amt)}</td>
+    </tr>`).join('');
+
+  const sortBtns = `
+    <div style="display:flex;gap:.15rem;flex-shrink:0">
+      <button class="btn btn-ghost" style="padding:.15rem .35rem;font-size:.7rem;opacity:${_dSort==='date'?1:.4}" title="By Date" onclick="dedSort('date')">Date</button>
+      <button class="btn btn-ghost" style="padding:.15rem .35rem;font-size:.7rem;opacity:${_dSort==='amount'?1:.4}" title="By Amount" onclick="dedSort('amount')">Amount</button>
+      <button class="btn btn-ghost" style="padding:.15rem .35rem;font-size:.7rem;opacity:${_dSort==='alpha'?1:.4}" title="A→Z" onclick="dedSort('alpha')">A→Z</button>
+    </div>`;
+
+  document.getElementById('app').innerHTML = `
+  <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
+    <button class="btn btn-ghost btn-sm" onclick="switchView('current-year')" style="flex-shrink:0;background:linear-gradient(135deg,#f59e0b,#d97706);color:white;border:none;box-shadow:0 2px 8px rgba(245,158,11,0.35);transition:transform 0.15s,box-shadow 0.15s">← Back to Properties</button>
+    <style>
+    #app button[onclick="switchView('current-year')"]:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(245,158,11,0.45);
+    }
+    </style>
+    <div style="flex:1;min-width:200px">
+      <div style="font-size:1.2rem;font-weight:700">${prop} — ${year} Deductions</div>
+      <div style="font-size:.8rem;color:var(--text-muted)">Track tax-deductible expenses throughout the year</div>
+    </div>
+    ${sortBtns}
+  </div>
+
+  <div style="display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:1.25rem;padding:.75rem 1rem;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius)">
+    <div><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Total Deductions (${year})</div>
+         <div style="font-size:1.3rem;font-weight:700;color:var(--danger)">${fmt(totalAmt)}</div></div>
+    <div><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Line Items</div>
+         <div style="font-size:1.3rem;font-weight:700">${yearDeductions.length}</div></div>
+    <div><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Avg per Item</div>
+         <div style="font-size:1.3rem;font-weight:700">${yearDeductions.length > 0 ? fmt(totalAmt / yearDeductions.length) : '—'}</div></div>
+  </div>
+
+  <div class="card" style="margin-bottom:1rem">
+    <div class="card-header" style="padding:.6rem 1rem;display:flex;justify-content:space-between;align-items:center">
+      <div class="card-title">Deduction Entries</div>
+      <button class="btn btn-primary btn-sm" style="padding:.35rem .75rem" onclick="dedAddNew()">+ Add Deduction</button>
+    </div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:.875rem">
+        <thead>
+          <tr style="border-bottom:2px solid var(--border);text-align:left">
+            <th style="padding:.45rem .5rem;font-weight:600;color:var(--text-muted);font-size:.75rem;text-transform:uppercase">Date</th>
+            <th style="padding:.45rem .5rem;font-weight:600;color:var(--text-muted);font-size:.75rem;text-transform:uppercase">Description</th>
+            <th style="padding:.45rem .5rem;font-weight:600;color:var(--text-muted);font-size:.75rem;text-transform:uppercase">Category</th>
+            <th style="padding:.45rem .5rem;font-weight:600;color:var(--text-muted);font-size:.75rem;text-transform:uppercase;text-align:right">Amount</th>
+            <th style="padding:.45rem .5rem;font-weight:600;color:var(--text-muted);font-size:.75rem;text-transform:uppercase;text-align:right;width:160px">Actions</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </div>
+
+  ${catTotals.length > 0 ? `
+  <div class="card">
+    <div class="card-header"><div class="card-title">Summary by Category</div></div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:.875rem">
+        <thead>
+          <tr style="border-bottom:2px solid var(--border);text-align:left">
+            <th style="padding:.45rem .5rem;font-weight:600;color:var(--text-muted);font-size:.75rem;text-transform:uppercase">Category</th>
+            <th style="padding:.45rem .5rem;font-weight:600;color:var(--text-muted);font-size:.75rem;text-transform:uppercase;text-align:right">Total</th>
+          </tr>
+        </thead>
+        <tbody>${catRows}</tbody>
+      </table>
+    </div>
+  </div>` : ''}
+
+  <!-- ── Deductions Delete Modal ── -->
+  <div class="modal-overlay hidden" id="ded-delete-modal" onclick="handleModalOverlayClick(event,'ded-delete-modal')">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ded-del-title">
+      <div class="modal-header">
+        <div class="modal-icon danger">🗑</div>
+        <div>
+          <div class="modal-title" id="ded-del-title">Delete Deduction</div>
+          <div class="modal-subtitle">This cannot be undone.</div>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="modal-detail" id="ded-del-detail"></div>
+        <p style="font-size:.875rem;color:var(--text-muted)">Are you sure you want to permanently delete this entry?</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeDedDeleteModal()">Cancel</button>
+        <button class="btn btn-danger" id="ded-del-confirm-btn" onclick="dedExecuteDelete()">Yes, Delete</button>
+      </div>
+    </div>
+  </div>`;
+
+  // Store deductions for delete modal reference
+  window._dedAllItems = all;
+}
+
+function _deductionEditRow(d) {
+  const catOpts = DEDUCTION_CATEGORIES.map(c =>
+    `<option value="${escAttr(c)}"${d.category === c ? ' selected' : ''}>${escHtml(c)}</option>`
+  ).join('');
+  return `<tr>
+    <td style="padding:.35rem .5rem">
+      <input type="date" id="ded-edit-date" value="${d.date || ''}" style="padding:.3rem .4rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);font-size:.85rem;width:140px">
+    </td>
+    <td style="padding:.35rem .5rem">
+      <input type="text" id="ded-edit-desc" value="${escAttr(d.description || '')}" placeholder="Description" style="width:100%;padding:.3rem .4rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);font-size:.85rem">
+    </td>
+    <td style="padding:.35rem .5rem">
+      <select id="ded-edit-cat" style="padding:.3rem .4rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);font-size:.85rem;width:100%">${catOpts}</select>
+    </td>
+    <td style="padding:.35rem .5rem">
+      <input type="number" id="ded-edit-amount" value="${d.amount || ''}" step="0.01" min="0.01" placeholder="0.00" style="width:100%;padding:.3rem .4rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);font-size:.85rem;text-align:right">
+    </td>
+    <td style="padding:.35rem .5rem;text-align:right;white-space:nowrap">
+      <button class="btn btn-primary btn-sm" style="padding:.3rem .5rem" onclick="dedSave('${d.id}')">Save</button>
+      <button class="btn btn-ghost btn-sm" style="padding:.3rem .5rem" onclick="dedCancelEdit()">✕</button>
+    </td>
+  </tr>`;
+}
+
+function dedSort(sort) { _dSort = sort; renderDeductions(); }
+
+function dedAddNew() {
+  _dEdit = { id: 'new' };
+  renderDeductions();
+  setTimeout(() => document.getElementById('ded-edit-date')?.focus(), 50);
+}
+
+function dedEdit(id) {
+  _dEdit = { id };
+  renderDeductions();
+  setTimeout(() => document.getElementById('ded-edit-desc')?.focus(), 50);
+}
+
+function dedCancelEdit() {
+  _dEdit = null;
+  renderDeductions();
+}
+
+async function dedSave(id) {
+  const prop = state.currentProperty;
+  const date = document.getElementById('ded-edit-date').value;
+  const description = document.getElementById('ded-edit-desc').value.trim();
+  const category = document.getElementById('ded-edit-cat').value;
+  const amount = parseFloat(document.getElementById('ded-edit-amount').value);
+
+  if (!date || !/\d{4}-\d{2}-\d{2}/.test(date)) {
+    alert('Please enter a valid date.');
+    return;
+  }
+  if (!description) {
+    alert('Please enter a description.');
+    return;
+  }
+  if (isNaN(amount) || amount <= 0) {
+    alert('Please enter a valid amount.');
+    return;
+  }
+
+  const key = `deductions:${prop}`;
+  const raw = await envRENTALS_get(key);
+  const all = Array.isArray(raw) ? raw : [];
+
+  if (id === 'new') {
+    const newDed = { id: crypto.randomUUID(), date, description, category, amount, locked: false };
+    all.push(newDed);
+    await envRENTALS_put(key, JSON.stringify(all));
+  } else {
+    const idx = all.findIndex(d => d.id === id);
+    if (idx === -1) return;
+    all[idx] = { ...all[idx], date, description, category, amount };
+    await envRENTALS_put(key, JSON.stringify(all));
+  }
+
+  _dEdit = null;
+  renderDeductions();
+}
+
+function dedToggleLock(id) {
+  const key = `deductions:${state.currentProperty}`;
+  envRENTALS_get(key).then(raw => {
+    const all = Array.isArray(raw) ? raw : [];
+    const idx = all.findIndex(d => d.id === id);
+    if (idx === -1) return;
+    all[idx].locked = !all[idx].locked;
+    envRENTALS_put(key, JSON.stringify(all));
+    renderDeductions();
+  });
+}
+
+let _dedDelId = null;
+function dedOpenDelete(id) {
+  const key = `deductions:${state.currentProperty}`;
+  envRENTALS_get(key).then(raw => {
+    const all = Array.isArray(raw) ? raw : [];
+    const d = all.find(x => x.id === id);
+    if (!d) return;
+    _dedDelId = id;
+    document.getElementById('ded-del-detail').innerHTML =
+      `<strong>${escHtml(d.description)}</strong><br>${fmtDate(d.date)} · ${escHtml(d.category || 'Other')} · ${fmt(d.amount)}`;
+    document.getElementById('ded-delete-modal').classList.remove('hidden');
+  });
+}
+
+function closeDedDeleteModal() {
+  _dedDelId = null;
+  document.getElementById('ded-delete-modal').classList.add('hidden');
+}
+
+async function dedExecuteDelete() {
+  if (!_dedDelId) return;
+  const key = `deductions:${state.currentProperty}`;
+  const raw = await envRENTALS_get(key);
+  const all = Array.isArray(raw) ? raw : [];
+  const filtered = all.filter(d => d.id !== _dedDelId);
+  await envRENTALS_put(key, JSON.stringify(filtered));
+  closeDedDeleteModal();
+  renderDeductions();
+}
+
+// ── KV helper for global (non-property) data ──────────────────────────────────
+// We use a single KV key per property for deductions.
+// envRENTALS_get/put are thin wrappers around the same API pattern.
+
+async function envRENTALS_get(key) {
+  const result = await callApi({ action: 'get_deductions', property: state.currentProperty });
+  return result.deductions;
+}
+
+async function envRENTALS_put(key, data) {
+  await callApi({ action: 'save_deductions', property: state.currentProperty, data });
+}
+
 function tpReadForm() {
   const tp = tpLoadLocal(); // get existing (preserves estimated_payments)
   const g = id => { const el = document.getElementById(id); return el && el.value !== '' ? parseFloat(el.value) || 0 : 0; };
@@ -5152,6 +5463,15 @@ window.openSolarCalcModal      = openSolarCalcModal;
 window.closeSolarCalcModal     = closeSolarCalcModal;
 window.updateCalcResult        = updateCalcResult;
 window.useCalcResult           = useCalcResult;
+window.dedSort                 = dedSort;
+window.dedAddNew               = dedAddNew;
+window.dedEdit                 = dedEdit;
+window.dedCancelEdit           = dedCancelEdit;
+window.dedSave                 = dedSave;
+window.dedToggleLock           = dedToggleLock;
+window.dedOpenDelete           = dedOpenDelete;
+window.closeDedDeleteModal     = closeDedDeleteModal;
+window.dedExecuteDelete        = dedExecuteDelete;
 
 // Close modals on Escape
 document.addEventListener('keydown', e => {
@@ -5159,6 +5479,7 @@ document.addEventListener('keydown', e => {
     closeDeleteModal();
     closeEditModal();
     closeSolarCalcModal();
+    closeDedDeleteModal();
   }
 });
 
