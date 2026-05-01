@@ -4830,9 +4830,7 @@ let _dEdit = null; // { id: uuid|'new' }
 let _dSort = 'date'; // 'date' | 'amount' | 'alpha'
 
 async function renderDeductions() {
-  const prop = state.currentProperty;
-  const key = `deductions:${prop}`;
-  const raw = await envRENTALS_get(key);
+  const raw = await envRENTALS_get();
   const all = Array.isArray(raw) ? raw : [];
   const year = String(CURRENT_YEAR);
   const yearDeductions = all.filter(d => d.date && d.date.startsWith(year));
@@ -4850,8 +4848,12 @@ async function renderDeductions() {
     catTotals[cat] = (catTotals[cat] || 0) + (d.amount || 0);
   }
 
-  const rows = yearDeductions.length === 0
-    ? `<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--text-muted)">No deductions recorded for ${year} yet.</td></tr>`
+  const isAddingNew = _dEdit && _dEdit.id === 'new';
+  const newRow = isAddingNew
+    ? _deductionEditRow({ id: 'new', date: new Date().toISOString().slice(0, 10), description: '', category: 'Other', amount: '' })
+    : '';
+  const existingRows = yearDeductions.length === 0
+    ? (isAddingNew ? '' : `<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--text-muted)">No deductions recorded for ${year} yet.</td></tr>`)
     : yearDeductions.map(d => {
         if (_dEdit && _dEdit.id === d.id) {
           return _deductionEditRow(d);
@@ -4872,6 +4874,7 @@ async function renderDeductions() {
           </td>
         </tr>`;
       }).join('');
+  const rows = newRow + existingRows;
 
   const catRows = Object.entries(catTotals)
     .sort((a, b) => b[1] - a[1])
@@ -4897,7 +4900,7 @@ async function renderDeductions() {
     }
     </style>
     <div style="flex:1;min-width:200px">
-      <div style="font-size:1.2rem;font-weight:700">${prop} — ${year} Deductions</div>
+      <div style="font-size:1.2rem;font-weight:700">${year} Itemized Deductions</div>
       <div style="font-size:.8rem;color:var(--text-muted)">Track tax-deductible expenses throughout the year</div>
     </div>
     ${sortBtns}
@@ -5018,7 +5021,6 @@ function dedCancelEdit() {
 }
 
 async function dedSave(id) {
-  const prop = state.currentProperty;
   const date = document.getElementById('ded-edit-date').value;
   const description = document.getElementById('ded-edit-desc').value.trim();
   const category = document.getElementById('ded-edit-cat').value;
@@ -5037,19 +5039,18 @@ async function dedSave(id) {
     return;
   }
 
-  const key = `deductions:${prop}`;
-  const raw = await envRENTALS_get(key);
+  const raw = await envRENTALS_get();
   const all = Array.isArray(raw) ? raw : [];
 
   if (id === 'new') {
     const newDed = { id: crypto.randomUUID(), date, description, category, amount, locked: false };
     all.push(newDed);
-    await envRENTALS_put(key, JSON.stringify(all));
+    await envRENTALS_put(all);
   } else {
     const idx = all.findIndex(d => d.id === id);
     if (idx === -1) return;
     all[idx] = { ...all[idx], date, description, category, amount };
-    await envRENTALS_put(key, JSON.stringify(all));
+    await envRENTALS_put(all);
   }
 
   _dEdit = null;
@@ -5057,21 +5058,19 @@ async function dedSave(id) {
 }
 
 function dedToggleLock(id) {
-  const key = `deductions:${state.currentProperty}`;
-  envRENTALS_get(key).then(raw => {
+  envRENTALS_get().then(raw => {
     const all = Array.isArray(raw) ? raw : [];
     const idx = all.findIndex(d => d.id === id);
     if (idx === -1) return;
     all[idx].locked = !all[idx].locked;
-    envRENTALS_put(key, JSON.stringify(all));
+    envRENTALS_put(all);
     renderDeductions();
   });
 }
 
 let _dedDelId = null;
 function dedOpenDelete(id) {
-  const key = `deductions:${state.currentProperty}`;
-  envRENTALS_get(key).then(raw => {
+  envRENTALS_get().then(raw => {
     const all = Array.isArray(raw) ? raw : [];
     const d = all.find(x => x.id === id);
     if (!d) return;
@@ -5089,26 +5088,21 @@ function closeDedDeleteModal() {
 
 async function dedExecuteDelete() {
   if (!_dedDelId) return;
-  const key = `deductions:${state.currentProperty}`;
-  const raw = await envRENTALS_get(key);
+  const raw = await envRENTALS_get();
   const all = Array.isArray(raw) ? raw : [];
   const filtered = all.filter(d => d.id !== _dedDelId);
-  await envRENTALS_put(key, JSON.stringify(filtered));
+  await envRENTALS_put(filtered);
   closeDedDeleteModal();
   renderDeductions();
 }
 
-// ── KV helper for global (non-property) data ──────────────────────────────────
-// We use a single KV key per property for deductions.
-// envRENTALS_get/put are thin wrappers around the same API pattern.
-
-async function envRENTALS_get(key) {
-  const result = await callApi({ action: 'get_deductions', property: state.currentProperty });
+async function envRENTALS_get() {
+  const result = await callApi({ action: 'get_deductions' });
   return result.deductions;
 }
 
-async function envRENTALS_put(key, data) {
-  await callApi({ action: 'save_deductions', property: state.currentProperty, data });
+async function envRENTALS_put(data) {
+  await callApi({ action: 'save_deductions', data });
 }
 
 function tpReadForm() {

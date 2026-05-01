@@ -76,9 +76,9 @@ async function handleDataApi(request, env) {
   if (action === 'save_solar_summary')   return handleSaveSolarSummary(env, body.year, body.data);
   if (action === 'delete_solar_summary') return handleDeleteSolarSummary(env, body.year);
 
-  // Deductions — per-property
-  if (action === 'get_deductions') return handleGetDeductions(env, property);
-  if (action === 'save_deductions') return handleSaveDeductions(env, property, body.data);
+  // Deductions — global
+  if (action === 'get_deductions')  return handleGetDeductions(env);
+  if (action === 'save_deductions') return handleSaveDeductions(env, body.data);
 
   const { property } = body;
 
@@ -659,22 +659,15 @@ async function handleDeleteSolarSummary(env, year) {
 
 // ── Deductions ────────────────────────────────────────────────────────────────
 
-async function handleGetDeductions(env, property) {
-  if (!property || !VALID_PROPERTIES.includes(property)) {
-    return jsonResponse({ error: 'Invalid or missing property' }, 400);
-  }
-  const deductions = await env.RENTALS.get(`deductions:${property}`, 'json') || [];
+async function handleGetDeductions(env) {
+  const deductions = await env.RENTALS.get('deductions', 'json') || [];
   return jsonResponse({ deductions });
 }
 
-async function handleSaveDeductions(env, property, data) {
-  if (!property || !VALID_PROPERTIES.includes(property)) {
-    return jsonResponse({ error: 'Invalid or missing property' }, 400);
-  }
+async function handleSaveDeductions(env, data) {
   if (!data || !Array.isArray(data)) {
     return jsonResponse({ error: 'data must be an array' }, 400);
   }
-  // Sanitize entries
   const sanitized = data.map(d => ({
     id: d.id || crypto.randomUUID(),
     date: String(d.date || '').trim(),
@@ -683,7 +676,7 @@ async function handleSaveDeductions(env, property, data) {
     amount: (typeof d.amount === 'number' && isFinite(d.amount)) ? d.amount : 0,
     locked: !!d.locked
   }));
-  await env.RENTALS.put(`deductions:${property}`, JSON.stringify(sanitized));
+  await env.RENTALS.put('deductions', JSON.stringify(sanitized));
   return jsonResponse({ success: true });
 }
 
