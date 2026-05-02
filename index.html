@@ -3591,7 +3591,7 @@ function _renderBudgetHtml() {
       : item.name;
     const clickableClass = isPropIncome ? `style="cursor:pointer;text-decoration:underline dotted" onclick="openBudgetWorksheetModal('${item.id}')"` : '';
     const lockBtn = isPropIncome
-      ? ''
+      ? '<span class="budget-item-lock"></span>'
       : `<button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem;font-size:.8rem;opacity:.6" title="${item.locked?'Unlock':'Lock'}"
                  onclick="budgetToggleLock('income','${item.id}')">${item.locked ? '🔒' : '🔓'}</button>`;
     const actionBtns = isPropIncome
