@@ -633,7 +633,7 @@
     .budget-item { display:flex; align-items:center; gap:.4rem; padding:.35rem 0; border-bottom:1px solid var(--border); font-size:.875rem; }
     .budget-item:last-child { border-bottom:none; }
     .budget-item-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .budget-item-amt { font-weight:600; white-space:nowrap; width:7rem; flex-shrink:0; text-align:right; color:var(--text-muted); }
+    .budget-item-amt { font-weight:600; white-space:nowrap; width:7rem; flex-shrink:0; text-align:right; margin-left:auto; color:var(--text-muted); }
     .budget-item-pct { font-weight:700; white-space:nowrap; font-size:.75rem; width:3rem; padding:.1rem .4rem .1rem .4rem; border-radius:.25rem; background:var(--surface2); color:var(--text); margin-right:.35rem; flex-shrink:0; }
     .budget-item-lock { flex-shrink:0; width:1.5rem; text-align:center; }
     .budget-item-actions { display:flex; gap:.2rem; flex-shrink:0; opacity:0; transition:opacity .15s; }
@@ -3591,7 +3591,7 @@ function _renderBudgetHtml() {
       : item.name;
     const clickableClass = isPropIncome ? `style="cursor:pointer;text-decoration:underline dotted" onclick="openBudgetWorksheetModal('${item.id}')"` : '';
     const lockBtn = isPropIncome
-      ? '<span class="budget-item-lock"></span>'
+      ? ''
       : `<button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem;font-size:.8rem;opacity:.6" title="${item.locked?'Unlock':'Lock'}"
                  onclick="budgetToggleLock('income','${item.id}')">${item.locked ? '🔒' : '🔓'}</button>`;
     const actionBtns = isPropIncome
@@ -3928,13 +3928,19 @@ async function budgetSave(section, id) {
 }
 
 async function budgetDelete(section, id) {
-  if (!confirm('Remove this item?')) return;
-  const b = state.budget;
-  if (section === 'income') b.income = b.income.filter(i => i.id !== id);
-  else if (b.expenses[section]) b.expenses[section] = b.expenses[section].filter(i => i.id !== id);
-  _bEdit = null;
-  _renderBudgetHtml();
-  await _saveBudget();
+  showBrandedNotice({
+    title: 'Remove Item',
+    message: 'Are you sure you want to remove this item?',
+    type: 'danger',
+    onConfirm: () => {
+      const b = state.budget;
+      if (section === 'income') b.income = b.income.filter(i => i.id !== id);
+      else if (b.expenses[section]) b.expenses[section] = b.expenses[section].filter(i => i.id !== id);
+      _bEdit = null;
+      _renderBudgetHtml();
+      _saveBudget();
+    }
+  });
 }
 
 async function _saveBudget() {
