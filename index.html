@@ -3604,7 +3604,7 @@ function _renderBudgetHtml() {
     return `<div class="budget-item">
       <span class="budget-item-pct">${incomeRowPct}%</span>
       <span class="budget-item-name" ${clickableClass}>${escHtml(displayName)}</span>
-      <span class="budget-item-lock">${lockBtn}</span>
+      <span class="budget-item-lock">${lockBtn || '·'}</span>
       <span class="budget-item-amt">${fmt(item.amount)}/mo</span>
       <span class="budget-item-actions">${actionBtns}</span>
     </div>`;
