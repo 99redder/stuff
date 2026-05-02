@@ -637,7 +637,7 @@
     .budget-item-pct { font-weight:700; white-space:nowrap; font-size:.75rem; width:3rem; padding:.1rem .4rem .1rem .4rem; border-radius:.25rem; background:var(--surface2); color:var(--text); margin-right:.35rem; flex-shrink:0; }
     .budget-item-lock { flex-shrink:0; width:1.5rem; text-align:center; overflow:hidden; }
     .budget-item-lock button { width:1.5rem; padding:.1rem 0; font-size:.8rem; }
-    .budget-item-actions { display:flex; gap:.2rem; flex-shrink:0; opacity:0; transition:opacity .15s; }
+    .budget-item-actions { display:flex; gap:.2rem; flex-shrink:0; opacity:0; transition:opacity .15s; min-width:2rem; }
     .budget-item:hover .budget-item-actions { opacity:1; }
     .budget-edit-row { gap:.4rem; padding:.35rem 0; }
     @media (max-width:640px) { .budget-item-actions { opacity:1; } }
@@ -3635,7 +3635,7 @@ function _renderBudgetHtml() {
       : `<button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem;font-size:.8rem;opacity:.6;width:1.5rem" title="${item.locked?'Unlock':'Lock'}"
                  onclick="budgetToggleLock('income','${item.id}')">${item.locked ? '🔒' : '🔓'}</button>`;
     const actionBtns = isPropIncome
-      ? `<button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem;color:var(--danger)" onclick="budgetDelete('income','${item.id}')">×</button>`
+      ? `<button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem;color:var(--danger);width:1.5rem;font-size:.875rem" onclick="budgetDelete('income','${item.id}')">×</button>`
       : (!item.locked ? `
           <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem" onclick="budgetEdit('income','${item.id}')">Edit</button>
           <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem;color:var(--danger)" onclick="budgetDelete('income','${item.id}')">×</button>
