@@ -634,7 +634,7 @@
     .budget-item:last-child { border-bottom:none; }
     .budget-item-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .budget-item-amt { font-weight:600; white-space:nowrap; color:var(--text-muted); }
-    .budget-item-pct { font-weight:600; white-space:nowrap; font-size:.8rem; color:var(--text); }
+    .budget-item-pct { font-weight:700; white-space:nowrap; font-size:.8rem; min-width:3rem; text-align:right; color:var(--text); }
     .budget-item-lock { flex-shrink:0; }
     .budget-item-actions { display:flex; gap:.2rem; flex-shrink:0; opacity:0; transition:opacity .15s; }
     .budget-item:hover .budget-item-actions { opacity:1; }
@@ -3602,9 +3602,9 @@ function _renderBudgetHtml() {
         ` : '');
     const incomeRowPct = totalIncome > 0 ? ((item.amount / totalIncome) * 100).toFixed(1) : '0.0';
     return `<div class="budget-item">
+      <span class="budget-item-pct">${incomeRowPct}%</span>
       <span class="budget-item-name" ${clickableClass}>${escHtml(displayName)}</span>
       <span class="budget-item-lock">${lockBtn}</span>
-      <span class="budget-item-pct">${incomeRowPct}%</span>
       <span class="budget-item-amt">${fmt(item.amount)}/mo</span>
       <span class="budget-item-actions">${actionBtns}</span>
     </div>`;
@@ -3663,12 +3663,12 @@ function _renderBudgetHtml() {
       }
       const itemPct = totalExpenses > 0 ? ((item.amount / totalExpenses) * 100).toFixed(1) : '0.0';
       return `<div class="budget-item">
+        <span class="budget-item-pct">${itemPct}%</span>
         <span class="budget-item-name">${escHtml(item.name)}</span>
         <span class="budget-item-lock">
           <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem;font-size:.8rem;opacity:.6" title="${item.locked?'Unlock':'Lock'}"
                   onclick="budgetToggleLock('${escAttr(cat)}','${item.id}')">${item.locked ? '🔒' : '🔓'}</button>
         </span>
-        <span class="budget-item-pct">${itemPct}%</span>
         <span class="budget-item-amt">${fmt(item.amount)}/mo</span>
         <span class="budget-item-actions">
           ${!item.locked ? `
