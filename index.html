@@ -3599,9 +3599,10 @@ function _renderBudgetHtml() {
           <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem" onclick="budgetEdit('income','${item.id}')">Edit</button>
           <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem;color:var(--danger)" onclick="budgetDelete('income','${item.id}')">×</button>
         ` : '');
+    const incomeRowPct = totalIncome > 0 ? ((item.amount / totalIncome) * 100).toFixed(1) : '0.0';
     return `<div class="budget-item">
       <span class="budget-item-name" ${clickableClass}>${escHtml(displayName)}</span>
-      <span class="budget-item-amt">${fmt(item.amount)}/mo</span>
+      <span class="budget-item-amt">${fmt(item.amount)}/mo <span style="font-size:.75rem;color:var(--text-muted)">(${incomeRowPct}%)</span></span>
       <span class="budget-item-lock">${lockBtn}</span>
       <span class="budget-item-actions">${actionBtns}</span>
     </div>`;
@@ -3658,9 +3659,10 @@ function _renderBudgetHtml() {
       if (_bEdit?.section === cat && _bEdit?.id === item.id) {
         return _budgetEditRow(cat, item);
       }
+      const itemPct = totalExpenses > 0 ? ((item.amount / totalExpenses) * 100).toFixed(1) : '0.0';
       return `<div class="budget-item">
         <span class="budget-item-name">${escHtml(item.name)}</span>
-        <span class="budget-item-amt">${fmt(item.amount)}/mo</span>
+        <span class="budget-item-amt">${fmt(item.amount)}/mo <span style="font-size:.75rem;color:var(--text-muted)">(${itemPct}%)</span></span>
         <span class="budget-item-lock">
           <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem;font-size:.8rem;opacity:.6" title="${item.locked?'Unlock':'Lock'}"
                   onclick="budgetToggleLock('${escAttr(cat)}','${item.id}')">${item.locked ? '🔒' : '🔓'}</button>
@@ -3678,10 +3680,11 @@ function _renderBudgetHtml() {
       ? _budgetEditRow(cat, null)
       : `<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:.25rem;justify-content:flex-start" onclick="budgetAdd('${escAttr(cat)}')">+ Add Item</button>`;
 
+    const catPct = totalExpenses > 0 ? ((catTotal / totalExpenses) * 100).toFixed(1) : '0.0';
     return `
       <div class="card" style="margin-bottom:.75rem">
         <div class="card-header" style="padding:.6rem 1rem;display:flex;justify-content:space-between;align-items:center">
-          <div style="font-weight:700;font-size:.9rem">${escHtml(cat)}</div>
+          <div style="font-weight:700;font-size:.9rem">${escHtml(cat)} <span style="font-size:.75rem;color:var(--text-muted)">(${catPct}%)</span></div>
           <div style="font-weight:700;color:${catTotal > 0 ? 'var(--danger)' : 'var(--text-muted)'}">
             ${catTotal > 0 ? fmt(catTotal) + '/mo' : '—'}
           </div>
