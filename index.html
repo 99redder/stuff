@@ -754,8 +754,27 @@
   </div>
 </div>
 
+<!-- ── Branded Notice Modal ── -->
+<div class="modal-overlay hidden" id="notice-modal" onclick="handleModalOverlayClick(event,'notice-modal')">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-header">
+      <div class="modal-icon" id="notice-modal-icon">⚠️</div>
+      <div>
+        <div class="modal-title" id="notice-modal-title">Notice</div>
+        <div class="modal-subtitle" id="notice-modal-subtitle"></div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <p id="notice-modal-message" style="font-size:0.9rem;line-height:1.6"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeNoticeModal()">Cancel</button>
+      <button class="btn btn-danger" id="notice-modal-confirm-btn" onclick="noticeModalConfirm()" style="background:#991b1b">Confirm</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Edit Transaction Modal ── -->
-<div class="modal-overlay hidden" id="edit-modal" onclick="handleModalOverlayClick(event,'edit-modal')">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
     <div class="modal-header">
       <div class="modal-icon primary">✏️</div>
@@ -1644,6 +1663,25 @@ function closeDeleteModal() {
   document.getElementById('delete-modal-2').classList.add('hidden');
   _pendingDeleteId   = null;
   _pendingDeleteProp = null;
+}
+
+let _noticeModalConfirmCb = null;
+function showBrandedNotice({ title, message, type = 'info', onConfirm }) {
+  _noticeModalConfirmCb = onConfirm || null;
+  document.getElementById('notice-modal-title').textContent = title;
+  document.getElementById('notice-modal-message').textContent = message;
+  document.getElementById('notice-modal-subtitle').textContent = type === 'danger' ? 'This cannot be undone.' : '';
+  document.getElementById('notice-modal-icon').textContent = type === 'danger' ? '⚠️' : 'ℹ️';
+  document.getElementById('notice-modal-icon').className = 'modal-icon ' + (type === 'danger' ? 'danger' : 'primary');
+  document.getElementById('notice-modal').classList.remove('hidden');
+}
+function closeNoticeModal() {
+  document.getElementById('notice-modal').classList.add('hidden');
+  _noticeModalConfirmCb = null;
+}
+function noticeModalConfirm() {
+  if (_noticeModalConfirmCb) _noticeModalConfirmCb();
+  closeNoticeModal();
 }
 
 function handleModalOverlayClick(e, modalId) {
@@ -3928,19 +3966,13 @@ async function budgetSave(section, id) {
 }
 
 async function budgetDelete(section, id) {
-  showBrandedNotice({
-    title: 'Remove Item',
-    message: 'Are you sure you want to remove this item?',
-    type: 'danger',
-    onConfirm: () => {
-      const b = state.budget;
-      if (section === 'income') b.income = b.income.filter(i => i.id !== id);
-      else if (b.expenses[section]) b.expenses[section] = b.expenses[section].filter(i => i.id !== id);
-      _bEdit = null;
-      _renderBudgetHtml();
-      _saveBudget();
-    }
-  });
+  if (!confirm('Remove this item?')) return;
+  const b = state.budget;
+  if (section === 'income') b.income = b.income.filter(i => i.id !== id);
+  else if (b.expenses[section]) b.expenses[section] = b.expenses[section].filter(i => i.id !== id);
+  _bEdit = null;
+  _renderBudgetHtml();
+  _saveBudget();
 }
 
 async function _saveBudget() {
