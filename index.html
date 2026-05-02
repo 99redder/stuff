@@ -3967,13 +3967,19 @@ async function budgetSave(section, id) {
 }
 
 async function budgetDelete(section, id) {
-  if (!confirm('Remove this item?')) return;
-  const b = state.budget;
-  if (section === 'income') b.income = b.income.filter(i => i.id !== id);
-  else if (b.expenses[section]) b.expenses[section] = b.expenses[section].filter(i => i.id !== id);
-  _bEdit = null;
-  _renderBudgetHtml();
-  _saveBudget();
+  showBrandedNotice({
+    title: 'Remove Item',
+    message: 'Are you sure you want to remove this item?',
+    type: 'danger',
+    onConfirm: () => {
+      const b = state.budget;
+      if (section === 'income') b.income = b.income.filter(i => i.id !== id);
+      else if (b.expenses[section]) b.expenses[section] = b.expenses[section].filter(i => i.id !== id);
+      _bEdit = null;
+      _renderBudgetHtml();
+      _saveBudget();
+    }
+  });
 }
 
 async function _saveBudget() {
