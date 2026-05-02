@@ -4863,6 +4863,9 @@ let _dEdit = null; // { id: uuid|'new' }
 let _dSort = 'date'; // 'date' | 'amount' | 'alpha'
 
 async function renderDeductions() {
+  closeDedDeleteModal();
+  closeEditModal();
+  closeDeleteModal();
   const raw = await envRENTALS_get();
   const all = Array.isArray(raw) ? raw : [];
   const year = String(CURRENT_YEAR);
