@@ -1480,6 +1480,11 @@ function saleClosingApplies(def, stateCode) {
   return !def.states || def.states.includes(stateCode);
 }
 
+function saleClosingDefsForProperty(prop = state.currentProperty) {
+  const stateCode = PROPERTY_SALE_STATE[prop] || '';
+  return SALE_CLOSING_COSTS.filter(def => saleClosingApplies(def, stateCode));
+}
+
 function saleClosingDefault(def, salePrice, stateCode) {
   return Math.round((def.defaultValue(salePrice || 0, stateCode) || 0) * 100) / 100;
 }
@@ -1488,8 +1493,7 @@ function getSaleClosingBreakdownFromForm() {
   const saleState = PROPERTY_SALE_STATE[state.currentProperty] || 'NH';
   const items = {};
   let total = 0;
-  for (const def of SALE_CLOSING_COSTS) {
-    if (!saleClosingApplies(def, saleState)) continue;
+  for (const def of saleClosingDefsForProperty()) {
     const input = document.getElementById(`sale-cost-${def.code}`);
     const lockBtn = document.getElementById(`sale-cost-${def.code}-lock`);
     const value = parseFloat(input?.value || '0') || 0;
@@ -1504,8 +1508,7 @@ function syncSaleClosingCosts() {
   const salePrice = parseFloat(document.getElementById('sale-closeout-price')?.value || '0') || 0;
   const stateCode = PROPERTY_SALE_STATE[state.currentProperty] || 'NH';
   let total = 0;
-  for (const def of SALE_CLOSING_COSTS) {
-    if (!saleClosingApplies(def, stateCode)) continue;
+  for (const def of saleClosingDefsForProperty()) {
     const input = document.getElementById(`sale-cost-${def.code}`);
     const lockBtn = document.getElementById(`sale-cost-${def.code}-lock`);
     if (!input || !lockBtn) continue;
@@ -2850,7 +2853,9 @@ async function renderInvestmentReturn() {
 
   const defaultSaleState = PROPERTY_SALE_STATE[prop] || saleCloseout?.saleState || 'NH';
   const initialCloseoutPrice = zillowEstimate || '';
-  const closeoutCostRows = SALE_CLOSING_COSTS.filter(def => saleClosingApplies(def, defaultSaleState)).map(def => {
+  const activeSaleCostDefs = saleClosingDefsForProperty(prop);
+  const activeSaleCostCodes = new Set(activeSaleCostDefs.map(def => def.code));
+  const closeoutCostRows = activeSaleCostDefs.map(def => {
     const prior = saleCloseout?.saleClosingBreakdown?.items?.[def.code];
     const locked = prior?.locked !== false;
     const value = prior ? prior.value : saleClosingDefault(def, zillowEstimate || 0, defaultSaleState);
@@ -2865,9 +2870,9 @@ async function renderInvestmentReturn() {
       </div>`;
   }).join('');
   const finalBreakdownRows = saleCloseout?.saleClosingBreakdown?.items
-    ? Object.values(saleCloseout.saleClosingBreakdown.items)
-        .filter(item => item && typeof item.value === 'number' && item.value !== 0)
-        .map(item => row(`− ${item.label}`, item.value, 'var(--danger)'))
+    ? Object.entries(saleCloseout.saleClosingBreakdown.items)
+        .filter(([code, item]) => activeSaleCostCodes.has(code) && item && typeof item.value === 'number' && item.value !== 0)
+        .map(([, item]) => row(`− ${item.label}`, item.value, 'var(--danger)'))
         .join('')
     : '';
 
