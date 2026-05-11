@@ -687,6 +687,7 @@
       <button class="tp-header-btn" id="budget-btn" onclick="switchView('budget')">Monthly Budget</button>
       <button class="tp-header-btn" id="solar-btn" onclick="switchView('solar')">☀️ Solar</button>
       <button class="tp-header-btn" id="tax-planning-btn" onclick="switchView('tax-planning')">Tax Planning</button>
+      <button class="tp-header-btn" id="savings-btn" onclick="switchView('savings')">💰 Savings</button>
       <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
       <button class="btn-signout" id="signout-btn" onclick="signOut()" title="Sign out">Sign Out</button>
     </div>
@@ -1401,7 +1402,8 @@ const state = {
   pendingDefaultPrompt: null,  // { category, amount } after a save
   pendingMaintPrompt: null,    // { date, amount, description, category } after expense save
   budget: null,                // loaded once, global (not per-property)
-  solar: { config: null, entries: null, summaries: null }
+  solar: { config: null, entries: null, summaries: null },
+  savings: null                // loaded once, global (not per-property)
 };
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -1568,11 +1570,12 @@ function switchView(view) {
   const isBudget = view === 'budget';
   const isSolar = view === 'solar';
   const isDeductions = view === 'deductions';
-  const isFullscreen = isTaxPlanning || isBudget || isSolar || isDeductions;
-  // Hide property tabs for portfolio, tax planning, budget, and solar
+  const isSavings = view === 'savings';
+  const isFullscreen = isTaxPlanning || isBudget || isSolar || isDeductions || isSavings;
+  // Hide property tabs for portfolio, tax planning, budget, solar, deductions, savings
   document.getElementById('property-tabs').style.display =
     (view === 'portfolio' || isFullscreen) ? 'none' : '';
-  // Hide view-nav for tax planning, budget, and solar
+  // Hide view-nav for fullscreen global views
   document.getElementById('view-nav').style.display = isFullscreen ? 'none' : '';
   // Toggle header button active states
   const tpBtn = document.getElementById('tax-planning-btn');
@@ -1583,6 +1586,8 @@ function switchView(view) {
   if (solarBtn) solarBtn.classList.toggle('active', isSolar);
   const dedBtn = document.getElementById('deductions-btn');
   if (dedBtn) dedBtn.classList.toggle('active', isDeductions);
+  const savingsBtn = document.getElementById('savings-btn');
+  if (savingsBtn) savingsBtn.classList.toggle('active', isSavings);
   renderView();
 }
 
@@ -1603,6 +1608,7 @@ async function renderView() {
       case 'budget':        await renderBudget();        break;
       case 'solar':         await renderSolar();         break;
       case 'deductions':    await renderDeductions();    break;
+      case 'savings':       await renderSavings();       break;
     }
   } catch (e) {
     app.innerHTML = `<div class="error-msg">Failed to load: ${escHtml(e.message)}</div>`;
@@ -5491,6 +5497,342 @@ async function envRENTALS_get() {
 
 async function envRENTALS_put(data) {
   await callApi({ action: 'save_deductions', data });
+}
+
+// ── View: Savings ────────────────────────────────────────────────────────────
+
+const DEFAULT_SAVINGS_OBLIGATIONS = [
+  { name: '446BB Insurance Payment',                              amount: 540,    paymentsPerYear: 1, note: 'Paid once a year, Q1' },
+  { name: '446BB Maintenance & Assessments',                      amount: 5000,   paymentsPerYear: 1, note: 'Target: $10,000' },
+  { name: '446BB Taxes',                                          amount: 1550,   paymentsPerYear: 2, note: 'Paid twice a year' },
+  { name: '446BB Tenant Turnover',                                amount: 1500,   paymentsPerYear: 1, note: '' },
+  { name: '6AL Insurance',                                        amount: 970,    paymentsPerYear: 1, note: 'Paid once a year, September' },
+  { name: '6AL Reno & Maintenance',                               amount: 25000,  paymentsPerYear: 1, note: 'Target: $45,000' },
+  { name: '6AL Taxes',                                            amount: 7400,   paymentsPerYear: 2, note: 'Paid twice a year' },
+  { name: '731WO Roof / HVAC / Repair Savings',                   amount: 2500,   paymentsPerYear: 1, note: 'Target: $15,000' },
+  { name: '731WO County Taxes',                                   amount: 2000,   paymentsPerYear: 1, note: 'Paid once a year, late July' },
+  { name: '731WO City Taxes',                                     amount: 2100,   paymentsPerYear: 1, note: 'Paid once a year, early August' },
+  { name: '731WO Insurance',                                      amount: 2000,   paymentsPerYear: 1, note: 'Paid once a year, February' },
+  { name: '731WO Annual HOA Fees',                                amount: 400,    paymentsPerYear: 1, note: 'Paid once a year, late December' },
+  { name: '731WO Annual Power Washing',                           amount: 500,    paymentsPerYear: 2, note: '$250/per, 2 times per year' },
+  { name: '95EB Insurance',                                       amount: 330,    paymentsPerYear: 1, note: 'Paid once a year, December' },
+  { name: '95EB Maintenance & Assessments',                       amount: 5000,   paymentsPerYear: 1, note: 'Target: $10,000' },
+  { name: '95EB Taxes',                                           amount: 3850,   paymentsPerYear: 2, note: 'Paid twice a year' },
+  { name: '95EB Tenant Turnover',                                 amount: 2000,   paymentsPerYear: 1, note: '' },
+  { name: 'Car Insurance',                                        amount: 2000,   paymentsPerYear: 2, note: 'Paid twice a year' },
+  { name: 'Car Maintenance, Tags, & Emergency',                   amount: 3500,   paymentsPerYear: 1, note: '' },
+  { name: 'Income Taxes Savings',                                 amount: 2500,   paymentsPerYear: 1, note: '' },
+  { name: 'Medical Catastrophic Cap',                             amount: 3000,   paymentsPerYear: 1, note: '' },
+  { name: 'NH Trips',                                             amount: 3000,   paymentsPerYear: 1, note: '1 trip annually — hotels/gas/tolls/spending' },
+  { name: 'Solar Inverter Replacement',                           amount: 2500,   paymentsPerYear: 1, note: '' },
+  { name: '2mm RLI Umbrella Insurance',                           amount: 700,    paymentsPerYear: 1, note: 'Paid once a year, December' },
+  { name: 'VGLI',                                                 amount: 700,    paymentsPerYear: 1, note: 'Paid once a year, September' },
+  { name: 'Gordie & Ellie Private School (or College) Savings',   amount: 5000,   paymentsPerYear: 1, note: '' },
+  { name: 'Chris Roth and Trad IRA Funds',                        amount: 7500,   paymentsPerYear: 1, note: '' },
+  { name: 'Megan Trad IRA Funds',                                 amount: 7500,   paymentsPerYear: 1, note: '' },
+  { name: '731WO Floors Project',                                 amount: 1000,   paymentsPerYear: 1, note: 'Target: $8,000' },
+  { name: 'Mom Assistance Fund',                                  amount: 3500,   paymentsPerYear: 1, note: 'Target: $25,000' },
+  { name: 'Mike Assistance Fund',                                 amount: 500,    paymentsPerYear: 1, note: 'Target: $10,000' },
+  { name: 'Megan Parents Assistance Fund',                        amount: 1000,   paymentsPerYear: 1, note: 'Target: $10,000' },
+];
+
+let _savEdit = null;       // { id, name, amount, paymentsPerYear, note } when editing/adding
+
+async function loadSavings() {
+  if (state.savings) return;
+  const result = await callApi({ action: 'get_savings' });
+  const raw = result.data || {};
+  let obligations = Array.isArray(raw.obligations) ? raw.obligations : [];
+  // Seed defaults on first load
+  if (obligations.length === 0) {
+    obligations = DEFAULT_SAVINGS_OBLIGATIONS.map(o => ({
+      id: (crypto.randomUUID ? crypto.randomUUID() : 'o_' + Math.random().toString(36).slice(2)),
+      ...o
+    }));
+  }
+  state.savings = {
+    accounts: {
+      robinhood: typeof raw.accounts?.robinhood === 'number' ? raw.accounts.robinhood : 0,
+      ibkr:      typeof raw.accounts?.ibkr      === 'number' ? raw.accounts.ibkr      : 0,
+    },
+    obligations,
+    payments: (raw.payments && typeof raw.payments === 'object') ? raw.payments : {},
+  };
+  // Seed defaults persistently if we just generated them
+  if (!Array.isArray(raw.obligations) || raw.obligations.length === 0) {
+    await saveSavings();
+  }
+}
+
+async function saveSavings() {
+  await callApi({ action: 'save_savings', data: state.savings });
+}
+
+function savingsObligationStats() {
+  const s = state.savings;
+  const year = String(CURRENT_YEAR);
+  const paidMap = s.payments[year] || {};
+  let totalAnnual = 0;
+  let totalPaid = 0;
+  let outstanding = 0;
+  let paidSlots = 0;
+  let totalSlots = 0;
+  for (const o of s.obligations) {
+    const ppy = o.paymentsPerYear === 2 ? 2 : 1;
+    const slotAmt = o.amount / ppy;
+    const paid = (paidMap[o.id] || []).slice(0, ppy);
+    while (paid.length < ppy) paid.push(false);
+    const paidCount = paid.filter(Boolean).length;
+    totalAnnual += o.amount;
+    totalPaid   += slotAmt * paidCount;
+    outstanding += slotAmt * (ppy - paidCount);
+    paidSlots   += paidCount;
+    totalSlots  += ppy;
+  }
+  return { totalAnnual, totalPaid, outstanding, paidSlots, totalSlots };
+}
+
+async function renderSavings() {
+  await loadSavings();
+  _renderSavingsHtml();
+}
+
+function _renderSavingsHtml() {
+  const s = state.savings;
+  const year = String(CURRENT_YEAR);
+  const paidMap = s.payments[year] || {};
+  const stats = savingsObligationStats();
+
+  const totalLiquid = (s.accounts.robinhood || 0) + (s.accounts.ibkr || 0);
+  const coverage = stats.outstanding > 0 ? (totalLiquid / stats.outstanding) : (totalLiquid > 0 ? 1 : 0);
+  const coveragePct = (coverage * 100).toFixed(0);
+  const coverageColor = totalLiquid >= stats.outstanding ? 'var(--success)' : 'var(--danger)';
+  const progressPct = stats.totalAnnual > 0 ? Math.min(100, (stats.totalPaid / stats.totalAnnual) * 100) : 0;
+
+  const statsBar = `
+    <div style="display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:1.25rem;padding:.75rem 1rem;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius)">
+      <div><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">${year} Annual Obligations</div>
+           <div style="font-size:1.3rem;font-weight:700">${fmt(stats.totalAnnual)}</div></div>
+      <div><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Paid So Far</div>
+           <div style="font-size:1.3rem;font-weight:700;color:var(--success)">${fmt(stats.totalPaid)}</div>
+           <div style="font-size:.7rem;color:var(--text-muted)">${stats.paidSlots} / ${stats.totalSlots} installments</div></div>
+      <div><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Outstanding</div>
+           <div style="font-size:1.3rem;font-weight:700;color:var(--danger)">${fmt(stats.outstanding)}</div></div>
+      <div><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Liquid in Accounts</div>
+           <div style="font-size:1.3rem;font-weight:700">${fmt(totalLiquid)}</div></div>
+      <div><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Coverage of Outstanding</div>
+           <div style="font-size:1.3rem;font-weight:700;color:${coverageColor}">${coveragePct}%</div></div>
+      <div style="flex:1;min-width:220px;align-self:center">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.25rem">${year} Progress</div>
+        <div style="height:.6rem;background:var(--border);border-radius:999px;overflow:hidden">
+          <div style="height:100%;width:${progressPct}%;background:linear-gradient(90deg,#10b981,#059669)"></div>
+        </div>
+        <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem">${progressPct.toFixed(0)}% paid</div>
+      </div>
+    </div>`;
+
+  // ── Left: Account Balances
+  const accountsCard = `
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-header" style="padding:.6rem 1rem">
+        <div class="card-title">Account Balances</div>
+      </div>
+      <div style="padding:1rem;display:flex;flex-direction:column;gap:.85rem">
+        <div>
+          <label style="display:block;font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Robinhood Checking</label>
+          <div style="position:relative">
+            <span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
+            <input type="number" id="sav-acct-robinhood" class="form-input" step="0.01" min="0"
+                   value="${escAttr(String(s.accounts.robinhood || 0))}"
+                   onchange="savUpdateAccount('robinhood', this.value)"
+                   style="width:100%;padding-left:1.5rem;font-size:1.05rem;font-weight:600">
+          </div>
+        </div>
+        <div>
+          <label style="display:block;font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">IBKR Individual Brokerage</label>
+          <div style="position:relative">
+            <span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
+            <input type="number" id="sav-acct-ibkr" class="form-input" step="0.01" min="0"
+                   value="${escAttr(String(s.accounts.ibkr || 0))}"
+                   onchange="savUpdateAccount('ibkr', this.value)"
+                   style="width:100%;padding-left:1.5rem;font-size:1.05rem;font-weight:600">
+          </div>
+        </div>
+        <div style="padding-top:.6rem;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:baseline">
+          <span style="font-size:.85rem;font-weight:600;color:var(--text-muted);text-transform:uppercase">Total Liquid</span>
+          <span style="font-size:1.25rem;font-weight:700">${fmt(totalLiquid)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span style="font-size:.85rem;font-weight:600;color:var(--text-muted);text-transform:uppercase">After Outstanding</span>
+          <span style="font-size:1.05rem;font-weight:700;color:${(totalLiquid - stats.outstanding) >= 0 ? 'var(--success)' : 'var(--danger)'}">${(totalLiquid - stats.outstanding) < 0 ? '−' : ''}${fmt(Math.abs(totalLiquid - stats.outstanding))}</span>
+        </div>
+      </div>
+    </div>`;
+
+  // ── Right: Obligations
+  const obligationRows = s.obligations.map(o => {
+    if (_savEdit && _savEdit.id === o.id) return _savEditRow(o);
+    const ppy = o.paymentsPerYear === 2 ? 2 : 1;
+    const paid = (paidMap[o.id] || []).slice(0, ppy);
+    while (paid.length < ppy) paid.push(false);
+    const slotAmt = o.amount / ppy;
+    const checkboxes = paid.map((p, i) => `
+      <label style="display:inline-flex;align-items:center;gap:.25rem;cursor:pointer;padding:.2rem .4rem;border-radius:4px;background:${p ? 'rgba(16,185,129,.15)' : 'rgba(239,68,68,.1)'};border:1px solid ${p ? 'rgba(16,185,129,.4)' : 'rgba(239,68,68,.3)'}">
+        <input type="checkbox" ${p ? 'checked' : ''} onchange="savTogglePaid('${escAttr(o.id)}', ${i}, this.checked)" style="margin:0;cursor:pointer">
+        <span style="font-size:.72rem;font-weight:600;color:${p ? 'var(--success)' : 'var(--danger)'}">${ppy === 2 ? (i === 0 ? 'H1' : 'H2') : 'Paid'} · ${fmtShort(slotAmt)}</span>
+      </label>
+    `).join('');
+    const allPaid = paid.every(Boolean);
+    return `<tr style="${allPaid ? 'opacity:.55' : ''}">
+      <td style="padding:.5rem .6rem;border-bottom:1px solid var(--border)">
+        <div style="font-weight:600">${escHtml(o.name)}</div>
+        ${o.note ? `<div style="font-size:.7rem;color:var(--text-muted)">${escHtml(o.note)}</div>` : ''}
+      </td>
+      <td style="padding:.5rem .6rem;border-bottom:1px solid var(--border);text-align:right;font-weight:600;white-space:nowrap">${fmt(o.amount)}</td>
+      <td style="padding:.5rem .6rem;border-bottom:1px solid var(--border);text-align:center;color:var(--text-muted);font-size:.78rem;white-space:nowrap">${ppy}× / yr</td>
+      <td style="padding:.5rem .6rem;border-bottom:1px solid var(--border);white-space:nowrap">
+        <div style="display:flex;gap:.35rem;justify-content:flex-end;flex-wrap:wrap">${checkboxes}</div>
+      </td>
+      <td style="padding:.5rem .4rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" style="padding:.15rem .35rem;font-size:.75rem" onclick="savEdit('${escAttr(o.id)}')">Edit</button>
+        <button class="btn btn-ghost btn-sm" style="padding:.15rem .35rem;font-size:.75rem;color:var(--danger)" onclick="savDelete('${escAttr(o.id)}')">×</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const newRow = (_savEdit && _savEdit.id === 'new') ? _savEditRow(_savEdit) : '';
+
+  const obligationsCard = `
+    <div class="card">
+      <div class="card-header" style="padding:.6rem 1rem;display:flex;justify-content:space-between;align-items:center">
+        <div class="card-title">${year} Annual Obligations</div>
+        <button class="btn btn-primary btn-sm" style="padding:.35rem .75rem" onclick="savAddNew()">+ Add Obligation</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:.875rem">
+          <thead>
+            <tr style="border-bottom:2px solid var(--border);text-align:left">
+              <th style="padding:.45rem .6rem;font-weight:600;color:var(--text-muted);font-size:.72rem;text-transform:uppercase">Obligation</th>
+              <th style="padding:.45rem .6rem;font-weight:600;color:var(--text-muted);font-size:.72rem;text-transform:uppercase;text-align:right">Annual</th>
+              <th style="padding:.45rem .6rem;font-weight:600;color:var(--text-muted);font-size:.72rem;text-transform:uppercase;text-align:center">Freq</th>
+              <th style="padding:.45rem .6rem;font-weight:600;color:var(--text-muted);font-size:.72rem;text-transform:uppercase;text-align:right">${year} Paid?</th>
+              <th style="padding:.45rem .6rem"></th>
+            </tr>
+          </thead>
+          <tbody>${newRow}${obligationRows || (newRow ? '' : `<tr><td colspan="5" style="padding:2rem;text-align:center;color:var(--text-muted)">No obligations yet.</td></tr>`)}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  document.getElementById('app').innerHTML = `
+    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="switchView('current-year')" style="flex-shrink:0;background:linear-gradient(135deg,#f59e0b,#d97706);color:white;border:none;box-shadow:0 2px 8px rgba(245,158,11,0.35)">← Back to Properties</button>
+      <div style="flex:1;min-width:200px">
+        <div style="font-size:1.2rem;font-weight:700">💰 Savings & Annual Obligations</div>
+        <div style="font-size:.8rem;color:var(--text-muted)">Track account balances and progress against ${year} obligations. Resets automatically each Jan 1.</div>
+      </div>
+    </div>
+    ${statsBar}
+    <div style="display:grid;grid-template-columns:minmax(260px,340px) 1fr;gap:1rem;align-items:start">
+      <div>${accountsCard}</div>
+      <div>${obligationsCard}</div>
+    </div>
+  `;
+}
+
+function _savEditRow(o) {
+  const id = o.id || 'new';
+  return `<tr style="background:var(--bg)">
+    <td style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">
+      <input type="text" id="sav-edit-name" class="form-input" placeholder="Obligation name" value="${escAttr(o.name || '')}" style="width:100%;font-size:.85rem;margin-bottom:.25rem">
+      <input type="text" id="sav-edit-note" class="form-input" placeholder="Note (optional)" value="${escAttr(o.note || '')}" style="width:100%;font-size:.75rem">
+    </td>
+    <td style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">
+      <input type="number" id="sav-edit-amount" class="form-input" step="0.01" min="0" placeholder="0" value="${escAttr(String(o.amount ?? ''))}" style="width:100%;font-size:.85rem;text-align:right">
+    </td>
+    <td style="padding:.4rem .6rem;border-bottom:1px solid var(--border);text-align:center">
+      <select id="sav-edit-ppy" class="form-input" style="font-size:.8rem;padding:.25rem">
+        <option value="1" ${o.paymentsPerYear === 2 ? '' : 'selected'}>1× / yr</option>
+        <option value="2" ${o.paymentsPerYear === 2 ? 'selected' : ''}>2× / yr</option>
+      </select>
+    </td>
+    <td colspan="2" style="padding:.4rem .6rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap">
+      <button class="btn btn-primary btn-sm" style="padding:.3rem .6rem" onclick="savSave('${escAttr(id)}')">Save</button>
+      <button class="btn btn-ghost btn-sm" style="padding:.3rem .6rem" onclick="savCancelEdit()">Cancel</button>
+    </td>
+  </tr>`;
+}
+
+async function savUpdateAccount(key, value) {
+  const v = parseFloat(value);
+  state.savings.accounts[key] = isFinite(v) && v >= 0 ? v : 0;
+  await saveSavings();
+  _renderSavingsHtml();
+}
+
+async function savTogglePaid(id, idx, checked) {
+  const year = String(CURRENT_YEAR);
+  if (!state.savings.payments[year]) state.savings.payments[year] = {};
+  const o = state.savings.obligations.find(x => x.id === id);
+  if (!o) return;
+  const ppy = o.paymentsPerYear === 2 ? 2 : 1;
+  const arr = (state.savings.payments[year][id] || []).slice(0, ppy);
+  while (arr.length < ppy) arr.push(false);
+  arr[idx] = !!checked;
+  state.savings.payments[year][id] = arr;
+  await saveSavings();
+  _renderSavingsHtml();
+}
+
+function savAddNew() {
+  _savEdit = { id: 'new', name: '', amount: '', paymentsPerYear: 1, note: '' };
+  _renderSavingsHtml();
+}
+
+function savEdit(id) {
+  const o = state.savings.obligations.find(x => x.id === id);
+  if (!o) return;
+  _savEdit = { ...o };
+  _renderSavingsHtml();
+}
+
+function savCancelEdit() {
+  _savEdit = null;
+  _renderSavingsHtml();
+}
+
+async function savSave(id) {
+  const name = (document.getElementById('sav-edit-name')?.value || '').trim();
+  const note = (document.getElementById('sav-edit-note')?.value || '').trim();
+  const amount = parseFloat(document.getElementById('sav-edit-amount')?.value || '0') || 0;
+  const ppy = parseInt(document.getElementById('sav-edit-ppy')?.value || '1', 10) === 2 ? 2 : 1;
+  if (!name) { alert('Name is required'); return; }
+  if (amount < 0) { alert('Amount must be ≥ 0'); return; }
+  if (id === 'new') {
+    state.savings.obligations.push({
+      id: (crypto.randomUUID ? crypto.randomUUID() : 'o_' + Math.random().toString(36).slice(2)),
+      name, amount, paymentsPerYear: ppy, note
+    });
+  } else {
+    const o = state.savings.obligations.find(x => x.id === id);
+    if (o) { o.name = name; o.amount = amount; o.paymentsPerYear = ppy; o.note = note; }
+  }
+  _savEdit = null;
+  await saveSavings();
+  _renderSavingsHtml();
+}
+
+async function savDelete(id) {
+  const o = state.savings.obligations.find(x => x.id === id);
+  if (!o) return;
+  if (!confirm(`Delete "${o.name}"? This cannot be undone.`)) return;
+  state.savings.obligations = state.savings.obligations.filter(x => x.id !== id);
+  // Clean up payment records for this id across all years
+  for (const year of Object.keys(state.savings.payments)) {
+    if (state.savings.payments[year]?.[id]) delete state.savings.payments[year][id];
+  }
+  await saveSavings();
+  _renderSavingsHtml();
 }
 
 function tpReadForm() {

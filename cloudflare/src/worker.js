@@ -80,6 +80,10 @@ async function handleDataApi(request, env) {
   if (action === 'get_deductions')  return handleGetDeductions(env);
   if (action === 'save_deductions') return handleSaveDeductions(env, body.data);
 
+  // Savings — global
+  if (action === 'get_savings')  return handleGetSavings(env);
+  if (action === 'save_savings') return handleSaveSavings(env, body.data);
+
   const { property } = body;
 
   if (!property || !VALID_PROPERTIES.includes(property)) {
@@ -781,6 +785,54 @@ async function handleSaveDeductions(env, data) {
   }));
   await env.RENTALS.put('deductions', JSON.stringify(sanitized));
   return jsonResponse({ success: true });
+}
+
+// ── Savings ───────────────────────────────────────────────────────────────────
+
+async function handleGetSavings(env) {
+  const data = await env.RENTALS.get('savings', 'json') || {};
+  return jsonResponse({ data });
+}
+
+async function handleSaveSavings(env, data) {
+  if (!data || typeof data !== 'object') {
+    return jsonResponse({ error: 'Missing data object' }, 400);
+  }
+
+  const accounts = (data.accounts && typeof data.accounts === 'object') ? data.accounts : {};
+  const sanitizedAccounts = {
+    robinhood: (typeof accounts.robinhood === 'number' && isFinite(accounts.robinhood)) ? accounts.robinhood : 0,
+    ibkr:      (typeof accounts.ibkr      === 'number' && isFinite(accounts.ibkr))      ? accounts.ibkr      : 0,
+  };
+
+  const obligations = Array.isArray(data.obligations) ? data.obligations.map(o => ({
+    id: o.id || crypto.randomUUID(),
+    name: String(o.name || '').trim().slice(0, 200),
+    amount: (typeof o.amount === 'number' && isFinite(o.amount) && o.amount >= 0) ? o.amount : 0,
+    paymentsPerYear: (o.paymentsPerYear === 2) ? 2 : 1,
+    note: String(o.note || '').trim().slice(0, 400),
+  })) : [];
+
+  const payments = (data.payments && typeof data.payments === 'object') ? {} : {};
+  if (data.payments && typeof data.payments === 'object') {
+    for (const [year, paid] of Object.entries(data.payments)) {
+      if (!/^\d{4}$/.test(year) || !paid || typeof paid !== 'object') continue;
+      payments[year] = {};
+      for (const [oid, arr] of Object.entries(paid)) {
+        if (!Array.isArray(arr)) continue;
+        payments[year][String(oid)] = arr.slice(0, 2).map(v => !!v);
+      }
+    }
+  }
+
+  const saved = {
+    accounts: sanitizedAccounts,
+    obligations,
+    payments,
+  };
+
+  await env.RENTALS.put('savings', JSON.stringify(saved));
+  return jsonResponse({ success: true, data: saved });
 }
 
 // ── Helper ────────────────────────────────────────────────────────────────────
