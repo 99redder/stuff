@@ -527,6 +527,8 @@ async function handleCloseInvestment(env, property, closeout) {
       stateCapGainsPct: typeof closeout.stateCapGainsPct === 'number' && isFinite(closeout.stateCapGainsPct) ? closeout.stateCapGainsPct : 0,
       depreciationRecaptureTax: closeout.depreciationRecaptureTax,
       netSaleProceeds: closeout.netSaleProceeds,
+      primaryResidenceExclusion: typeof closeout.primaryResidenceExclusion === 'number' && isFinite(closeout.primaryResidenceExclusion) ? closeout.primaryResidenceExclusion : 0,
+      taxableCapitalGain: typeof closeout.taxableCapitalGain === 'number' && isFinite(closeout.taxableCapitalGain) ? closeout.taxableCapitalGain : closeout.capitalGain,
       propertyAppreciation: closeout.propertyAppreciation,
       cumNetCashFlow: closeout.cumNetCashFlow,
       totalReturn: closeout.totalReturn,

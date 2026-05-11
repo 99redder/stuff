@@ -942,6 +942,7 @@ const PROPERTIES = ['6AL', '95EB', '446BB', '731WO'];
 const PRIMARY_PROPERTIES = new Set(['731WO']); // primary residences: Investment Return + Maintenance only
 const PRIMARY_VIEWS = new Set(['investment-return', 'maintenance']);
 const CURRENT_YEAR = new Date().getFullYear();
+const PRIMARY_RESIDENCE_GAIN_EXCLUSION = 500000; // §121 MFJ exclusion cap
 
 const CATEGORIES = {
   income: [
@@ -2651,16 +2652,19 @@ async function renderInvestmentReturn() {
   let federalCapGainsTax  = null;
   let stateCapGainsTax    = null;
   let capitalGain         = 0;
+  let taxableCapitalGain  = 0;
+  let primaryResidenceExclusion = 0;
   let grossAfterClosing   = null;
   if (zillowEstimate) {
     saleClosingAmt = isSold ? saleCloseout.saleClosingCosts : zillowEstimate * (saleClosingPct / 100);
     grossAfterClosing = zillowEstimate - saleClosingAmt;
-    if (!isPrimaryResidence) {
-      // Capital gain = gross proceeds - total invested (depr recapture taxed separately)
-      capitalGain = Math.max(0, grossAfterClosing - totalCapitalInvested);
-      federalCapGainsTax = isSold ? saleCloseout.federalCapGainsTax : capitalGain * 0.15;
-      stateCapGainsTax   = isSold ? saleCloseout.stateCapGainsTax : capitalGain * (stateCapGainsPct / 100);
-    }
+    // Capital gain = gross proceeds - total invested (depr recapture taxed separately)
+    capitalGain = Math.max(0, grossAfterClosing - totalCapitalInvested);
+    primaryResidenceExclusion = isPrimaryResidence ? Math.min(capitalGain, PRIMARY_RESIDENCE_GAIN_EXCLUSION) : 0;
+    taxableCapitalGain = isSold ? (saleCloseout.taxableCapitalGain ?? Math.max(0, capitalGain - primaryResidenceExclusion)) : Math.max(0, capitalGain - primaryResidenceExclusion);
+    federalCapGainsTax = isSold ? saleCloseout.federalCapGainsTax : taxableCapitalGain * 0.15;
+    stateCapGainsTax   = isSold ? saleCloseout.stateCapGainsTax : taxableCapitalGain * (stateCapGainsPct / 100);
+    if (isSold) primaryResidenceExclusion = saleCloseout.primaryResidenceExclusion ?? primaryResidenceExclusion;
     netSaleProceeds = isSold ? saleCloseout.netSaleProceeds : grossAfterClosing - depreciationRecaptureTax - (federalCapGainsTax || 0) - (stateCapGainsTax || 0);
   }
 
@@ -2811,11 +2815,13 @@ async function renderInvestmentReturn() {
           ${row(isSold ? 'Final Sale Price' : 'Zillow Estimate', zillowEstimate, 'var(--success)')}
           ${row(isSold ? '− Actual Sale Closing Costs' : `− Sale Closing Costs (${saleClosingPct}%)`, saleClosingAmt, 'var(--danger)')}
           ${isPrimaryResidence
-            ? `<tr><td colspan="2" style="padding:.35rem .75rem;border-bottom:1px solid var(--border);font-size:0.82rem;color:var(--text-muted)">§121 exclusion applies — no capital gains or depreciation recapture tax (up to $500k MFJ)</td></tr>`
-            : `${row('− Depreciation Recapture Tax (25%)', depreciationRecaptureTax > 0 ? depreciationRecaptureTax : 0, 'var(--danger)')}
-          ${row('− Federal Capital Gains Tax (15%)', federalCapGainsTax, 'var(--danger)')}
-          ${stateCapGainsPct > 0 ? row(`− MD State/Local Capital Gains Tax (${stateCapGainsPct}%)`, stateCapGainsTax, 'var(--danger)') : ''}`
+            ? `${row('Capital Gain', capitalGain, capitalGain >= 0 ? 'var(--success)' : 'var(--danger)')}
+          ${row('− §121 Primary Residence Exclusion', primaryResidenceExclusion, 'var(--success)')}
+          ${row('Taxable Capital Gain', taxableCapitalGain, taxableCapitalGain > 0 ? 'var(--danger)' : 'var(--text-muted)')}`
+            : `${row('− Depreciation Recapture Tax (25%)', depreciationRecaptureTax > 0 ? depreciationRecaptureTax : 0, 'var(--danger)')}`
           }
+          ${row('− Federal Capital Gains Tax (15%)', federalCapGainsTax, 'var(--danger)')}
+          ${stateCapGainsPct > 0 ? row(`− MD State/Local Capital Gains Tax (${stateCapGainsPct}%)`, stateCapGainsTax, 'var(--danger)') : ''}
           ${row('Estimated Net Proceeds', netSaleProceeds, netSaleProceeds !== null ? 'var(--success)' : 'var(--text-muted)', false, true)}
         </table>
         ${zillowEstimate === null ? `<div style="padding:.5rem .75rem;color:var(--text-muted);font-size:0.85rem">Configure a Zillow URL below and click Refresh to fetch the current estimate.</div>` : ''}
@@ -2859,7 +2865,7 @@ async function renderInvestmentReturn() {
     : '';
 
   // ── Sale Closeout card ────────────────────────────────────────────────────
-  const closeoutCard = isPrimaryResidence ? '' : `
+  const closeoutCard = `
     <div class="card" style="margin-bottom:1rem">
       <div class="card-header"><div class="card-title">${isSold ? 'Final Sale Closeout' : 'Close Out Property Sale'}</div></div>
       <div class="card-body">
@@ -2872,9 +2878,11 @@ async function renderInvestmentReturn() {
             ${finalBreakdownRows || row('− Actual Sale Closing Costs', saleCloseout.saleClosingCosts, 'var(--danger)')}
             ${row('Total Sale Closing Costs', saleCloseout.saleClosingCosts, 'var(--danger)', false, true)}
             ${row('Capital Gain', saleCloseout.capitalGain, saleCloseout.capitalGain >= 0 ? 'var(--success)' : 'var(--danger)')}
+            ${isPrimaryResidence ? row('− §121 Primary Residence Exclusion', saleCloseout.primaryResidenceExclusion || 0, 'var(--success)') : ''}
+            ${isPrimaryResidence ? row('Taxable Capital Gain', saleCloseout.taxableCapitalGain || 0, (saleCloseout.taxableCapitalGain || 0) > 0 ? 'var(--danger)' : 'var(--text-muted)') : ''}
             ${row('− Federal Capital Gains Tax (15%)', saleCloseout.federalCapGainsTax, 'var(--danger)')}
             ${row(`− MD State/Local Capital Gains Tax (${saleCloseout.stateCapGainsPct}%)`, saleCloseout.stateCapGainsTax, 'var(--danger)')}
-            ${row('− Depreciation Recapture Tax (25%)', saleCloseout.depreciationRecaptureTax, 'var(--danger)')}
+            ${!isPrimaryResidence ? row('− Depreciation Recapture Tax (25%)', saleCloseout.depreciationRecaptureTax, 'var(--danger)') : ''}
             ${row('Final Net Sale Proceeds', saleCloseout.netSaleProceeds, 'var(--success)', false, true)}
           </table>
           ${saleCloseout.notes ? `<div style="margin-top:.6rem;color:var(--text-muted);font-size:.85rem">Notes: ${escHtml(saleCloseout.notes)}</div>` : ''}
@@ -3000,7 +3008,7 @@ async function renderInvestmentReturn() {
       </div>
     </div>
   `;
-  if (!isSold && !isPrimaryResidence) syncSaleClosingCosts();
+  if (!isSold) syncSaleClosingCosts();
 }
 
 async function saveInvestmentConfig() {
@@ -3085,18 +3093,21 @@ async function closeOutInvestmentSale() {
   const totalCapitalInvested = purchasePrice + purchaseClosing + cumulativeImprovements;
   if (totalCapitalInvested <= 0) return showCloseoutError('Configure purchase price/closing costs before finalizing the sale.');
 
+  const isPrimaryResidence = PRIMARY_PROPERTIES.has(prop);
   let cumulativeDepreciation = 0;
-  if (dc) {
+  if (!isPrimaryResidence && dc) {
     const sched = calcDepreciationSchedule(dc.costBasis, dc.placedInService);
     if (sched.length) cumulativeDepreciation = sched[sched.length - 1].cumulative;
   }
-  const depreciationRecaptureTax = cumulativeDepreciation * 0.25;
+  const depreciationRecaptureTax = isPrimaryResidence ? 0 : cumulativeDepreciation * 0.25;
 
   const grossAfterClosing = salePrice - saleClosingCosts;
   const capitalGain = Math.max(0, grossAfterClosing - totalCapitalInvested);
+  const primaryResidenceExclusion = isPrimaryResidence ? Math.min(capitalGain, PRIMARY_RESIDENCE_GAIN_EXCLUSION) : 0;
+  const taxableCapitalGain = Math.max(0, capitalGain - primaryResidenceExclusion);
   const stateCapGainsPct = ((typeof inv.stateCapGainsPct === 'number' && inv.stateCapGainsPct > 0) ? inv.stateCapGainsPct : 8.95);
-  const federalCapGainsTax = capitalGain * 0.15;
-  const stateCapGainsTax = capitalGain * (stateCapGainsPct / 100);
+  const federalCapGainsTax = taxableCapitalGain * 0.15;
+  const stateCapGainsTax = taxableCapitalGain * (stateCapGainsPct / 100);
   const netSaleProceeds = grossAfterClosing - depreciationRecaptureTax - federalCapGainsTax - stateCapGainsTax;
 
   let allYearsIncome = 0, allYearsExpenses = 0;
@@ -3112,7 +3123,7 @@ async function closeOutInvestmentSale() {
       else allYearsExpenses += t.amount;
     }
   }
-  const cumNetCashFlow = allYearsIncome - allYearsExpenses;
+  const cumNetCashFlow = isPrimaryResidence ? 0 : allYearsIncome - allYearsExpenses;
   const propertyAppreciation = netSaleProceeds - totalCapitalInvested;
   const totalReturn = propertyAppreciation + cumNetCashFlow;
   const roiPct = (totalReturn / totalCapitalInvested) * 100;
@@ -3130,6 +3141,7 @@ async function closeOutInvestmentSale() {
     type: 'danger',
     message:
       `Closing costs: ${fmt(saleClosingCosts)}\n` +
+      `${isPrimaryResidence ? `Taxable gain after §121 exclusion: ${fmt(taxableCapitalGain)}\n` : ''}` +
       `Final net proceeds: ${fmt(netSaleProceeds)}\n` +
       `Total return: ${totalReturn < 0 ? '−' : ''}${fmt(Math.abs(totalReturn))}\n\n` +
       `This will lock this property and make all records historical/read-only.`,
@@ -3143,6 +3155,7 @@ async function closeOutInvestmentSale() {
             saleClosingBreakdown: closingBreakdown, grossAfterClosing, totalCapitalInvested,
             cumulativeImprovements, cumulativeDepreciation, capitalGain, federalCapGainsTax,
             stateCapGainsTax, stateCapGainsPct, depreciationRecaptureTax, netSaleProceeds,
+            primaryResidenceExclusion, taxableCapitalGain,
             propertyAppreciation, cumNetCashFlow, totalReturn, roiPct,
             annualizedROI, yearsHeld, notes
           }
