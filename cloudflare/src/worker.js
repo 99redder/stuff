@@ -86,6 +86,16 @@ async function handleDataApi(request, env) {
     return jsonResponse({ error: 'Invalid or missing property' }, 400);
   }
 
+  const readOnlyWhenSold = new Set([
+    'add_transaction', 'delete_transaction',
+    'save_summary', 'delete_summary',
+    'save_defaults', 'save_depreciation',
+    'save_maintenance', 'add_maintenance_entry', 'update_maintenance_entry', 'delete_maintenance_entry'
+  ]);
+  if (readOnlyWhenSold.has(action) && await isPropertySold(env, property)) {
+    return jsonResponse({ error: 'Property is sold/closed. Records are historical and read-only.' }, 409);
+  }
+
   switch (action) {
     case 'get_transactions':
       return handleGetTransactions(env, property);
@@ -138,12 +148,20 @@ async function handleDataApi(request, env) {
     case 'save_investment':
       return handleSaveInvestment(env, property, body.config);
 
+    case 'close_investment':
+      return handleCloseInvestment(env, property, body.closeout);
+
     case 'fetch_zillow':
       return handleFetchZillow(env, property, body.url);
 
     default:
       return jsonResponse({ error: 'Invalid action' }, 400);
   }
+}
+
+async function isPropertySold(env, property) {
+  const inv = await env.RENTALS.get(`investment:${property}`, 'json') || {};
+  return !!inv?.saleCloseout?.closedAt;
 }
 
 // ── Transactions ─────────────────────────────────────────────────────────────
@@ -458,6 +476,60 @@ async function handleSaveInvestment(env, property, config) {
     saved.zillowEstimate  = config.zillowEstimate;
     saved.zillowFetchedAt = typeof config.zillowFetchedAt === 'string' ? config.zillowFetchedAt : new Date().toISOString();
   }
+
+  await env.RENTALS.put(`investment:${property}`, JSON.stringify(saved));
+  return jsonResponse({ success: true, config: saved });
+}
+
+async function handleCloseInvestment(env, property, closeout) {
+  if (!closeout || typeof closeout !== 'object') {
+    return jsonResponse({ error: 'Missing closeout object' }, 400);
+  }
+
+  const saleDate = typeof closeout.saleDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(closeout.saleDate)
+    ? closeout.saleDate : null;
+  if (!saleDate) return jsonResponse({ error: 'saleDate must be YYYY-MM-DD' }, 400);
+
+  const requiredNumbers = [
+    'salePrice', 'saleClosingCosts', 'grossAfterClosing', 'totalCapitalInvested',
+    'capitalGain', 'federalCapGainsTax', 'stateCapGainsTax', 'depreciationRecaptureTax',
+    'netSaleProceeds', 'propertyAppreciation', 'cumNetCashFlow', 'totalReturn', 'roiPct'
+  ];
+  for (const key of requiredNumbers) {
+    if (typeof closeout[key] !== 'number' || !isFinite(closeout[key])) {
+      return jsonResponse({ error: `${key} must be a finite number` }, 400);
+    }
+  }
+  if (closeout.salePrice <= 0) return jsonResponse({ error: 'salePrice must be positive' }, 400);
+  if (closeout.saleClosingCosts < 0) return jsonResponse({ error: 'saleClosingCosts cannot be negative' }, 400);
+
+  const existing = await env.RENTALS.get(`investment:${property}`, 'json') || {};
+  const saved = {
+    ...existing,
+    saleCloseout: {
+      saleDate,
+      salePrice: closeout.salePrice,
+      saleClosingCosts: closeout.saleClosingCosts,
+      grossAfterClosing: closeout.grossAfterClosing,
+      totalCapitalInvested: closeout.totalCapitalInvested,
+      cumulativeImprovements: typeof closeout.cumulativeImprovements === 'number' && isFinite(closeout.cumulativeImprovements) ? closeout.cumulativeImprovements : 0,
+      cumulativeDepreciation: typeof closeout.cumulativeDepreciation === 'number' && isFinite(closeout.cumulativeDepreciation) ? closeout.cumulativeDepreciation : 0,
+      capitalGain: closeout.capitalGain,
+      federalCapGainsTax: closeout.federalCapGainsTax,
+      stateCapGainsTax: closeout.stateCapGainsTax,
+      stateCapGainsPct: typeof closeout.stateCapGainsPct === 'number' && isFinite(closeout.stateCapGainsPct) ? closeout.stateCapGainsPct : 0,
+      depreciationRecaptureTax: closeout.depreciationRecaptureTax,
+      netSaleProceeds: closeout.netSaleProceeds,
+      propertyAppreciation: closeout.propertyAppreciation,
+      cumNetCashFlow: closeout.cumNetCashFlow,
+      totalReturn: closeout.totalReturn,
+      roiPct: closeout.roiPct,
+      annualizedROI: typeof closeout.annualizedROI === 'number' && isFinite(closeout.annualizedROI) ? closeout.annualizedROI : null,
+      yearsHeld: typeof closeout.yearsHeld === 'number' && isFinite(closeout.yearsHeld) ? closeout.yearsHeld : null,
+      notes: String(closeout.notes || '').trim(),
+      closedAt: new Date().toISOString(),
+    }
+  };
 
   await env.RENTALS.put(`investment:${property}`, JSON.stringify(saved));
   return jsonResponse({ success: true, config: saved });

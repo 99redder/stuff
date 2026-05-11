@@ -1446,6 +1446,10 @@ function fmtDate(iso) {
   return `${months[parseInt(m, 10) - 1]} ${parseInt(d, 10)}, ${y}`;
 }
 
+function isPropertyClosed(prop = state.currentProperty) {
+  return !!state.data[prop]?.investment?.saleCloseout?.closedAt;
+}
+
 // ── Navigation ────────────────────────────────────────────────────────────────
 
 function switchProperty(prop) {
@@ -1526,6 +1530,8 @@ async function renderCurrentYear() {
   const prop = state.currentProperty;
   await ensureLoaded(prop, 'transactions');
 
+  await ensureLoaded(prop, 'investment');
+  const closed = isPropertyClosed(prop);
   const txns = state.data[prop].transactions;
   const yearTxns = txns.filter(t => t.date.startsWith(String(CURRENT_YEAR)));
   yearTxns.sort((a, b) => b.date.localeCompare(a.date));
@@ -1546,7 +1552,7 @@ async function renderCurrentYear() {
   const rows = yearTxns.length === 0
     ? `<tr><td colspan="6" class="empty-state" style="padding:2.5rem">
          No transactions recorded for ${CURRENT_YEAR} yet.
-         <p><button class="btn btn-primary mt-1" onclick="switchView('add-entry')">Add First Entry</button></p>
+         ${closed ? '<p style="color:var(--text-muted)">Property is sold/closed — records are historical.</p>' : `<p><button class="btn btn-primary mt-1" onclick="switchView('add-entry')">Add First Entry</button></p>`}
        </td></tr>`
     : yearTxns.map(t => {
         const isIncome = t.type === 'income';
@@ -1560,8 +1566,8 @@ async function renderCurrentYear() {
             </td>
             <td style="color:var(--text-muted);font-size:0.82rem">${escHtml(t.description)}</td>
             <td class="text-right nowrap" style="white-space:nowrap">
-              <button class="btn btn-ghost btn-sm" onclick="openEditModal('${escAttr(t.id)}')">Edit</button>
-              <button class="btn btn-danger btn-sm" onclick="openDeleteModal('${escAttr(t.id)}')">Delete</button>
+              ${closed ? '<span style="color:var(--text-muted);font-size:0.82rem">Historical</span>' : `<button class="btn btn-ghost btn-sm" onclick="openEditModal('${escAttr(t.id)}')">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="openDeleteModal('${escAttr(t.id)}')">Delete</button>`}
             </td>
           </tr>`;
       }).join('');
@@ -1593,7 +1599,7 @@ async function renderCurrentYear() {
     <div class="card">
       <div class="card-header">
         <div class="card-title">${CURRENT_YEAR} Transactions — ${prop}</div>
-        <button class="btn btn-primary btn-sm" onclick="switchView('add-entry')">+ Add Entry</button>
+        ${closed ? '<span class="badge" style="background:var(--warning-bg,#fef9c3);color:#92400e">Sold / Historical</span>' : `<button class="btn btn-primary btn-sm" onclick="switchView('add-entry')">+ Add Entry</button>`}
       </div>
       <div class="table-wrap">
         <table>
@@ -1621,6 +1627,7 @@ let _pendingDeleteProp = null;
 
 function openDeleteModal(id) {
   const prop = state.currentProperty;
+  if (isPropertyClosed(prop)) return;
   const txn  = state.data[prop].transactions.find(t => t.id === id);
   if (!txn) return;
 
@@ -1700,6 +1707,7 @@ let _editingProp = null;
 
 function openEditModal(id) {
   const prop = state.currentProperty;
+  if (isPropertyClosed(prop)) return;
   const txn  = state.data[prop].transactions.find(t => t.id === id);
   if (!txn) return;
 
@@ -1812,6 +1820,8 @@ function calcDepreciationSchedule(costBasis, placedInService) {
 function renderDepreciationSection(prop) {
   const config = state.data[prop].depreciation; // null if not configured
 
+  const closed = isPropertyClosed(prop);
+
   if (!config) {
     return `
       <div class="card mt-2" id="depr-card">
@@ -1820,8 +1830,9 @@ function renderDepreciationSection(prop) {
         </div>
         <div class="card-body">
           <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:1rem">
-            Configure depreciation to track MACRS 27.5-year straight-line deductions.
+            ${closed ? 'No depreciation schedule was configured before this property was closed.' : 'Configure depreciation to track MACRS 27.5-year straight-line deductions.'}
           </p>
+          ${closed ? '' : `
           <div class="form-grid" style="max-width:480px">
             <div class="form-group">
               <label>Structure Cost Basis ($)</label>
@@ -1839,7 +1850,7 @@ function renderDepreciationSection(prop) {
           <div class="form-actions mt-2">
             <button class="btn btn-primary" onclick="saveDepreciationConfig()">Save Depreciation Info</button>
           </div>
-          <div id="depr-error" class="error-msg mt-1 hidden"></div>
+          <div id="depr-error" class="error-msg mt-1 hidden"></div>`}
         </div>
       </div>`;
   }
@@ -1864,7 +1875,7 @@ function renderDepreciationSection(prop) {
     <div class="card mt-2" id="depr-card">
       <div class="card-header">
         <div class="card-title">Depreciation Schedule (MACRS 27.5yr) — ${prop}</div>
-        <button class="btn btn-ghost btn-sm no-print" onclick="openDepreciationEdit()">Edit</button>
+        ${closed ? '<span class="badge" style="background:var(--warning-bg,#fef9c3);color:#92400e">Historical</span>' : '<button class="btn btn-ghost btn-sm no-print" onclick="openDepreciationEdit()">Edit</button>'}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
         <div class="table-wrap" style="max-height:360px;overflow-y:auto">
@@ -1967,6 +1978,7 @@ function closeDepreciationEdit() {
 
 async function renderHistorical() {
   const prop = state.currentProperty;
+  await ensureLoaded(prop, 'investment');
   await ensureLoaded(prop, 'summaries');
   await ensureLoaded(prop, 'depreciation');
 
@@ -2010,8 +2022,8 @@ async function renderHistorical() {
         <td class="text-right amount-expense">${fmtShort(exp)}</td>
         <td class="text-right ${netClass}">${net < 0 ? '−' : ''}${fmtShort(Math.abs(net))}</td>
         <td class="text-right no-print">
-          <button class="btn btn-ghost btn-sm" onclick="openEditYear('${y}')">Edit</button>
-          <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteYear('${y}')">×</button>
+          ${isPropertyClosed(prop) ? '<span style="color:var(--text-muted);font-size:0.82rem">Historical</span>' : `<button class="btn btn-ghost btn-sm" onclick="openEditYear('${y}')">Edit</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteYear('${y}')">×</button>`}
         </td>
       </tr>`;
   }).join('');
@@ -2026,7 +2038,7 @@ async function renderHistorical() {
     <div class="card">
       <div class="card-header">
         <div class="card-title">Historical Annual Summaries — ${prop}</div>
-        <button class="btn btn-primary btn-sm no-print" onclick="openAddYear()">+ Add Year</button>
+        ${isPropertyClosed(prop) ? '<span class="badge" style="background:var(--warning-bg,#fef9c3);color:#92400e">Sold / Historical</span>' : '<button class="btn btn-primary btn-sm no-print" onclick="openAddYear()">+ Add Year</button>'}
       </div>
       <div class="table-wrap">
         <table class="hist-table">
@@ -2178,6 +2190,7 @@ async function deleteYear(year) {
 
 async function renderMaintenance() {
   const prop = state.currentProperty;
+  await ensureLoaded(prop, 'investment');
   await ensureLoaded(prop, 'maintenance');
   document.getElementById('app').innerHTML = renderMaintenanceSection(prop);
 }
@@ -2188,6 +2201,7 @@ function renderMaintenanceSection(prop) {
   const hasSeed = !!(MAINT_SEED[prop] && MAINT_SEED[prop].length);
   const isEmpty = entries.length === 0;
   const isPrimary = PRIMARY_PROPERTIES.has(prop);
+  const closed = isPropertyClosed(prop);
 
   const capImprovEntries = isPrimary ? entries.filter(e => e.capitalImprovement) : [];
   const capImprovTotal   = capImprovEntries.reduce((s, e) => s + (e.cost || 0), 0);
@@ -2197,7 +2211,7 @@ function renderMaintenanceSection(prop) {
       ${isPrimary ? `
       <td class="text-center no-print" style="padding:.4rem .5rem" title="Mark as capital improvement — counts toward Investment Return ROI">
         <input type="checkbox" ${e.capitalImprovement ? 'checked' : ''}
-          onchange="toggleMaintImprovement('${escAttr(e.id)}')"
+          ${closed ? 'disabled' : `onchange="toggleMaintImprovement('${escAttr(e.id)}')"`}
           style="cursor:pointer;width:15px;height:15px;accent-color:var(--success)">
       </td>` : ''}
       <td style="white-space:nowrap;padding:.4rem .5rem">${fmtDate(e.date)}</td>
@@ -2208,10 +2222,10 @@ function renderMaintenanceSection(prop) {
       <td class="text-right" style="white-space:nowrap;padding:.4rem .5rem">${e.cost > 0 ? fmt(e.cost) : '—'}</td>
       <td style="padding:.4rem .5rem;color:var(--text-muted);font-size:.85rem">${escHtml(e.performedBy)}</td>
       <td class="text-right no-print" style="padding:.4rem .5rem;white-space:nowrap">
-        <button class="btn btn-ghost btn-sm" style="padding:.15rem .4rem"
+        ${closed ? '<span style="color:var(--text-muted);font-size:0.82rem">Historical</span>' : `<button class="btn btn-ghost btn-sm" style="padding:.15rem .4rem"
                 onclick="editMaintEntry('${escAttr(e.id)}')">Edit</button>
         <button class="btn btn-ghost btn-sm" style="color:var(--danger);padding:.15rem .4rem"
-                onclick="deleteMaintEntry('${escAttr(e.id)}')">×</button>
+                onclick="deleteMaintEntry('${escAttr(e.id)}')">×</button>`}
       </td>
     </tr>`).join('');
 
@@ -2234,12 +2248,12 @@ function renderMaintenanceSection(prop) {
           ${capImprovNote}
         </div>
         <div style="display:flex;gap:.5rem;align-items:center">
-          ${seedBtn}
-          <button class="btn btn-primary btn-sm no-print" onclick="openAddMaint()">+ Add Entry</button>
+          ${closed ? '<span class="badge" style="background:var(--warning-bg,#fef9c3);color:#92400e">Sold / Historical</span>' : seedBtn}
+          ${closed ? '' : '<button class="btn btn-primary btn-sm no-print" onclick="openAddMaint()">+ Add Entry</button>'}
         </div>
       </div>
       ${isEmpty
-        ? `<div class="card-body"><div class="empty-state" style="padding:1.5rem;text-align:center">No maintenance entries yet.${hasSeed ? ' Click "Load Historical Records" to import from CSV data.' : ' Click "+ Add Entry" to log the first entry.'}</div></div>`
+        ? `<div class="card-body"><div class="empty-state" style="padding:1.5rem;text-align:center">No maintenance entries yet.${closed ? ' Property is sold/closed; records are historical.' : (hasSeed ? ' Click "Load Historical Records" to import from CSV data.' : ' Click "+ Add Entry" to log the first entry.')}</div></div>`
         : `<div class="table-wrap"><table class="hist-table">
             <thead><tr>
               ${isPrimary ? `<th class="text-center no-print" title="Capital Improvement — counts toward Investment Return ROI">Cap. Imp.</th>` : ''}
@@ -2508,6 +2522,8 @@ async function renderInvestmentReturn() {
   await Promise.all(loadKeys.map(k => ensureLoaded(prop, k)));
 
   const inv    = state.data[prop].investment || {};
+  const saleCloseout = inv.saleCloseout || null;
+  const isSold = !!saleCloseout?.closedAt;
   const dc     = state.data[prop].depreciation;
   const summs  = state.data[prop].summaries || {};
   const txns   = state.data[prop].transactions || [];
@@ -2551,7 +2567,7 @@ async function renderInvestmentReturn() {
   const depreciationRecaptureTax = isPrimaryResidence ? 0 : cumulativeDepreciation * 0.25;
 
   // ── Zillow / Net Proceeds ─────────────────────────────────────────────────
-  const zillowEstimate  = inv.zillowEstimate || null;
+  const zillowEstimate  = isSold ? saleCloseout.salePrice : (inv.zillowEstimate || null);
   const zillowFetchedAt = inv.zillowFetchedAt || null;
   const zillowUrl       = inv.zillowUrl || '';
 
@@ -2559,16 +2575,18 @@ async function renderInvestmentReturn() {
   let saleClosingAmt      = null;
   let federalCapGainsTax  = null;
   let stateCapGainsTax    = null;
+  let capitalGain         = 0;
+  let grossAfterClosing   = null;
   if (zillowEstimate) {
-    saleClosingAmt  = zillowEstimate * (saleClosingPct / 100);
-    const grossAfterClosing = zillowEstimate - saleClosingAmt;
+    saleClosingAmt = isSold ? saleCloseout.saleClosingCosts : zillowEstimate * (saleClosingPct / 100);
+    grossAfterClosing = zillowEstimate - saleClosingAmt;
     if (!isPrimaryResidence) {
       // Capital gain = gross proceeds - total invested (depr recapture taxed separately)
-      const capitalGain  = Math.max(0, grossAfterClosing - totalCapitalInvested);
-      federalCapGainsTax = capitalGain * 0.15;
-      stateCapGainsTax   = capitalGain * (stateCapGainsPct / 100);
+      capitalGain = Math.max(0, grossAfterClosing - totalCapitalInvested);
+      federalCapGainsTax = isSold ? saleCloseout.federalCapGainsTax : capitalGain * 0.15;
+      stateCapGainsTax   = isSold ? saleCloseout.stateCapGainsTax : capitalGain * (stateCapGainsPct / 100);
     }
-    netSaleProceeds = grossAfterClosing - depreciationRecaptureTax - (federalCapGainsTax || 0) - (stateCapGainsTax || 0);
+    netSaleProceeds = isSold ? saleCloseout.netSaleProceeds : grossAfterClosing - depreciationRecaptureTax - (federalCapGainsTax || 0) - (stateCapGainsTax || 0);
   }
 
   // ── All-Years Cash Flow ───────────────────────────────────────────────────
@@ -2591,12 +2609,12 @@ async function renderInvestmentReturn() {
 
   // ── Total Return ──────────────────────────────────────────────────────────
   const hasEnoughData = totalCapitalInvested > 0;
-  const propertyAppreciation = (netSaleProceeds !== null) ? netSaleProceeds - totalCapitalInvested : null;
+  const propertyAppreciation = isSold ? saleCloseout.propertyAppreciation : ((netSaleProceeds !== null) ? netSaleProceeds - totalCapitalInvested : null);
   // Primary residences have no rental cash flow component
-  const totalReturn = (propertyAppreciation !== null)
+  const totalReturn = isSold ? saleCloseout.totalReturn : ((propertyAppreciation !== null)
     ? propertyAppreciation + (PRIMARY_PROPERTIES.has(prop) ? 0 : cumNetCashFlow)
-    : null;
-  const roiPct = (totalReturn !== null && totalCapitalInvested > 0) ? (totalReturn / totalCapitalInvested) * 100 : null;
+    : null);
+  const roiPct = isSold ? saleCloseout.roiPct : ((totalReturn !== null && totalCapitalInvested > 0) ? (totalReturn / totalCapitalInvested) * 100 : null);
 
   // Annualized ROI — prefer purchase date from investment config, fall back to depreciation config
   let annualizedROI = null, yearsHeld = null;
@@ -2608,6 +2626,10 @@ async function renderInvestmentReturn() {
     if (yearsHeld > 0) {
       annualizedROI = (Math.pow(1 + totalReturn / totalCapitalInvested, 1 / yearsHeld) - 1) * 100;
     }
+  }
+  if (isSold) {
+    yearsHeld = saleCloseout.yearsHeld ?? yearsHeld;
+    annualizedROI = saleCloseout.annualizedROI ?? annualizedROI;
   }
 
   // Year range for cash flow label
@@ -2708,11 +2730,11 @@ async function renderInvestmentReturn() {
   // ── Estimated Current Value card ──────────────────────────────────────────
   const currentValueCard = `
     <div class="card" style="margin-bottom:1rem">
-      <div class="card-header"><div class="card-title">Estimated Current Value${fetchedLabel}</div></div>
+      <div class="card-header"><div class="card-title">${isSold ? 'Final Sale Value' : `Estimated Current Value${fetchedLabel}`}</div></div>
       <div class="card-body" style="padding:0">
         <table style="width:100%;border-collapse:collapse">
-          ${row('Zillow Estimate', zillowEstimate, 'var(--success)')}
-          ${row(`− Sale Closing Costs (${saleClosingPct}%)`, saleClosingAmt, 'var(--danger)')}
+          ${row(isSold ? 'Final Sale Price' : 'Zillow Estimate', zillowEstimate, 'var(--success)')}
+          ${row(isSold ? '− Actual Sale Closing Costs' : `− Sale Closing Costs (${saleClosingPct}%)`, saleClosingAmt, 'var(--danger)')}
           ${isPrimaryResidence
             ? `<tr><td colspan="2" style="padding:.35rem .75rem;border-bottom:1px solid var(--border);font-size:0.82rem;color:var(--text-muted)">§121 exclusion applies — no capital gains or depreciation recapture tax (up to $500k MFJ)</td></tr>`
             : `${row('− Depreciation Recapture Tax (25%)', depreciationRecaptureTax > 0 ? depreciationRecaptureTax : 0, 'var(--danger)')}
@@ -2735,6 +2757,53 @@ async function renderInvestmentReturn() {
           ${row('Total Expenses', allYearsExpenses, 'var(--danger)')}
           ${row('Net Cash Flow', cumNetCashFlow, cumNetCashFlow >= 0 ? 'var(--success)' : 'var(--danger)', false, true)}
         </table>
+      </div>
+    </div>`;
+
+  // ── Sale Closeout card ────────────────────────────────────────────────────
+  const closeoutCard = isPrimaryResidence ? '' : `
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-header"><div class="card-title">${isSold ? 'Final Sale Closeout' : 'Close Out Property Sale'}</div></div>
+      <div class="card-body">
+        ${isSold ? `
+          <div class="inline-prompt" style="background:var(--success-light);border-color:#86efac;margin-bottom:.75rem">
+            Finalized as sold on ${fmtDate(saleCloseout.saleDate)}. Property records are now historical/read-only.
+          </div>
+          <table style="width:100%;border-collapse:collapse">
+            ${row('Final Sale Price', saleCloseout.salePrice, 'var(--success)')}
+            ${row('− Actual Sale Closing Costs', saleCloseout.saleClosingCosts, 'var(--danger)')}
+            ${row('Capital Gain', saleCloseout.capitalGain, saleCloseout.capitalGain >= 0 ? 'var(--success)' : 'var(--danger)')}
+            ${row('− Federal Capital Gains Tax (15%)', saleCloseout.federalCapGainsTax, 'var(--danger)')}
+            ${row(`− MD State/Local Capital Gains Tax (${saleCloseout.stateCapGainsPct}%)`, saleCloseout.stateCapGainsTax, 'var(--danger)')}
+            ${row('− Depreciation Recapture Tax (25%)', saleCloseout.depreciationRecaptureTax, 'var(--danger)')}
+            ${row('Final Net Sale Proceeds', saleCloseout.netSaleProceeds, 'var(--success)', false, true)}
+          </table>
+          ${saleCloseout.notes ? `<div style="margin-top:.6rem;color:var(--text-muted);font-size:.85rem">Notes: ${escHtml(saleCloseout.notes)}</div>` : ''}
+        ` : `
+          <div style="color:var(--text-muted);font-size:.88rem;margin-bottom:.75rem">
+            Use this after closing. It snapshots final sale/tax/ROI numbers and locks this property so all records become historical/read-only.
+          </div>
+          <div id="sale-closeout-error" class="error-msg hidden"></div>
+          <div class="form-grid" style="max-width:620px">
+            <div class="form-group">
+              <label>Sale Date</label>
+              <input type="date" id="sale-closeout-date" value="${new Date().toISOString().slice(0,10)}">
+            </div>
+            <div class="form-group">
+              <label>Final Sale Price ($)</label>
+              <input type="number" id="sale-closeout-price" step="1" min="1" value="${escAttr(String(zillowEstimate || ''))}" placeholder="Actual contract sale price">
+            </div>
+            <div class="form-group">
+              <label>Actual Sale Closing Costs ($)</label>
+              <input type="number" id="sale-closeout-costs" step="1" min="0" value="${escAttr(String(saleClosingAmt ? Math.round(saleClosingAmt) : ''))}" placeholder="Commissions + transfer/settlement costs">
+            </div>
+            <div class="form-group" style="grid-column:1/-1">
+              <label>Closeout Notes</label>
+              <input type="text" id="sale-closeout-notes" placeholder="Optional notes about final settlement">
+            </div>
+          </div>
+          <button class="btn btn-danger mt-1" type="button" onclick="closeOutInvestmentSale()">Finalize Sale & Lock Property</button>
+        `}
       </div>
     </div>`;
 
@@ -2800,15 +2869,19 @@ async function renderInvestmentReturn() {
         <button class="btn btn-ghost btn-sm no-print" onclick="window.print()">Print</button>
       </div>
       <div class="card-body">
-        ${!isConfigured ? `
+        ${isSold ? `
+          <div style="background:var(--success-light);border:1px solid #86efac;border-radius:6px;padding:.75rem 1rem;margin-bottom:1rem;font-size:0.9rem;color:#166534">
+            Sold on ${fmtDate(saleCloseout.saleDate)}. This property is closed and read-only; all records are historical.
+          </div>` : (!isConfigured ? `
           <div style="background:var(--warning-bg,#fef9c3);border:1px solid var(--warning-border,#fde68a);border-radius:6px;padding:.75rem 1rem;margin-bottom:1rem;font-size:0.9rem;color:#92400e">
             Enter the purchase price and closing costs below to calculate your all-time investment return.
-          </div>` : ''}
+          </div>` : '')}
         ${statCards}
         <div style="max-width:65%">${isConfigured ? totalReturnCard : ''}</div>
         <div style="max-width:65%">${capitalCard}</div>
         <div style="max-width:65%">${currentValueCard}</div>
         <div style="max-width:65%">${cashFlowCard}</div>
+        <div style="max-width:65%">${closeoutCard}</div>
         <div style="max-width:65%">${configCard}</div>
       </div>
     </div>
@@ -2852,6 +2925,113 @@ async function saveInvestmentConfig() {
   } catch (err) {
     errEl.textContent = err.message;
     errEl.classList.remove('hidden');
+  }
+}
+
+async function closeOutInvestmentSale() {
+  const prop = state.currentProperty;
+  await Promise.all(['transactions', 'summaries', 'depreciation', 'investment'].map(k => ensureLoaded(prop, k)));
+
+  const errEl = document.getElementById('sale-closeout-error');
+  if (errEl) errEl.classList.add('hidden');
+
+  const inv = state.data[prop].investment || {};
+  const dc = state.data[prop].depreciation;
+  const summs = state.data[prop].summaries || {};
+  const txns = state.data[prop].transactions || [];
+  const yearStr = String(CURRENT_YEAR);
+
+  const saleDate = document.getElementById('sale-closeout-date')?.value || '';
+  const salePrice = parseFloat(document.getElementById('sale-closeout-price')?.value || '0');
+  const saleClosingCosts = parseFloat(document.getElementById('sale-closeout-costs')?.value || '0');
+  const notes = document.getElementById('sale-closeout-notes')?.value.trim() || '';
+
+  const showCloseoutError = (msg) => {
+    if (!errEl) return alert(msg);
+    errEl.textContent = msg;
+    errEl.classList.remove('hidden');
+  };
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(saleDate)) return showCloseoutError('Enter a valid sale date.');
+  if (!isFinite(salePrice) || salePrice <= 0) return showCloseoutError('Enter a valid final sale price.');
+  if (!isFinite(saleClosingCosts) || saleClosingCosts < 0) return showCloseoutError('Enter valid sale closing costs.');
+
+  const purchasePrice = inv.purchasePrice || 0;
+  const purchaseClosing = inv.purchaseClosingCosts || 0;
+  let cumulativeImprovements = 0;
+  for (const [yr, d] of Object.entries(summs)) {
+    if (yr !== yearStr) cumulativeImprovements += (d.improvements || 0);
+  }
+  for (const t of txns) {
+    if (t.date.startsWith(yearStr) && t.category === 'improvements') cumulativeImprovements += t.amount;
+  }
+  const totalCapitalInvested = purchasePrice + purchaseClosing + cumulativeImprovements;
+  if (totalCapitalInvested <= 0) return showCloseoutError('Configure purchase price/closing costs before finalizing the sale.');
+
+  let cumulativeDepreciation = 0;
+  if (dc) {
+    const sched = calcDepreciationSchedule(dc.costBasis, dc.placedInService);
+    if (sched.length) cumulativeDepreciation = sched[sched.length - 1].cumulative;
+  }
+  const depreciationRecaptureTax = cumulativeDepreciation * 0.25;
+
+  const grossAfterClosing = salePrice - saleClosingCosts;
+  const capitalGain = Math.max(0, grossAfterClosing - totalCapitalInvested);
+  const stateCapGainsPct = ((typeof inv.stateCapGainsPct === 'number' && inv.stateCapGainsPct > 0) ? inv.stateCapGainsPct : 8.95);
+  const federalCapGainsTax = capitalGain * 0.15;
+  const stateCapGainsTax = capitalGain * (stateCapGainsPct / 100);
+  const netSaleProceeds = grossAfterClosing - depreciationRecaptureTax - federalCapGainsTax - stateCapGainsTax;
+
+  let allYearsIncome = 0, allYearsExpenses = 0;
+  for (const [yr, d] of Object.entries(summs)) {
+    if (yr === yearStr) continue;
+    for (const c of CATEGORIES.income) allYearsIncome += (d[c.code] || 0);
+    for (const c of CATEGORIES.expense) allYearsExpenses += (d[c.code] || 0);
+    allYearsExpenses += (d.mortgage_interest || 0) + (d.pmi || 0);
+  }
+  for (const t of txns) {
+    if (t.date.startsWith(yearStr)) {
+      if (t.type === 'income') allYearsIncome += t.amount;
+      else allYearsExpenses += t.amount;
+    }
+  }
+  const cumNetCashFlow = allYearsIncome - allYearsExpenses;
+  const propertyAppreciation = netSaleProceeds - totalCapitalInvested;
+  const totalReturn = propertyAppreciation + cumNetCashFlow;
+  const roiPct = (totalReturn / totalCapitalInvested) * 100;
+
+  const purchaseDateStr = inv.purchaseDate || dc?.purchaseDate || null;
+  let yearsHeld = null;
+  let annualizedROI = null;
+  if (purchaseDateStr) {
+    yearsHeld = (new Date(saleDate + 'T00:00:00').getTime() - new Date(purchaseDateStr + 'T00:00:00').getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+    if (yearsHeld > 0) annualizedROI = (Math.pow(1 + totalReturn / totalCapitalInvested, 1 / yearsHeld) - 1) * 100;
+  }
+
+  const proceed = confirm(
+    `Finalize sale for ${prop}?\n\n` +
+    `Final net proceeds: ${fmt(netSaleProceeds)}\n` +
+    `Total return: ${totalReturn < 0 ? '−' : ''}${fmt(Math.abs(totalReturn))}\n\n` +
+    `This will lock this property and make records historical/read-only.`
+  );
+  if (!proceed) return;
+
+  try {
+    const res = await callApi({
+      action: 'close_investment',
+      property: prop,
+      closeout: {
+        saleDate, salePrice, saleClosingCosts, grossAfterClosing, totalCapitalInvested,
+        cumulativeImprovements, cumulativeDepreciation, capitalGain, federalCapGainsTax,
+        stateCapGainsTax, stateCapGainsPct, depreciationRecaptureTax, netSaleProceeds,
+        propertyAppreciation, cumNetCashFlow, totalReturn, roiPct,
+        annualizedROI, yearsHeld, notes
+      }
+    });
+    state.data[prop].investment = res.config;
+    renderInvestmentReturn();
+  } catch (err) {
+    showCloseoutError('Closeout failed: ' + err.message);
   }
 }
 
@@ -3109,6 +3289,21 @@ async function renderPortfolio() {
 
 async function renderAddEntry() {
   const prop = state.currentProperty;
+  await ensureLoaded(prop, 'investment');
+  if (isPropertyClosed(prop)) {
+    const closeout = state.data[prop].investment.saleCloseout;
+    document.getElementById('app').innerHTML = `
+      <div class="card" style="max-width:680px">
+        <div class="card-header"><div class="card-title">Add Entry — ${escHtml(prop)}</div></div>
+        <div class="card-body">
+          <div class="inline-prompt" style="background:var(--warning-bg,#fef9c3);border-color:#fde68a;color:#92400e">
+            This property was sold on ${fmtDate(closeout.saleDate)} and closed on ${fmtDate(closeout.closedAt.slice(0,10))}. Records are now historical/read-only.
+          </div>
+          <button class="btn btn-secondary mt-1" onclick="switchView('investment-return')">View Final Return</button>
+        </div>
+      </div>`;
+    return;
+  }
   await ensureLoaded(prop, 'defaults');
 
   const today = new Date().toISOString().slice(0, 10);
@@ -5485,6 +5680,7 @@ window.tpPayDate               = tpPayDate;
 window.tpPayAmt                = tpPayAmt;
 window.toggleMaintImprovement  = toggleMaintImprovement;
 window.saveInvestmentConfig    = saveInvestmentConfig;
+window.closeOutInvestmentSale  = closeOutInvestmentSale;
 window.refreshZillowEstimate   = refreshZillowEstimate;
 window.toggleInvestmentConfig  = toggleInvestmentConfig;
 window.solarStartAddEntry      = solarStartAddEntry;
