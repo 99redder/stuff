@@ -1001,19 +1001,16 @@ const NORMAL_MONTH_CONFIG = {
 };
 
 const PROPERTY_SALE_STATE = {
-  '6AL': 'NH',
   '95EB': 'NH',
-  '446BB': 'NH',
+  '6AL': 'NH',
+  '446BB': 'VA',
   '731WO': 'MD',
 };
-
-const SALE_STATES = [
-  { code: 'NH', name: 'New Hampshire' },
-  { code: 'MD', name: 'Maryland' },
-  { code: 'VA', name: 'Virginia' },
-  { code: 'DE', name: 'Delaware' },
-  { code: 'OTHER', name: 'Other / Custom' },
-];
+const SALE_STATE_NAMES = {
+  NH: 'New Hampshire',
+  VA: 'Virginia',
+  MD: 'Maryland',
+};
 
 const SALE_CLOSING_COSTS = [
   { code: 'agentCommission', name: 'Agent Commission', hint: 'Default 5.0% of sale price', defaultValue: price => price * 0.05 },
@@ -1482,7 +1479,7 @@ function saleClosingDefault(def, salePrice, stateCode) {
 }
 
 function getSaleClosingBreakdownFromForm() {
-  const saleState = document.getElementById('sale-closeout-state')?.value || PROPERTY_SALE_STATE[state.currentProperty] || 'NH';
+  const saleState = PROPERTY_SALE_STATE[state.currentProperty] || 'NH';
   const items = {};
   let total = 0;
   for (const def of SALE_CLOSING_COSTS) {
@@ -1498,7 +1495,7 @@ function getSaleClosingBreakdownFromForm() {
 
 function syncSaleClosingCosts() {
   const salePrice = parseFloat(document.getElementById('sale-closeout-price')?.value || '0') || 0;
-  const stateCode = document.getElementById('sale-closeout-state')?.value || PROPERTY_SALE_STATE[state.currentProperty] || 'NH';
+  const stateCode = PROPERTY_SALE_STATE[state.currentProperty] || 'NH';
   let total = 0;
   for (const def of SALE_CLOSING_COSTS) {
     const input = document.getElementById(`sale-cost-${def.code}`);
@@ -2838,7 +2835,7 @@ async function renderInvestmentReturn() {
       </div>
     </div>`;
 
-  const defaultSaleState = saleCloseout?.saleState || PROPERTY_SALE_STATE[prop] || 'NH';
+  const defaultSaleState = PROPERTY_SALE_STATE[prop] || saleCloseout?.saleState || 'NH';
   const initialCloseoutPrice = zillowEstimate || '';
   const closeoutCostRows = SALE_CLOSING_COSTS.map(def => {
     const prior = saleCloseout?.saleClosingBreakdown?.items?.[def.code];
@@ -2896,10 +2893,11 @@ async function renderInvestmentReturn() {
               <input type="number" id="sale-closeout-price" step="1" min="1" value="${escAttr(String(initialCloseoutPrice))}" placeholder="Actual contract sale price" oninput="syncSaleClosingCosts()">
             </div>
             <div class="form-group">
-              <label>Sale State</label>
-              <select id="sale-closeout-state" onchange="syncSaleClosingCosts()">
-                ${SALE_STATES.map(s => `<option value="${s.code}" ${s.code === defaultSaleState ? 'selected' : ''}>${escHtml(s.name)}</option>`).join('')}
-              </select>
+              <label>Property State</label>
+              <div style="padding:.55rem .7rem;border:1px solid var(--border);border-radius:6px;background:var(--surface2);font-weight:600">
+                ${escHtml(SALE_STATE_NAMES[defaultSaleState] || defaultSaleState)}
+              </div>
+              <div style="font-size:.78rem;color:var(--text-muted);margin-top:.25rem">Hard-coded by property; used for state-specific sale fees.</div>
             </div>
             <div class="form-group" style="grid-column:1/-1">
               <label>Sale Closing Costs</label>
