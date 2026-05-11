@@ -1015,8 +1015,9 @@ const SALE_STATE_NAMES = {
 
 const SALE_CLOSING_COSTS = [
   { code: 'agentCommission', name: 'Agent Commission', hint: 'Default 5.0% of sale price', defaultValue: price => price * 0.05 },
-  { code: 'nhTransferTax', name: 'NH Real Estate Transfer Tax — Seller Share', hint: 'NH seller share: $7.50 per $1,000 / 0.75%', defaultValue: (price, stateCode) => stateCode === 'NH' ? price * 0.0075 : 0 },
-  { code: 'mdTransferRecordation', name: 'MD Transfer / Recordation Taxes', hint: 'County-specific; default $0 unless this sale is in MD', defaultValue: () => 0 },
+  { code: 'nhTransferTax', name: 'NH Real Estate Transfer Tax — Seller Share', states: ['NH'], hint: 'NH seller share: $7.50 per $1,000 / 0.75%', defaultValue: price => price * 0.0075 },
+  { code: 'vaGrantorTax', name: 'VA Grantor Tax', states: ['VA'], hint: 'Virginia seller grantor tax: $0.50 per $500 / 0.10%', defaultValue: price => price * 0.001 },
+  { code: 'mdTransferRecordation', name: 'MD Transfer / Recordation Taxes', states: ['MD'], hint: 'County-specific; default $0 unless this sale is in MD', defaultValue: () => 0 },
   { code: 'titleSettlement', name: 'Title / Settlement / Closing Agent', hint: 'Typical flat settlement/title fees', defaultValue: () => 750 },
   { code: 'attorney', name: 'Attorney / Legal Review', hint: 'Typical attorney or document review fee', defaultValue: () => 500 },
   { code: 'mortgageRelease', name: 'Mortgage Payoff / Release Fees', hint: 'Recording/release/admin fees, not loan principal payoff', defaultValue: () => 150 },
@@ -1475,6 +1476,10 @@ function isPropertyClosed(prop = state.currentProperty) {
   return !!state.data[prop]?.investment?.saleCloseout?.closedAt;
 }
 
+function saleClosingApplies(def, stateCode) {
+  return !def.states || def.states.includes(stateCode);
+}
+
 function saleClosingDefault(def, salePrice, stateCode) {
   return Math.round((def.defaultValue(salePrice || 0, stateCode) || 0) * 100) / 100;
 }
@@ -1484,6 +1489,7 @@ function getSaleClosingBreakdownFromForm() {
   const items = {};
   let total = 0;
   for (const def of SALE_CLOSING_COSTS) {
+    if (!saleClosingApplies(def, saleState)) continue;
     const input = document.getElementById(`sale-cost-${def.code}`);
     const lockBtn = document.getElementById(`sale-cost-${def.code}-lock`);
     const value = parseFloat(input?.value || '0') || 0;
@@ -1499,6 +1505,7 @@ function syncSaleClosingCosts() {
   const stateCode = PROPERTY_SALE_STATE[state.currentProperty] || 'NH';
   let total = 0;
   for (const def of SALE_CLOSING_COSTS) {
+    if (!saleClosingApplies(def, stateCode)) continue;
     const input = document.getElementById(`sale-cost-${def.code}`);
     const lockBtn = document.getElementById(`sale-cost-${def.code}-lock`);
     if (!input || !lockBtn) continue;
@@ -2843,7 +2850,7 @@ async function renderInvestmentReturn() {
 
   const defaultSaleState = PROPERTY_SALE_STATE[prop] || saleCloseout?.saleState || 'NH';
   const initialCloseoutPrice = zillowEstimate || '';
-  const closeoutCostRows = SALE_CLOSING_COSTS.map(def => {
+  const closeoutCostRows = SALE_CLOSING_COSTS.filter(def => saleClosingApplies(def, defaultSaleState)).map(def => {
     const prior = saleCloseout?.saleClosingBreakdown?.items?.[def.code];
     const locked = prior?.locked !== false;
     const value = prior ? prior.value : saleClosingDefault(def, zillowEstimate || 0, defaultSaleState);
