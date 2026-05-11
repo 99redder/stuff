@@ -1766,13 +1766,15 @@ function closeDeleteModal() {
 }
 
 let _noticeModalConfirmCb = null;
-function showBrandedNotice({ title, message, type = 'info', onConfirm }) {
+function showBrandedNotice({ title, message, type = 'info', onConfirm, confirmLabel }) {
   _noticeModalConfirmCb = onConfirm || null;
   document.getElementById('notice-modal-title').textContent = title;
   document.getElementById('notice-modal-message').textContent = message;
   document.getElementById('notice-modal-subtitle').textContent = type === 'danger' ? 'This cannot be undone.' : '';
   document.getElementById('notice-modal-icon').textContent = type === 'danger' ? '⚠️' : 'ℹ️';
   document.getElementById('notice-modal-icon').className = 'modal-icon ' + (type === 'danger' ? 'danger' : 'primary');
+  const btn = document.getElementById('notice-modal-confirm-btn');
+  if (btn) btn.textContent = confirmLabel || (type === 'danger' ? 'Yes, Delete' : 'Confirm');
   document.getElementById('notice-modal').classList.remove('hidden');
 }
 function closeNoticeModal() {
@@ -2268,15 +2270,22 @@ async function saveYearForm() {
 }
 
 async function deleteYear(year) {
-  if (!confirm(`Delete the ${year} summary? This cannot be undone.`)) return;
   const prop = state.currentProperty;
-  try {
-    await callApi({ action: 'delete_summary', property: prop, year });
-    delete state.data[prop].summaries[year];
-    renderHistorical();
-  } catch (e) {
-    alert('Delete failed: ' + e.message);
-  }
+  showBrandedNotice({
+    title: `Delete ${year} Summary`,
+    type: 'danger',
+    message: `The ${year} annual summary for ${prop} will be permanently removed.`,
+    confirmLabel: 'Yes, Delete',
+    onConfirm: async () => {
+      try {
+        await callApi({ action: 'delete_summary', property: prop, year });
+        delete state.data[prop].summaries[year];
+        renderHistorical();
+      } catch (e) {
+        alert('Delete failed: ' + e.message);
+      }
+    }
+  });
 }
 
 // ── View: Maintenance Log ─────────────────────────────────────────────────────
@@ -2515,14 +2524,25 @@ function dismissMaintPrompt() {
 
 async function deleteMaintEntry(id) {
   const prop = state.currentProperty;
-  if (!confirm('Delete this maintenance entry?')) return;
-  try {
-    await callApi({ action: 'delete_maintenance_entry', property: prop, id });
-    state.data[prop].maintenance = state.data[prop].maintenance.filter(e => e.id !== id);
-    renderMaintenance();
-  } catch (e) {
-    alert('Delete failed: ' + e.message);
-  }
+  const entry = (state.data[prop].maintenance || []).find(e => e.id === id);
+  const detail = entry
+    ? `${entry.description || 'Entry'} — ${fmt(entry.cost || 0)}${entry.date ? ` · ${fmtDate(entry.date)}` : ''}`
+    : 'This maintenance entry will be permanently removed.';
+  showBrandedNotice({
+    title: 'Delete Maintenance Entry',
+    type: 'danger',
+    message: detail,
+    confirmLabel: 'Yes, Delete',
+    onConfirm: async () => {
+      try {
+        await callApi({ action: 'delete_maintenance_entry', property: prop, id });
+        state.data[prop].maintenance = state.data[prop].maintenance.filter(e => e.id !== id);
+        renderMaintenance();
+      } catch (e) {
+        alert('Delete failed: ' + e.message);
+      }
+    }
+  });
 }
 
 async function seedMaintData(prop) {
@@ -4743,14 +4763,25 @@ async function solarSaveEntry(id) {
 }
 
 async function solarDeleteEntry(id) {
-  if (!confirm('Delete this entry?')) return;
-  try {
-    await callApi({ action: 'delete_solar_entry', id });
-    state.solar.entries = (state.solar.entries || []).filter(e => e.id !== id);
-    _renderSolarHtml();
-  } catch (err) {
-    alert(`Delete failed: ${err.message}`);
-  }
+  const entry = (state.solar.entries || []).find(e => e.id === id);
+  const detail = entry
+    ? `${entry.description || entry.code || 'Entry'} — ${fmt(entry.amount || 0)}${entry.date ? ` · ${fmtDate(entry.date)}` : ''}`
+    : 'This solar entry will be permanently removed.';
+  showBrandedNotice({
+    title: 'Delete Solar Entry',
+    type: 'danger',
+    message: detail,
+    confirmLabel: 'Yes, Delete',
+    onConfirm: async () => {
+      try {
+        await callApi({ action: 'delete_solar_entry', id });
+        state.solar.entries = (state.solar.entries || []).filter(e => e.id !== id);
+        _renderSolarHtml();
+      } catch (err) {
+        alert(`Delete failed: ${err.message}`);
+      }
+    }
+  });
 }
 
 // ── Solar: summary helpers ────────────────────────────────────────────────────
@@ -4795,14 +4826,21 @@ async function solarSaveSummary(yearArg) {
 }
 
 async function solarDeleteSummary(year) {
-  if (!confirm(`Delete ${year} summary? This cannot be undone.`)) return;
-  try {
-    await callApi({ action: 'delete_solar_summary', year });
-    delete state.solar.summaries[year];
-    _renderSolarHtml();
-  } catch (err) {
-    alert(`Delete failed: ${err.message}`);
-  }
+  showBrandedNotice({
+    title: `Delete ${year} Solar Summary`,
+    type: 'danger',
+    message: `The ${year} solar summary will be permanently removed.`,
+    confirmLabel: 'Yes, Delete',
+    onConfirm: async () => {
+      try {
+        await callApi({ action: 'delete_solar_summary', year });
+        delete state.solar.summaries[year];
+        _renderSolarHtml();
+      } catch (err) {
+        alert(`Delete failed: ${err.message}`);
+      }
+    }
+  });
 }
 
 // ── Solar: config helpers ─────────────────────────────────────────────────────
@@ -5825,14 +5863,21 @@ async function savSave(id) {
 async function savDelete(id) {
   const o = state.savings.obligations.find(x => x.id === id);
   if (!o) return;
-  if (!confirm(`Delete "${o.name}"? This cannot be undone.`)) return;
-  state.savings.obligations = state.savings.obligations.filter(x => x.id !== id);
-  // Clean up payment records for this id across all years
-  for (const year of Object.keys(state.savings.payments)) {
-    if (state.savings.payments[year]?.[id]) delete state.savings.payments[year][id];
-  }
-  await saveSavings();
-  _renderSavingsHtml();
+  showBrandedNotice({
+    title: 'Delete Obligation',
+    type: 'danger',
+    message: `"${o.name}" (${fmt(o.amount)} / yr) will be permanently removed from your obligations list.`,
+    confirmLabel: 'Yes, Delete',
+    onConfirm: async () => {
+      state.savings.obligations = state.savings.obligations.filter(x => x.id !== id);
+      // Clean up payment records for this id across all years
+      for (const year of Object.keys(state.savings.payments)) {
+        if (state.savings.payments[year]?.[id]) delete state.savings.payments[year][id];
+      }
+      await saveSavings();
+      _renderSavingsHtml();
+    }
+  });
 }
 
 function tpReadForm() {
