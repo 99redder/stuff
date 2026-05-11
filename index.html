@@ -2518,9 +2518,12 @@ async function renderInvestmentReturn() {
   const purchasePrice      = inv.purchasePrice       || 0;
   const purchaseClosing    = inv.purchaseClosingCosts || 0;
   const saleClosingPct     = (typeof inv.saleClosingCostPct === 'number') ? inv.saleClosingCostPct : 6;
-  // State capital gains defaults: NH = 0%, VA = 5.75%, MD (Wicomico Co.) = 8.95%
-  const STATE_CGT_DEFAULTS = { '6AL': 0, '95EB': 0, '446BB': 5.75, '731WO': 8.95 };
-  const stateCapGainsPct   = (typeof inv.stateCapGainsPct === 'number') ? inv.stateCapGainsPct : (STATE_CGT_DEFAULTS[prop] ?? 0);
+  // Maryland resident state/local capital gains default: MD state 5.75% + Wicomico local 3.20% = 8.95%.
+  // Rental properties use this MD rate regardless of property location; primary residence still uses §121 exclusion below.
+  const MD_CAP_GAINS_PCT = 8.95;
+  const stateCapGainsPct = isPrimaryResidence
+    ? (typeof inv.stateCapGainsPct === 'number' ? inv.stateCapGainsPct : MD_CAP_GAINS_PCT)
+    : ((typeof inv.stateCapGainsPct === 'number' && inv.stateCapGainsPct > 0) ? inv.stateCapGainsPct : MD_CAP_GAINS_PCT);
 
   // Cumulative improvements: historical summaries + current-year transactions
   let cumulativeImprovements = 0;
@@ -2714,7 +2717,7 @@ async function renderInvestmentReturn() {
             ? `<tr><td colspan="2" style="padding:.35rem .75rem;border-bottom:1px solid var(--border);font-size:0.82rem;color:var(--text-muted)">§121 exclusion applies — no capital gains or depreciation recapture tax (up to $500k MFJ)</td></tr>`
             : `${row('− Depreciation Recapture Tax (25%)', depreciationRecaptureTax > 0 ? depreciationRecaptureTax : 0, 'var(--danger)')}
           ${row('− Federal Capital Gains Tax (15%)', federalCapGainsTax, 'var(--danger)')}
-          ${stateCapGainsPct > 0 ? row(`− State Capital Gains Tax (${stateCapGainsPct}%)`, stateCapGainsTax, 'var(--danger)') : ''}`
+          ${stateCapGainsPct > 0 ? row(`− MD State/Local Capital Gains Tax (${stateCapGainsPct}%)`, stateCapGainsTax, 'var(--danger)') : ''}`
           }
           ${row('Estimated Net Proceeds', netSaleProceeds, netSaleProceeds !== null ? 'var(--success)' : 'var(--text-muted)', false, true)}
         </table>
@@ -2765,9 +2768,9 @@ async function renderInvestmentReturn() {
               <input type="number" id="inv-sale-pct" step="0.1" min="0" max="20" value="${escAttr(String(saleClosingPct))}" placeholder="6">
             </div>
             <div class="form-group">
-              <label>State Capital Gains Rate (%)</label>
-              <input type="number" id="inv-state-cgt" step="0.01" min="0" max="20" value="${escAttr(String(stateCapGainsPct))}" placeholder="0">
-              <div style="font-size:0.78rem;color:var(--text-muted);margin-top:.2rem">NH: 0% &nbsp;|&nbsp; VA: 5.75%</div>
+              <label>MD State/Local Capital Gains Rate (%)</label>
+              <input type="number" id="inv-state-cgt" step="0.01" min="0" max="20" value="${escAttr(String(stateCapGainsPct))}" placeholder="8.95">
+              <div style="font-size:0.78rem;color:var(--text-muted);margin-top:.2rem">Default: 8.95% = MD state 5.75% + Wicomico local 3.20%</div>
             </div>
             <div class="form-group" style="grid-column:1/-1">
               <label>Zillow Property URL</label>
@@ -2831,7 +2834,7 @@ async function saveInvestmentConfig() {
     return;
   }
   if (isNaN(stateCapGainsPct) || stateCapGainsPct < 0 || stateCapGainsPct > 20) {
-    errEl.textContent = 'State capital gains rate must be between 0 and 20.';
+    errEl.textContent = 'MD state/local capital gains rate must be between 0 and 20.';
     errEl.classList.remove('hidden');
     return;
   }

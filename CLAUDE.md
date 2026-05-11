@@ -62,7 +62,7 @@ Header buttons: [Monthly Budget]  [☀️ Solar]  [Tax Planning]
 |---|---|---|
 | Current Year | `current-year` | YTD stat cards + transaction list with Edit/Delete |
 | Tax Summary | `tax-summary` | Current-year category totals, print-ready |
-| Investment Return | `investment-return` | IRR, equity, Zillow estimate, purchase config |
+| Investment Return | `investment-return` | IRR, equity, Zillow estimate, purchase config, federal + MD state/local capital gains estimates |
 | Historical | `historical` | Annual summary table + Depreciation Schedule card |
 | Maintenance | `maintenance` | Per-property maintenance log with improvement tracking |
 | All Properties | `portfolio` | Combined stats + per-property breakdown + multi-year history |
