@@ -1782,6 +1782,7 @@ function handleModalOverlayClick(e, modalId) {
   if (e.target.id === modalId) {
     if (modalId === 'delete-modal' || modalId === 'delete-modal-2') closeDeleteModal();
     if (modalId === 'notice-modal') closeNoticeModal();
+    if (modalId === 'ded-delete-modal') closeDedDeleteModal();
     if (modalId === 'edit-modal') closeEditModal();
   }
 }
@@ -5323,7 +5324,7 @@ async function renderDeductions() {
     </div>
   </div>
 
-  ${catTotals.length > 0 ? `
+  ${Object.keys(catTotals).length > 0 ? `
   <div class="card">
     <div class="card-header"><div class="card-title">Summary by Category</div></div>
     <div style="overflow-x:auto">
@@ -5470,7 +5471,7 @@ function dedOpenDelete(id) {
 
 function closeDedDeleteModal() {
   _dedDelId = null;
-  document.getElementById('ded-delete-modal').classList.add('hidden');
+  document.getElementById('ded-delete-modal')?.classList.add('hidden');
 }
 
 async function dedExecuteDelete() {
