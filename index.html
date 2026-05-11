@@ -766,7 +766,7 @@
       </div>
     </div>
     <div class="modal-body">
-      <p id="notice-modal-message" style="font-size:0.9rem;line-height:1.6"></p>
+      <p id="notice-modal-message" style="font-size:0.9rem;line-height:1.6;white-space:pre-line"></p>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeNoticeModal()">Cancel</button>
@@ -1696,6 +1696,7 @@ function noticeModalConfirm() {
 function handleModalOverlayClick(e, modalId) {
   if (e.target.id === modalId) {
     if (modalId === 'delete-modal' || modalId === 'delete-modal-2') closeDeleteModal();
+    if (modalId === 'notice-modal') closeNoticeModal();
     if (modalId === 'edit-modal') closeEditModal();
   }
 }
@@ -3008,31 +3009,33 @@ async function closeOutInvestmentSale() {
     if (yearsHeld > 0) annualizedROI = (Math.pow(1 + totalReturn / totalCapitalInvested, 1 / yearsHeld) - 1) * 100;
   }
 
-  const proceed = confirm(
-    `Finalize sale for ${prop}?\n\n` +
-    `Final net proceeds: ${fmt(netSaleProceeds)}\n` +
-    `Total return: ${totalReturn < 0 ? '−' : ''}${fmt(Math.abs(totalReturn))}\n\n` +
-    `This will lock this property and make records historical/read-only.`
-  );
-  if (!proceed) return;
-
-  try {
-    const res = await callApi({
-      action: 'close_investment',
-      property: prop,
-      closeout: {
-        saleDate, salePrice, saleClosingCosts, grossAfterClosing, totalCapitalInvested,
-        cumulativeImprovements, cumulativeDepreciation, capitalGain, federalCapGainsTax,
-        stateCapGainsTax, stateCapGainsPct, depreciationRecaptureTax, netSaleProceeds,
-        propertyAppreciation, cumNetCashFlow, totalReturn, roiPct,
-        annualizedROI, yearsHeld, notes
+  showBrandedNotice({
+    title: `Finalize Sale — ${prop}`,
+    type: 'danger',
+    message:
+      `Final net proceeds: ${fmt(netSaleProceeds)}\n` +
+      `Total return: ${totalReturn < 0 ? '−' : ''}${fmt(Math.abs(totalReturn))}\n\n` +
+      `This will lock this property and make all records historical/read-only.`,
+    onConfirm: async () => {
+      try {
+        const res = await callApi({
+          action: 'close_investment',
+          property: prop,
+          closeout: {
+            saleDate, salePrice, saleClosingCosts, grossAfterClosing, totalCapitalInvested,
+            cumulativeImprovements, cumulativeDepreciation, capitalGain, federalCapGainsTax,
+            stateCapGainsTax, stateCapGainsPct, depreciationRecaptureTax, netSaleProceeds,
+            propertyAppreciation, cumNetCashFlow, totalReturn, roiPct,
+            annualizedROI, yearsHeld, notes
+          }
+        });
+        state.data[prop].investment = res.config;
+        renderInvestmentReturn();
+      } catch (err) {
+        showCloseoutError('Closeout failed: ' + err.message);
       }
-    });
-    state.data[prop].investment = res.config;
-    renderInvestmentReturn();
-  } catch (err) {
-    showCloseoutError('Closeout failed: ' + err.message);
-  }
+    }
+  });
 }
 
 async function refreshZillowEstimate() {
