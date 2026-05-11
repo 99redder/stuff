@@ -5575,6 +5575,7 @@ const DEFAULT_SAVINGS_OBLIGATIONS = [
 ];
 
 let _savEdit = null;       // { id, name, amount, paymentsPerYear, note } when editing/adding
+let _savSort = 'default';  // 'default' | 'amount' | 'alpha' | 'status'
 
 async function loadSavings() {
   if (state.savings) return;
@@ -5708,7 +5709,24 @@ function _renderSavingsHtml() {
     </div>`;
 
   // ── Right: Obligations
-  const obligationRows = s.obligations.map(o => {
+  const sortedObligations = s.obligations.slice();
+  if (_savSort === 'amount') {
+    sortedObligations.sort((a, b) => (b.amount || 0) - (a.amount || 0));
+  } else if (_savSort === 'alpha') {
+    sortedObligations.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  } else if (_savSort === 'status') {
+    // Unpaid first, then partially paid, then fully paid (more outstanding = higher priority)
+    const outstandingFor = o => {
+      const ppy = o.paymentsPerYear === 2 ? 2 : 1;
+      const paid = (paidMap[o.id] || []).slice(0, ppy);
+      while (paid.length < ppy) paid.push(false);
+      const paidCount = paid.filter(Boolean).length;
+      return (o.amount / ppy) * (ppy - paidCount);
+    };
+    sortedObligations.sort((a, b) => outstandingFor(b) - outstandingFor(a));
+  }
+
+  const obligationRows = sortedObligations.map(o => {
     if (_savEdit && _savEdit.id === o.id) return _savEditRow(o);
     const ppy = o.paymentsPerYear === 2 ? 2 : 1;
     const paid = (paidMap[o.id] || []).slice(0, ppy);
@@ -5740,11 +5758,22 @@ function _renderSavingsHtml() {
 
   const newRow = (_savEdit && _savEdit.id === 'new') ? _savEditRow(_savEdit) : '';
 
+  const sortBtn = (key, label) => `<button class="btn btn-ghost" style="padding:.2rem .45rem;font-size:.72rem;opacity:${_savSort===key?1:.4}" onclick="savSort('${key}')">${label}</button>`;
+
   const obligationsCard = `
     <div class="card">
-      <div class="card-header" style="padding:.6rem 1rem;display:flex;justify-content:space-between;align-items:center">
+      <div class="card-header" style="padding:.6rem 1rem;display:flex;justify-content:space-between;align-items:center;gap:.75rem;flex-wrap:wrap">
         <div class="card-title">${year} Annual Obligations</div>
-        <button class="btn btn-primary btn-sm" style="padding:.35rem .75rem" onclick="savAddNew()">+ Add Obligation</button>
+        <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+          <div style="display:flex;gap:.15rem;align-items:center">
+            <span style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;font-weight:600;margin-right:.25rem">Sort</span>
+            ${sortBtn('default', 'Default')}
+            ${sortBtn('amount',  'Amount')}
+            ${sortBtn('alpha',   'A→Z')}
+            ${sortBtn('status',  'Unpaid')}
+          </div>
+          <button class="btn btn-primary btn-sm" style="padding:.35rem .75rem" onclick="savAddNew()">+ Add Obligation</button>
+        </div>
       </div>
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:.875rem">
@@ -5824,6 +5853,11 @@ async function savTogglePaid(id, idx, checked) {
 
 function savAddNew() {
   _savEdit = { id: 'new', name: '', amount: '', paymentsPerYear: 1, note: '' };
+  _renderSavingsHtml();
+}
+
+function savSort(sort) {
+  _savSort = sort;
   _renderSavingsHtml();
 }
 

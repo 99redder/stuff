@@ -51,9 +51,9 @@ A full table of contents is in the `NAVIGATION GUIDE` block comment at the very 
 ```
 Property tabs:  [6AL]  [95EB]  [446BB]  [731WO]
 View tabs:      [Current Year]  [Tax Summary]  [Investment Return]  [Historical]  [Maintenance]  [All Properties]
-Header buttons: [Monthly Budget]  [☀️ Solar]  [Tax Planning]
+Header buttons: [Deductions Tracker]  [Monthly Budget]  [☀️ Solar]  [Tax Planning]  [💰 Savings]
 ```
-- Property tabs are hidden when **All Properties**, **Monthly Budget**, **Solar**, or **Tax Planning** views are active.
+- Property tabs are hidden when **All Properties**, **Deductions Tracker**, **Monthly Budget**, **Solar**, **Tax Planning**, or **Savings** views are active.
 - **731WO** is a primary residence — only shows Investment Return and Maintenance views (`PRIMARY_PROPERTIES` / `PRIMARY_VIEWS` constants).
 - Switching property tabs reloads the current view for the new property.
 
@@ -69,6 +69,8 @@ Header buttons: [Monthly Budget]  [☀️ Solar]  [Tax Planning]
 | Monthly Budget | `budget` | Global monthly income/expense planner with property worksheets |
 | Solar ROI | `solar` | Solar panel ROI tracking + billing cycle calculator |
 | Tax Planning | `tax-planning` | Projected federal/MD/VA tax liability with live inputs |
+| Deductions Tracker | `deductions` | Global itemized deductions log for the current year |
+| Savings | `savings` | Account balances + annual obligations tracker with paid/unpaid checkboxes per year |
 
 ### State Model
 ```javascript
@@ -85,7 +87,8 @@ const state = {
   pendingDefaultPrompt: null,   // { category, amount } — shown after saving a transaction
   pendingMaintPrompt: null,     // { date, amount, description, category } — shown after expense save
   budget: null,                 // loaded once, global — { income, expenses, worksheets }
-  solar: { config: null, entries: null, summaries: null }
+  solar: { config: null, entries: null, summaries: null },
+  savings: null                 // loaded once, global — { accounts, obligations, payments }
 };
 ```
 `null` means not yet fetched. `ensureLoaded(property, key)` fetches on demand and caches in `state.data`.
@@ -106,6 +109,9 @@ const state = {
 | `renderBudget()` | Monthly budget planner |
 | `renderSolar()` | Solar ROI view |
 | `renderTaxPlanning()` | Tax planning view |
+| `renderDeductions()` | Deductions tracker view |
+| `renderSavings()` | Savings view — account balances + annual obligations |
+| `showBrandedNotice({title,message,type,confirmLabel,onConfirm})` | Branded confirmation modal used by all delete dialogs (replaces native `confirm()`); pass `type:'danger'` for red ⚠️ styling, `confirmLabel` to customize the button text. |
 | `openBudgetWorksheetModal(id)` | Opens the property income worksheet for a budget income item |
 | `calcDepreciationSchedule(costBasis, placedInService)` | MACRS 27.5-yr straight-line, mid-month convention |
 | `fmt(amount)` | Format dollar amount with 2 decimal places |
@@ -118,14 +124,18 @@ const state = {
 **All amounts are stored and transmitted in US dollars as plain numbers (e.g. `2200`, `262.50`). Never multiply or divide by 100. There are no "cents" in this codebase.**
 
 ### Modals
-Four modals exist in the HTML (outside `<main>`):
-- **Delete modal** (`#delete-modal`) — step 1: shows entry detail, "Yes, Delete" button
+Modals exist in the HTML (outside `<main>`):
+- **Delete modal** (`#delete-modal`) — step 1: shows entry detail, "Yes, Delete" button (used for transaction delete only)
 - **Delete double-confirm** (`#delete-modal-2`) — step 2: "Delete Forever" (darker red)
+- **Branded notice modal** (`#notice-modal`) — generic confirmation/info modal driven by `showBrandedNotice()`. Used for ALL other delete confirmations (historical year summary, maintenance entry, solar entry/summary, savings obligation) so the app never falls back to the browser's native `confirm()`. Pass `type:'danger'` for red styling, `confirmLabel` to customize the action button.
+- **Deductions delete modal** (`#ded-delete-modal`) — dedicated detail-rich delete confirmation for deductions
 - **Edit modal** (`#edit-modal`) — pre-filled form for editing a transaction
 - **Property income worksheet** (`#budget-worksheet-modal`) — calculates net monthly income for 95EB/6AL/446BB; body rendered dynamically by `_renderBudgetWorksheetModal()`
 - **Solar billing cycle calculator** (`#solar-calc-modal`) — estimates electricity cost without solar
 
 All modals close on Escape key or clicking the backdrop.
+
+**Rule:** Never introduce native `confirm()` or `alert()` for destructive actions. Use `showBrandedNotice({ type: 'danger', title, message, confirmLabel: 'Yes, Delete', onConfirm })` so the UX stays consistent. Only the maintenance seed-data prompt currently uses native `confirm()`, and it's a load action, not a delete.
 
 ### Password Gate
 On load, `sessionStorage` is checked for `rentals_auth = '1'`. If not set, the entire app UI is hidden and a login form is shown. On successful login:
@@ -159,6 +169,36 @@ const NORMAL_MONTH_CONFIG = {
   ]}
 };
 ```
+
+### Savings View
+
+Global view (not per-property) for tracking liquid account balances against the year's annual obligations.
+
+**Layout:** Stats bar on top (annual total, paid so far, outstanding, liquid in accounts, coverage %, YTD progress bar) — accounts card on left, obligations table on right.
+
+**Data shape (`state.savings`):**
+```javascript
+{
+  accounts: { robinhood: 0, ibkr: 0 },   // manually edited dollar balances
+  obligations: [
+    { id: 'uuid', name: '6AL Taxes', amount: 7400, paymentsPerYear: 2, note: 'Paid twice a year' },
+    ...
+  ],
+  payments: {
+    "2026": {                            // keyed by year — Jan 1 starts a fresh empty object
+      "<obligation-id>": [true, false],  // length = paymentsPerYear (1 or 2)
+    }
+  }
+}
+```
+
+**Year reset:** Lookups use `payments[String(CURRENT_YEAR)] || {}`. When the year flips, the lookup falls through to an empty object and every obligation renders unpaid. Past-year records are preserved in KV for history — never overwrite or delete them on rollover.
+
+**Default obligations:** First-time visit seeds 32 obligations from `DEFAULT_SAVINGS_OBLIGATIONS` (the spreadsheet supplied 2026-05-11). Users can add/edit/delete entries and adjust `amount` / `paymentsPerYear` / `note` freely.
+
+**Outstanding math:** Each obligation has `paymentsPerYear` "slots." Each slot = `amount / paymentsPerYear`. Outstanding = sum across all obligations of `slotAmount × (paymentsPerYear − paidCount)`.
+
+**Sort:** `_savSort` controls obligation order in the table — `default` (input order), `amount` (largest first), `alpha` (A→Z by name), `status` (unpaid/highest-outstanding first).
 
 ---
 
@@ -264,6 +304,24 @@ All calls: `POST /api/data` with JSON body `{ action, property, ...payload }`.
 | `get_budget` | — | `{ data: { income: [...], expenses: { [cat]: [...] }, worksheets: { [id]: {...} } } }` |
 | `save_budget` | `data: { income, expenses, worksheets }` | `{ success: true }` |
 
+#### Deductions (global — not per-property)
+| Action | Extra payload | Returns |
+|---|---|---|
+| `get_deductions` | — | `{ deductions: [ { id, date, description, category, amount, locked }, ... ] }` |
+| `save_deductions` | `data: [ {...} ]` | `{ success: true }` — replaces the full array |
+
+#### Tax Planning (global, per-year)
+| Action | Extra payload | Returns |
+|---|---|---|
+| `get_tax_planning` | `year` (4-digit string) | `{ data: { ... } }` |
+| `save_tax_planning` | `year`, `data: {...}` | `{ success: true }` |
+
+#### Savings (global — not per-property)
+| Action | Extra payload | Returns |
+|---|---|---|
+| `get_savings` | — | `{ data: { accounts, obligations, payments } }` |
+| `save_savings` | `data: { accounts, obligations, payments }` | `{ success: true, data }` — full overwrite of the `savings` KV record. The worker sanitizes: clamps `accounts.{robinhood,ibkr}` to numbers, coerces `paymentsPerYear` to `1` or `2`, drops any year key that isn't a 4-digit string. |
+
 #### Solar ROI (global — not per-property)
 | Action | Extra payload | Returns |
 |---|---|---|
@@ -294,6 +352,9 @@ budget                     →  { income: [...], expenses: {...}, worksheets: {.
 solar:config               →  Solar system config object
 solar:entries              →  Array of solar entry objects
 solar:summaries            →  { [year]: { ... } }
+deductions                 →  Array of deduction entry objects
+tax_planning:{year}        →  Tax planning inputs for that year
+savings                    →  { accounts: {robinhood, ibkr}, obligations: [...], payments: { [year]: { [oid]: [bool, ...] } } }
 ```
 Valid properties: `6AL`, `95EB`, `446BB`, `731WO`
 
@@ -353,3 +414,13 @@ To update: commit changes to `index.html` and push to `main`. GitHub Pages deplo
 | 446BB | $1,595 | $159.50 (10%) | $603/mo ($373 condo + $230 special assessment) | No |
 
 Entries through April 2026 have been pre-loaded. Historical annual summaries (2009–2025) have not yet been entered and are pending.
+
+---
+
+## Recent Updates (2026-05-11)
+
+- **Savings view added** (`💰 Savings` header button) — global view with manual account balances (Robinhood Checking, IBKR Individual Brokerage) on the left and the year's annual obligations on the right. Stats bar at top shows total annual, paid so far, outstanding, liquid coverage %, and a YTD progress bar. Each obligation has 1 or 2 paid checkboxes (H1/H2 for twice-a-year items). Payments are keyed by year so Jan 1 auto-resets to all-unpaid; past years stay in KV.
+- **Obligation sorting** — sort buttons in the Savings card header: Default (input order), Amount (largest first), A→Z, Unpaid (highest outstanding first). Sort state is in-memory only (not persisted).
+- **Default obligations seed** — `DEFAULT_SAVINGS_OBLIGATIONS` (32 items, sourced from the 2026 goal-budget spreadsheet) is auto-seeded on first visit if the `savings` KV record has no obligations.
+- **Branded delete modals** — all delete confirmations now go through `showBrandedNotice({ type:'danger', ... })` instead of native `confirm()`. Affected flows: historical year summary, maintenance entry, solar entry, solar summary, savings obligation. `showBrandedNotice` accepts a new `confirmLabel` option (defaults to "Yes, Delete" when type is `danger`).
+- **Worker API additions** — `get_savings` / `save_savings` (KV key `savings`). The save handler sanitizes account balances, coerces `paymentsPerYear` to 1 or 2, validates year keys as 4-digit strings, and clamps boolean payment arrays to length ≤ 2.
