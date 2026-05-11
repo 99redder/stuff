@@ -1000,6 +1000,33 @@ const NORMAL_MONTH_CONFIG = {
   ]}
 };
 
+const PROPERTY_SALE_STATE = {
+  '6AL': 'NH',
+  '95EB': 'NH',
+  '446BB': 'NH',
+  '731WO': 'MD',
+};
+
+const SALE_STATES = [
+  { code: 'NH', name: 'New Hampshire' },
+  { code: 'MD', name: 'Maryland' },
+  { code: 'VA', name: 'Virginia' },
+  { code: 'DE', name: 'Delaware' },
+  { code: 'OTHER', name: 'Other / Custom' },
+];
+
+const SALE_CLOSING_COSTS = [
+  { code: 'agentCommission', name: 'Agent Commission', hint: 'Default 5.0% of sale price', defaultValue: price => price * 0.05 },
+  { code: 'nhTransferTax', name: 'NH Real Estate Transfer Tax — Seller Share', hint: 'NH seller share: $7.50 per $1,000 / 0.75%', defaultValue: (price, stateCode) => stateCode === 'NH' ? price * 0.0075 : 0 },
+  { code: 'mdTransferRecordation', name: 'MD Transfer / Recordation Taxes', hint: 'County-specific; default $0 unless this sale is in MD', defaultValue: () => 0 },
+  { code: 'titleSettlement', name: 'Title / Settlement / Closing Agent', hint: 'Typical flat settlement/title fees', defaultValue: () => 750 },
+  { code: 'attorney', name: 'Attorney / Legal Review', hint: 'Typical attorney or document review fee', defaultValue: () => 500 },
+  { code: 'mortgageRelease', name: 'Mortgage Payoff / Release Fees', hint: 'Recording/release/admin fees, not loan principal payoff', defaultValue: () => 150 },
+  { code: 'sellerCredits', name: 'Seller Credits / Buyer Concessions', hint: 'Repair credits, closing help, negotiated concessions', defaultValue: () => 0 },
+  { code: 'repairs', name: 'Pre-Sale Repairs / Final Utilities', hint: 'Final seller-paid repairs, utilities, cleanout, etc.', defaultValue: () => 0 },
+  { code: 'other', name: 'Other Closing Costs', hint: 'Anything else from the settlement statement', defaultValue: () => 0 },
+];
+
 // ── Tax Planning Constants (2025 MFJ rates — 2026 IRS rates TBD) ─────────────
 
 const TP_BRACKETS_MFJ = [
@@ -1448,6 +1475,56 @@ function fmtDate(iso) {
 
 function isPropertyClosed(prop = state.currentProperty) {
   return !!state.data[prop]?.investment?.saleCloseout?.closedAt;
+}
+
+function saleClosingDefault(def, salePrice, stateCode) {
+  return Math.round((def.defaultValue(salePrice || 0, stateCode) || 0) * 100) / 100;
+}
+
+function getSaleClosingBreakdownFromForm() {
+  const saleState = document.getElementById('sale-closeout-state')?.value || PROPERTY_SALE_STATE[state.currentProperty] || 'NH';
+  const items = {};
+  let total = 0;
+  for (const def of SALE_CLOSING_COSTS) {
+    const input = document.getElementById(`sale-cost-${def.code}`);
+    const lockBtn = document.getElementById(`sale-cost-${def.code}-lock`);
+    const value = parseFloat(input?.value || '0') || 0;
+    const locked = lockBtn?.dataset.locked === '1';
+    items[def.code] = { label: def.name, value, locked };
+    total += value;
+  }
+  return { saleState, items, total };
+}
+
+function syncSaleClosingCosts() {
+  const salePrice = parseFloat(document.getElementById('sale-closeout-price')?.value || '0') || 0;
+  const stateCode = document.getElementById('sale-closeout-state')?.value || PROPERTY_SALE_STATE[state.currentProperty] || 'NH';
+  let total = 0;
+  for (const def of SALE_CLOSING_COSTS) {
+    const input = document.getElementById(`sale-cost-${def.code}`);
+    const lockBtn = document.getElementById(`sale-cost-${def.code}-lock`);
+    if (!input || !lockBtn) continue;
+    const locked = lockBtn.dataset.locked !== '0';
+    lockBtn.dataset.locked = locked ? '1' : '0';
+    input.disabled = locked;
+    input.style.background = locked ? 'var(--bg)' : '';
+    input.style.cursor = locked ? 'not-allowed' : '';
+    lockBtn.textContent = locked ? '🔒' : '🔓';
+    lockBtn.title = locked ? 'Unlock to override this cost' : 'Lock to use the default calculation';
+    if (locked) input.value = saleClosingDefault(def, salePrice, stateCode).toFixed(2);
+    total += parseFloat(input.value || '0') || 0;
+  }
+  const totalEl = document.getElementById('sale-closeout-costs-total');
+  if (totalEl) totalEl.textContent = fmt(total);
+  const hiddenTotal = document.getElementById('sale-closeout-costs');
+  if (hiddenTotal) hiddenTotal.value = total.toFixed(2);
+}
+
+function toggleSaleClosingCostLock(code) {
+  const lockBtn = document.getElementById(`sale-cost-${code}-lock`);
+  if (!lockBtn) return;
+  lockBtn.dataset.locked = lockBtn.dataset.locked === '1' ? '0' : '1';
+  syncSaleClosingCosts();
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -2761,6 +2838,29 @@ async function renderInvestmentReturn() {
       </div>
     </div>`;
 
+  const defaultSaleState = saleCloseout?.saleState || PROPERTY_SALE_STATE[prop] || 'NH';
+  const initialCloseoutPrice = zillowEstimate || '';
+  const closeoutCostRows = SALE_CLOSING_COSTS.map(def => {
+    const prior = saleCloseout?.saleClosingBreakdown?.items?.[def.code];
+    const locked = prior?.locked !== false;
+    const value = prior ? prior.value : saleClosingDefault(def, zillowEstimate || 0, defaultSaleState);
+    return `
+      <div style="display:grid;grid-template-columns:1fr 150px 2.4rem;gap:.5rem;align-items:end;margin-bottom:.55rem">
+        <div>
+          <label for="sale-cost-${def.code}">${escHtml(def.name)}</label>
+          <div style="font-size:.75rem;color:var(--text-muted);margin-top:.12rem">${escHtml(def.hint)}</div>
+        </div>
+        <input type="number" id="sale-cost-${def.code}" step="0.01" min="0" value="${escAttr(String(value))}" ${locked ? 'disabled style="background:var(--bg);cursor:not-allowed"' : ''} oninput="syncSaleClosingCosts()">
+        <button class="btn btn-ghost btn-sm" type="button" id="sale-cost-${def.code}-lock" data-locked="${locked ? '1' : '0'}" onclick="toggleSaleClosingCostLock('${def.code}')" title="${locked ? 'Unlock to override this cost' : 'Lock to use the default calculation'}">${locked ? '🔒' : '🔓'}</button>
+      </div>`;
+  }).join('');
+  const finalBreakdownRows = saleCloseout?.saleClosingBreakdown?.items
+    ? Object.values(saleCloseout.saleClosingBreakdown.items)
+        .filter(item => item && typeof item.value === 'number' && item.value !== 0)
+        .map(item => row(`− ${item.label}`, item.value, 'var(--danger)'))
+        .join('')
+    : '';
+
   // ── Sale Closeout card ────────────────────────────────────────────────────
   const closeoutCard = isPrimaryResidence ? '' : `
     <div class="card" style="margin-bottom:1rem">
@@ -2772,7 +2872,8 @@ async function renderInvestmentReturn() {
           </div>
           <table style="width:100%;border-collapse:collapse">
             ${row('Final Sale Price', saleCloseout.salePrice, 'var(--success)')}
-            ${row('− Actual Sale Closing Costs', saleCloseout.saleClosingCosts, 'var(--danger)')}
+            ${finalBreakdownRows || row('− Actual Sale Closing Costs', saleCloseout.saleClosingCosts, 'var(--danger)')}
+            ${row('Total Sale Closing Costs', saleCloseout.saleClosingCosts, 'var(--danger)', false, true)}
             ${row('Capital Gain', saleCloseout.capitalGain, saleCloseout.capitalGain >= 0 ? 'var(--success)' : 'var(--danger)')}
             ${row('− Federal Capital Gains Tax (15%)', saleCloseout.federalCapGainsTax, 'var(--danger)')}
             ${row(`− MD State/Local Capital Gains Tax (${saleCloseout.stateCapGainsPct}%)`, saleCloseout.stateCapGainsTax, 'var(--danger)')}
@@ -2792,11 +2893,25 @@ async function renderInvestmentReturn() {
             </div>
             <div class="form-group">
               <label>Final Sale Price ($)</label>
-              <input type="number" id="sale-closeout-price" step="1" min="1" value="${escAttr(String(zillowEstimate || ''))}" placeholder="Actual contract sale price">
+              <input type="number" id="sale-closeout-price" step="1" min="1" value="${escAttr(String(initialCloseoutPrice))}" placeholder="Actual contract sale price" oninput="syncSaleClosingCosts()">
             </div>
             <div class="form-group">
-              <label>Actual Sale Closing Costs ($)</label>
-              <input type="number" id="sale-closeout-costs" step="1" min="0" value="${escAttr(String(saleClosingAmt ? Math.round(saleClosingAmt) : ''))}" placeholder="Commissions + transfer/settlement costs">
+              <label>Sale State</label>
+              <select id="sale-closeout-state" onchange="syncSaleClosingCosts()">
+                ${SALE_STATES.map(s => `<option value="${s.code}" ${s.code === defaultSaleState ? 'selected' : ''}>${escHtml(s.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group" style="grid-column:1/-1">
+              <label>Sale Closing Costs</label>
+              <div style="border:1px solid var(--border);border-radius:8px;padding:.75rem;background:var(--surface2)">
+                ${closeoutCostRows}
+                <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);padding-top:.6rem;margin-top:.2rem;font-weight:700">
+                  <span>Total Closing Costs</span>
+                  <span id="sale-closeout-costs-total">${fmt(saleClosingAmt || 0)}</span>
+                </div>
+              </div>
+              <input type="hidden" id="sale-closeout-costs" value="${escAttr(String(saleClosingAmt ? Math.round(saleClosingAmt) : ''))}">
+              <div style="font-size:.78rem;color:var(--text-muted);margin-top:.25rem">Locked values auto-calculate from sale price/state. Unlock any line to enter the settlement-statement amount manually.</div>
             </div>
             <div class="form-group" style="grid-column:1/-1">
               <label>Closeout Notes</label>
@@ -2887,6 +3002,7 @@ async function renderInvestmentReturn() {
       </div>
     </div>
   `;
+  if (!isSold && !isPrimaryResidence) syncSaleClosingCosts();
 }
 
 async function saveInvestmentConfig() {
@@ -2942,9 +3058,11 @@ async function closeOutInvestmentSale() {
   const txns = state.data[prop].transactions || [];
   const yearStr = String(CURRENT_YEAR);
 
+  syncSaleClosingCosts();
+  const closingBreakdown = getSaleClosingBreakdownFromForm();
   const saleDate = document.getElementById('sale-closeout-date')?.value || '';
   const salePrice = parseFloat(document.getElementById('sale-closeout-price')?.value || '0');
-  const saleClosingCosts = parseFloat(document.getElementById('sale-closeout-costs')?.value || '0');
+  const saleClosingCosts = closingBreakdown.total;
   const notes = document.getElementById('sale-closeout-notes')?.value.trim() || '';
 
   const showCloseoutError = (msg) => {
@@ -3013,6 +3131,7 @@ async function closeOutInvestmentSale() {
     title: `Finalize Sale — ${prop}`,
     type: 'danger',
     message:
+      `Closing costs: ${fmt(saleClosingCosts)}\n` +
       `Final net proceeds: ${fmt(netSaleProceeds)}\n` +
       `Total return: ${totalReturn < 0 ? '−' : ''}${fmt(Math.abs(totalReturn))}\n\n` +
       `This will lock this property and make all records historical/read-only.`,
@@ -3022,7 +3141,8 @@ async function closeOutInvestmentSale() {
           action: 'close_investment',
           property: prop,
           closeout: {
-            saleDate, salePrice, saleClosingCosts, grossAfterClosing, totalCapitalInvested,
+            saleDate, salePrice, saleClosingCosts, saleState: closingBreakdown.saleState,
+            saleClosingBreakdown: closingBreakdown, grossAfterClosing, totalCapitalInvested,
             cumulativeImprovements, cumulativeDepreciation, capitalGain, federalCapGainsTax,
             stateCapGainsTax, stateCapGainsPct, depreciationRecaptureTax, netSaleProceeds,
             propertyAppreciation, cumNetCashFlow, totalReturn, roiPct,
@@ -5684,6 +5804,8 @@ window.tpPayAmt                = tpPayAmt;
 window.toggleMaintImprovement  = toggleMaintImprovement;
 window.saveInvestmentConfig    = saveInvestmentConfig;
 window.closeOutInvestmentSale  = closeOutInvestmentSale;
+window.syncSaleClosingCosts    = syncSaleClosingCosts;
+window.toggleSaleClosingCostLock = toggleSaleClosingCostLock;
 window.refreshZillowEstimate   = refreshZillowEstimate;
 window.toggleInvestmentConfig  = toggleInvestmentConfig;
 window.solarStartAddEntry      = solarStartAddEntry;

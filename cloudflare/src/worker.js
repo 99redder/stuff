@@ -503,13 +503,20 @@ async function handleCloseInvestment(env, property, closeout) {
   if (closeout.salePrice <= 0) return jsonResponse({ error: 'salePrice must be positive' }, 400);
   if (closeout.saleClosingCosts < 0) return jsonResponse({ error: 'saleClosingCosts cannot be negative' }, 400);
 
+  const closingBreakdown = sanitizeSaleClosingBreakdown(closeout.saleClosingBreakdown);
+  if (closingBreakdown && Math.abs(closingBreakdown.total - closeout.saleClosingCosts) > 0.01) {
+    return jsonResponse({ error: 'saleClosingBreakdown total must equal saleClosingCosts' }, 400);
+  }
+
   const existing = await env.RENTALS.get(`investment:${property}`, 'json') || {};
   const saved = {
     ...existing,
     saleCloseout: {
       saleDate,
       salePrice: closeout.salePrice,
+      saleState: typeof closeout.saleState === 'string' ? closeout.saleState.slice(0, 16) : '',
       saleClosingCosts: closeout.saleClosingCosts,
+      saleClosingBreakdown: closingBreakdown,
       grossAfterClosing: closeout.grossAfterClosing,
       totalCapitalInvested: closeout.totalCapitalInvested,
       cumulativeImprovements: typeof closeout.cumulativeImprovements === 'number' && isFinite(closeout.cumulativeImprovements) ? closeout.cumulativeImprovements : 0,
@@ -533,6 +540,28 @@ async function handleCloseInvestment(env, property, closeout) {
 
   await env.RENTALS.put(`investment:${property}`, JSON.stringify(saved));
   return jsonResponse({ success: true, config: saved });
+}
+
+function sanitizeSaleClosingBreakdown(raw) {
+  if (!raw || typeof raw !== 'object' || !raw.items || typeof raw.items !== 'object') return null;
+  const items = {};
+  let total = 0;
+  for (const [code, item] of Object.entries(raw.items)) {
+    if (!item || typeof item !== 'object') continue;
+    const value = Number(item.value);
+    if (!isFinite(value) || value < 0) continue;
+    items[String(code).slice(0, 64)] = {
+      label: String(item.label || code).slice(0, 120),
+      value,
+      locked: item.locked !== false,
+    };
+    total += value;
+  }
+  return {
+    saleState: typeof raw.saleState === 'string' ? raw.saleState.slice(0, 16) : '',
+    items,
+    total: Math.round(total * 100) / 100,
+  };
 }
 
 async function handleFetchZillow(env, property, url) {
