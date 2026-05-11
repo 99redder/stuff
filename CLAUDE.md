@@ -77,7 +77,7 @@ Header buttons: [Deductions Tracker]  [Monthly Budget]  [☀️ Solar]  [Tax Pla
 const state = {
   currentProperty: '6AL',       // active property tab
   currentView: 'current-year',  // active view
-  password: '',                  // set at login, sent as X-Password header on every API call
+  password: '',                  // legacy only; runtime auth uses session cookie/token
   data: {
     '6AL':   { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
     '95EB':  { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
@@ -97,7 +97,7 @@ const state = {
 | Function | Purpose |
 |---|---|
 | `ensureLoaded(prop, key)` | Lazy-loads one data type for one property; no-ops if already cached |
-| `callApi(body)` | All API calls go through here — adds `X-Password` header, handles 401 |
+| `callApi(body)` | All API calls go through here — sends session token/cookie, handles 401 |
 | `renderView()` | Dispatches to the correct render function based on `state.currentView` |
 | `renderCurrentYear()` | Current year view |
 | `renderHistorical()` | Historical summaries + depreciation section |
@@ -140,8 +140,8 @@ All modals close on Escape key or clicking the backdrop.
 ### Password Gate
 On load, `sessionStorage` is checked for `rentals_auth = '1'`. If not set, the entire app UI is hidden and a login form is shown. On successful login:
 - `sessionStorage.setItem('rentals_auth', '1')` — persists for the browser session
-- `sessionStorage.setItem('rentals_pw', pw)` — password stored for API calls
-- `state.password` is set and sent as `X-Password` header on every `callApi()` call
+- Worker sets an HttpOnly `rentals_session` cookie and returns a short-lived `sessionToken` fallback for browsers that block cross-site cookies
+- `sessionStorage.setItem('rentals_session_token', token)` stores the fallback session token; the raw password is not stored after login
 
 If any API call returns 401, the user is immediately sent back to the login screen and session storage is cleared.
 
@@ -250,14 +250,16 @@ id = "75372b2a892343c8b45e3d8abafcbce3"
 ### CORS
 All responses include:
 ```
-Access-Control-Allow-Origin: *
+Access-Control-Allow-Origin: https://99redder.github.io
 Access-Control-Allow-Methods: POST, OPTIONS
-Access-Control-Allow-Headers: Content-Type, X-Password
+Access-Control-Allow-Headers: Content-Type, X-Password, X-Session
+Access-Control-Allow-Credentials: true
 ```
 `OPTIONS` preflight returns 204. **If you add a new request header on the frontend, add it to `Access-Control-Allow-Headers` in the worker or browsers will block it.**
 
 ### Authentication
-- All actions except `verify_password` require the `X-Password` request header to match the `ADMIN_PASSWORD` secret (set via `wrangler secret put`).
+- `verify_password` rate-limits failed attempts, sets a short-lived HttpOnly session cookie, and returns a session-token fallback.
+- All actions except `verify_password` require either the session cookie or `X-Session` token. `X-Password` is kept only as a temporary legacy fallback.
 - Missing or wrong password → 401 response.
 - `verify_password` action takes `{ password }` in the body (no header needed) and returns `{ ok: true/false }`.
 

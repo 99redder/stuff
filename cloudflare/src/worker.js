@@ -11,14 +11,27 @@ const VALID_CATEGORIES = [
   'mortgage_interest', 'pmi'  // historical summaries only
 ];
 
+const ALLOWED_ORIGIN = 'https://99redder.github.io';
+const SESSION_COOKIE = 'rentals_session';
+const SESSION_TTL_SECONDS = 60 * 60 * 12; // 12 hours
+const LOGIN_WINDOW_SECONDS = 15 * 60;
+const LOGIN_MAX_FAILURES = 5;
+
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Password',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Password, X-Session',
+  'Access-Control-Allow-Credentials': 'true',
+  'Vary': 'Origin',
 };
 
 export default {
   async fetch(request, env) {
+    const origin = request.headers.get('Origin') || '';
+    if (origin && origin !== ALLOWED_ORIGIN) {
+      return jsonResponse({ error: 'Origin not allowed' }, 403);
+    }
+
     // Handle CORS preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -44,19 +57,19 @@ async function handleDataApi(request, env) {
 
   const { action } = body;
 
-  // Password check — verify_password action handled separately (no auth required)
+  // Password check — creates an HttpOnly session cookie on success.
   if (action === 'verify_password') {
-    const { password } = body;
-    const stored = env.ADMIN_PASSWORD;
-    if (!stored) return jsonResponse({ error: 'Password not configured on server' }, 500);
-    const ok = password === stored;
-    return jsonResponse({ ok });
+    return handleVerifyPassword(request, env, body.password);
+  }
+  if (action === 'logout') {
+    return handleLogout(request, env);
+  }
+  if (action === 'verify_session') {
+    const ok = await isAuthenticated(request, env);
+    return jsonResponse({ ok }, ok ? 200 : 401);
   }
 
-  // All other actions require the password header
-  const provided = request.headers.get('X-Password') || '';
-  const stored   = env.ADMIN_PASSWORD || '';
-  if (!stored || provided !== stored) {
+  if (!(await isAuthenticated(request, env))) {
     return jsonResponse({ error: 'Unauthorized' }, 401);
   }
 
@@ -161,6 +174,72 @@ async function handleDataApi(request, env) {
     default:
       return jsonResponse({ error: 'Invalid action' }, 400);
   }
+}
+
+async function handleVerifyPassword(request, env, password) {
+  const stored = env.ADMIN_PASSWORD || '';
+  if (!stored) return jsonResponse({ error: 'Password not configured on server' }, 500);
+
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  const failKey = `auth_fail:${ip}`;
+  const failures = parseInt(await env.RENTALS.get(failKey) || '0', 10) || 0;
+  if (failures >= LOGIN_MAX_FAILURES) {
+    return jsonResponse({ error: 'Too many failed login attempts. Try again later.' }, 429);
+  }
+
+  if (password !== stored) {
+    await env.RENTALS.put(failKey, String(failures + 1), { expirationTtl: LOGIN_WINDOW_SECONDS });
+    return jsonResponse({ ok: false });
+  }
+
+  await env.RENTALS.delete(failKey);
+  const token = crypto.randomUUID() + '-' + crypto.randomUUID();
+  const sessionKey = `session:${await sha256Hex(token)}`;
+  await env.RENTALS.put(sessionKey, JSON.stringify({ createdAt: new Date().toISOString(), ip }), { expirationTtl: SESSION_TTL_SECONDS });
+
+  return jsonResponse({ ok: true, sessionToken: token }, 200, {
+    'Set-Cookie': `${SESSION_COOKIE}=${token}; Max-Age=${SESSION_TTL_SECONDS}; Path=/; HttpOnly; Secure; SameSite=None`,
+  });
+}
+
+async function handleLogout(request, env) {
+  const token = getSessionToken(request);
+  if (token) await env.RENTALS.delete(`session:${await sha256Hex(token)}`);
+  return jsonResponse({ success: true }, 200, {
+    'Set-Cookie': `${SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=None`,
+  });
+}
+
+async function isAuthenticated(request, env) {
+  const token = getSessionToken(request);
+  if (token) {
+    const session = await env.RENTALS.get(`session:${await sha256Hex(token)}`);
+    if (session) return true;
+  }
+
+  // Temporary backwards-compatible fallback; remove after session-cookie auth is confirmed live.
+  const provided = request.headers.get('X-Password') || '';
+  const stored = env.ADMIN_PASSWORD || '';
+  return !!stored && provided === stored;
+}
+
+function getSessionToken(request) {
+  return request.headers.get('X-Session') || getCookie(request, SESSION_COOKIE);
+}
+
+function getCookie(request, name) {
+  const cookie = request.headers.get('Cookie') || '';
+  for (const part of cookie.split(';')) {
+    const [k, ...rest] = part.trim().split('=');
+    if (k === name) return rest.join('=');
+  }
+  return '';
+}
+
+async function sha256Hex(input) {
+  const bytes = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 async function isPropertySold(env, property) {
@@ -838,9 +917,14 @@ async function handleSaveSavings(env, data) {
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
-function jsonResponse(data, status = 200) {
+function jsonResponse(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+    headers: {
+      ...CORS_HEADERS,
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+      ...extraHeaders,
+    }
   });
 }
