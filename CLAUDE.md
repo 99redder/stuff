@@ -181,7 +181,8 @@ Global view (not per-property) for tracking liquid account balances against the 
 {
   accounts: { robinhood: 0, ibkr: 0 },   // manually edited dollar balances
   obligations: [
-    { id: 'uuid', name: '6AL Taxes', amount: 7400, paymentsPerYear: 2, note: 'Paid twice a year' },
+    { id: 'uuid', name: '6AL Taxes', amount: 7400, paymentsPerYear: 2, kind: 'recurring', note: 'Paid twice a year' },
+    { id: 'uuid', name: 'Mom Assistance Fund', amount: 3500, paymentsPerYear: 1, kind: 'static', note: 'Target: $25,000' },
     ...
   ],
   payments: {
@@ -194,7 +195,13 @@ Global view (not per-property) for tracking liquid account balances against the 
 
 **Year reset:** Lookups use `payments[String(CURRENT_YEAR)] || {}`. When the year flips, the lookup falls through to an empty object and every obligation renders unpaid. Past-year records are preserved in KV for history — never overwrite or delete them on rollover.
 
-**Default obligations:** First-time visit seeds 32 obligations from `DEFAULT_SAVINGS_OBLIGATIONS` (the spreadsheet supplied 2026-05-11). Users can add/edit/delete entries and adjust `amount` / `paymentsPerYear` / `note` freely.
+**Default obligations:** First-time visit seeds 32 obligations from `DEFAULT_SAVINGS_OBLIGATIONS` (the spreadsheet supplied 2026-05-11). Users can add/edit/delete entries and adjust `amount` / `paymentsPerYear` / `kind` / `note` freely.
+
+**`kind` field:** Each obligation has a `kind`: `'recurring'` (default) or `'static'`.
+- `'recurring'` — fixed annual bills paid in 1 or 2 installments (taxes, insurance, etc.). Freq column shows `1× / yr` or `2× / yr`.
+- `'static'` — ongoing savings buckets contributed to each year (Mom Assistance Fund, 6AL Reno & Maintenance, etc.). Freq column shows a `Static` pill. Internally treated as a single annual slot so it still rolls into outstanding/paid totals, but the paid-checkbox label reads "Fund/Funded" rather than "Paid".
+
+On load, if no obligation has a `kind` field, a one-time migration backfills `kind` from `DEFAULT_SAVINGS_OBLIGATIONS` by name match (so the originally-seeded records pick up the static designation without manual editing).
 
 **Outstanding math:** Each obligation has `paymentsPerYear` "slots." Each slot = `amount / paymentsPerYear`. Outstanding = sum across all obligations of `slotAmount × (paymentsPerYear − paidCount)`.
 

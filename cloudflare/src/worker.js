@@ -810,6 +810,7 @@ async function handleSaveSavings(env, data) {
     name: String(o.name || '').trim().slice(0, 200),
     amount: (typeof o.amount === 'number' && isFinite(o.amount) && o.amount >= 0) ? o.amount : 0,
     paymentsPerYear: (o.paymentsPerYear === 2) ? 2 : 1,
+    kind: o.kind === 'static' ? 'static' : 'recurring',
     note: String(o.note || '').trim().slice(0, 400),
   })) : [];
 

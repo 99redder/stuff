@@ -5540,38 +5540,38 @@ async function envRENTALS_put(data) {
 // ── View: Savings ────────────────────────────────────────────────────────────
 
 const DEFAULT_SAVINGS_OBLIGATIONS = [
-  { name: '446BB Insurance Payment',                              amount: 540,    paymentsPerYear: 1, note: 'Paid once a year, Q1' },
-  { name: '446BB Maintenance & Assessments',                      amount: 5000,   paymentsPerYear: 1, note: 'Target: $10,000' },
-  { name: '446BB Taxes',                                          amount: 1550,   paymentsPerYear: 2, note: 'Paid twice a year' },
-  { name: '446BB Tenant Turnover',                                amount: 1500,   paymentsPerYear: 1, note: '' },
-  { name: '6AL Insurance',                                        amount: 970,    paymentsPerYear: 1, note: 'Paid once a year, September' },
-  { name: '6AL Reno & Maintenance',                               amount: 25000,  paymentsPerYear: 1, note: 'Target: $45,000' },
-  { name: '6AL Taxes',                                            amount: 7400,   paymentsPerYear: 2, note: 'Paid twice a year' },
-  { name: '731WO Roof / HVAC / Repair Savings',                   amount: 2500,   paymentsPerYear: 1, note: 'Target: $15,000' },
-  { name: '731WO County Taxes',                                   amount: 2000,   paymentsPerYear: 1, note: 'Paid once a year, late July' },
-  { name: '731WO City Taxes',                                     amount: 2100,   paymentsPerYear: 1, note: 'Paid once a year, early August' },
-  { name: '731WO Insurance',                                      amount: 2000,   paymentsPerYear: 1, note: 'Paid once a year, February' },
-  { name: '731WO Annual HOA Fees',                                amount: 400,    paymentsPerYear: 1, note: 'Paid once a year, late December' },
-  { name: '731WO Annual Power Washing',                           amount: 500,    paymentsPerYear: 2, note: '$250/per, 2 times per year' },
-  { name: '95EB Insurance',                                       amount: 330,    paymentsPerYear: 1, note: 'Paid once a year, December' },
-  { name: '95EB Maintenance & Assessments',                       amount: 5000,   paymentsPerYear: 1, note: 'Target: $10,000' },
-  { name: '95EB Taxes',                                           amount: 3850,   paymentsPerYear: 2, note: 'Paid twice a year' },
-  { name: '95EB Tenant Turnover',                                 amount: 2000,   paymentsPerYear: 1, note: '' },
-  { name: 'Car Insurance',                                        amount: 2000,   paymentsPerYear: 2, note: 'Paid twice a year' },
-  { name: 'Car Maintenance, Tags, & Emergency',                   amount: 3500,   paymentsPerYear: 1, note: '' },
-  { name: 'Income Taxes Savings',                                 amount: 2500,   paymentsPerYear: 1, note: '' },
-  { name: 'Medical Catastrophic Cap',                             amount: 3000,   paymentsPerYear: 1, note: '' },
-  { name: 'NH Trips',                                             amount: 3000,   paymentsPerYear: 1, note: '1 trip annually — hotels/gas/tolls/spending' },
-  { name: 'Solar Inverter Replacement',                           amount: 2500,   paymentsPerYear: 1, note: '' },
-  { name: '2mm RLI Umbrella Insurance',                           amount: 700,    paymentsPerYear: 1, note: 'Paid once a year, December' },
-  { name: 'VGLI',                                                 amount: 700,    paymentsPerYear: 1, note: 'Paid once a year, September' },
-  { name: 'Gordie & Ellie Private School (or College) Savings',   amount: 5000,   paymentsPerYear: 1, note: '' },
-  { name: 'Chris Roth and Trad IRA Funds',                        amount: 7500,   paymentsPerYear: 1, note: '' },
-  { name: 'Megan Trad IRA Funds',                                 amount: 7500,   paymentsPerYear: 1, note: '' },
-  { name: '731WO Floors Project',                                 amount: 1000,   paymentsPerYear: 1, note: 'Target: $8,000' },
-  { name: 'Mom Assistance Fund',                                  amount: 3500,   paymentsPerYear: 1, note: 'Target: $25,000' },
-  { name: 'Mike Assistance Fund',                                 amount: 500,    paymentsPerYear: 1, note: 'Target: $10,000' },
-  { name: 'Megan Parents Assistance Fund',                        amount: 1000,   paymentsPerYear: 1, note: 'Target: $10,000' },
+  { name: '446BB Insurance Payment',                              amount: 540,    paymentsPerYear: 1, kind: 'recurring', note: 'Paid once a year, Q1' },
+  { name: '446BB Maintenance & Assessments',                      amount: 5000,   paymentsPerYear: 1, kind: 'static',    note: 'Target: $10,000' },
+  { name: '446BB Taxes',                                          amount: 1550,   paymentsPerYear: 2, kind: 'recurring', note: 'Paid twice a year' },
+  { name: '446BB Tenant Turnover',                                amount: 1500,   paymentsPerYear: 1, kind: 'recurring', note: '' },
+  { name: '6AL Insurance',                                        amount: 970,    paymentsPerYear: 1, kind: 'recurring', note: 'Paid once a year, September' },
+  { name: '6AL Reno & Maintenance',                               amount: 25000,  paymentsPerYear: 1, kind: 'static',    note: 'Target: $45,000' },
+  { name: '6AL Taxes',                                            amount: 7400,   paymentsPerYear: 2, kind: 'recurring', note: 'Paid twice a year' },
+  { name: '731WO Roof / HVAC / Repair Savings',                   amount: 2500,   paymentsPerYear: 1, kind: 'static',    note: 'Target: $15,000' },
+  { name: '731WO County Taxes',                                   amount: 2000,   paymentsPerYear: 1, kind: 'recurring', note: 'Paid once a year, late July' },
+  { name: '731WO City Taxes',                                     amount: 2100,   paymentsPerYear: 1, kind: 'recurring', note: 'Paid once a year, early August' },
+  { name: '731WO Insurance',                                      amount: 2000,   paymentsPerYear: 1, kind: 'recurring', note: 'Paid once a year, February' },
+  { name: '731WO Annual HOA Fees',                                amount: 400,    paymentsPerYear: 1, kind: 'recurring', note: 'Paid once a year, late December' },
+  { name: '731WO Annual Power Washing',                           amount: 500,    paymentsPerYear: 2, kind: 'recurring', note: '$250/per, 2 times per year' },
+  { name: '95EB Insurance',                                       amount: 330,    paymentsPerYear: 1, kind: 'recurring', note: 'Paid once a year, December' },
+  { name: '95EB Maintenance & Assessments',                       amount: 5000,   paymentsPerYear: 1, kind: 'static',    note: 'Target: $10,000' },
+  { name: '95EB Taxes',                                           amount: 3850,   paymentsPerYear: 2, kind: 'recurring', note: 'Paid twice a year' },
+  { name: '95EB Tenant Turnover',                                 amount: 2000,   paymentsPerYear: 1, kind: 'recurring', note: '' },
+  { name: 'Car Insurance',                                        amount: 2000,   paymentsPerYear: 2, kind: 'recurring', note: 'Paid twice a year' },
+  { name: 'Car Maintenance, Tags, & Emergency',                   amount: 3500,   paymentsPerYear: 1, kind: 'static',    note: '' },
+  { name: 'Income Taxes Savings',                                 amount: 2500,   paymentsPerYear: 1, kind: 'static',    note: '' },
+  { name: 'Medical Catastrophic Cap',                             amount: 3000,   paymentsPerYear: 1, kind: 'static',    note: '' },
+  { name: 'NH Trips',                                             amount: 3000,   paymentsPerYear: 1, kind: 'recurring', note: '1 trip annually — hotels/gas/tolls/spending' },
+  { name: 'Solar Inverter Replacement',                           amount: 2500,   paymentsPerYear: 1, kind: 'static',    note: '' },
+  { name: '2mm RLI Umbrella Insurance',                           amount: 700,    paymentsPerYear: 1, kind: 'recurring', note: 'Paid once a year, December' },
+  { name: 'VGLI',                                                 amount: 700,    paymentsPerYear: 1, kind: 'recurring', note: 'Paid once a year, September' },
+  { name: 'Gordie & Ellie Private School (or College) Savings',   amount: 5000,   paymentsPerYear: 1, kind: 'static',    note: '' },
+  { name: 'Chris Roth and Trad IRA Funds',                        amount: 7500,   paymentsPerYear: 1, kind: 'recurring', note: '' },
+  { name: 'Megan Trad IRA Funds',                                 amount: 7500,   paymentsPerYear: 1, kind: 'recurring', note: '' },
+  { name: '731WO Floors Project',                                 amount: 1000,   paymentsPerYear: 1, kind: 'static',    note: 'Target: $8,000' },
+  { name: 'Mom Assistance Fund',                                  amount: 3500,   paymentsPerYear: 1, kind: 'static',    note: 'Target: $25,000' },
+  { name: 'Mike Assistance Fund',                                 amount: 500,    paymentsPerYear: 1, kind: 'static',    note: 'Target: $10,000' },
+  { name: 'Megan Parents Assistance Fund',                        amount: 1000,   paymentsPerYear: 1, kind: 'static',    note: 'Target: $10,000' },
 ];
 
 let _savEdit = null;       // { id, name, amount, paymentsPerYear, note } when editing/adding
@@ -5582,12 +5582,23 @@ async function loadSavings() {
   const result = await callApi({ action: 'get_savings' });
   const raw = result.data || {};
   let obligations = Array.isArray(raw.obligations) ? raw.obligations : [];
+  const justSeeded = obligations.length === 0;
   // Seed defaults on first load
-  if (obligations.length === 0) {
+  if (justSeeded) {
     obligations = DEFAULT_SAVINGS_OBLIGATIONS.map(o => ({
       id: (crypto.randomUUID ? crypto.randomUUID() : 'o_' + Math.random().toString(36).slice(2)),
       ...o
     }));
+  }
+  // One-time migration: backfill `kind` on existing obligations using DEFAULT_SAVINGS_OBLIGATIONS as the source of truth (matched by name)
+  const noneHaveKind = obligations.every(o => !o.kind);
+  let migrated = false;
+  if (noneHaveKind && !justSeeded) {
+    const defaultsByName = new Map(DEFAULT_SAVINGS_OBLIGATIONS.map(d => [d.name, d.kind]));
+    for (const o of obligations) {
+      o.kind = defaultsByName.get(o.name) || 'recurring';
+    }
+    migrated = true;
   }
   state.savings = {
     accounts: {
@@ -5597,8 +5608,7 @@ async function loadSavings() {
     obligations,
     payments: (raw.payments && typeof raw.payments === 'object') ? raw.payments : {},
   };
-  // Seed defaults persistently if we just generated them
-  if (!Array.isArray(raw.obligations) || raw.obligations.length === 0) {
+  if (justSeeded || migrated) {
     await saveSavings();
   }
 }
@@ -5617,7 +5627,7 @@ function savingsObligationStats() {
   let paidSlots = 0;
   let totalSlots = 0;
   for (const o of s.obligations) {
-    const ppy = o.paymentsPerYear === 2 ? 2 : 1;
+    const ppy = o.kind === 'static' ? 1 : (o.paymentsPerYear === 2 ? 2 : 1);
     const slotAmt = o.amount / ppy;
     const paid = (paidMap[o.id] || []).slice(0, ppy);
     while (paid.length < ppy) paid.push(false);
@@ -5643,9 +5653,6 @@ function _renderSavingsHtml() {
   const stats = savingsObligationStats();
 
   const totalLiquid = (s.accounts.robinhood || 0) + (s.accounts.ibkr || 0);
-  const coverage = stats.outstanding > 0 ? (totalLiquid / stats.outstanding) : (totalLiquid > 0 ? 1 : 0);
-  const coveragePct = (coverage * 100).toFixed(0);
-  const coverageColor = totalLiquid >= stats.outstanding ? 'var(--success)' : 'var(--danger)';
   const progressPct = stats.totalAnnual > 0 ? Math.min(100, (stats.totalPaid / stats.totalAnnual) * 100) : 0;
 
   const statsBar = `
@@ -5659,8 +5666,6 @@ function _renderSavingsHtml() {
            <div style="font-size:1.3rem;font-weight:700;color:var(--danger)">${fmt(stats.outstanding)}</div></div>
       <div><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Liquid in Accounts</div>
            <div style="font-size:1.3rem;font-weight:700">${fmt(totalLiquid)}</div></div>
-      <div><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Coverage of Outstanding</div>
-           <div style="font-size:1.3rem;font-weight:700;color:${coverageColor}">${coveragePct}%</div></div>
       <div style="flex:1;min-width:220px;align-self:center">
         <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.25rem">${year} Progress</div>
         <div style="height:.6rem;background:var(--border);border-radius:999px;overflow:hidden">
@@ -5717,7 +5722,7 @@ function _renderSavingsHtml() {
   } else if (_savSort === 'status') {
     // Unpaid first, then partially paid, then fully paid (more outstanding = higher priority)
     const outstandingFor = o => {
-      const ppy = o.paymentsPerYear === 2 ? 2 : 1;
+      const ppy = o.kind === 'static' ? 1 : (o.paymentsPerYear === 2 ? 2 : 1);
       const paid = (paidMap[o.id] || []).slice(0, ppy);
       while (paid.length < ppy) paid.push(false);
       const paidCount = paid.filter(Boolean).length;
@@ -5728,24 +5733,32 @@ function _renderSavingsHtml() {
 
   const obligationRows = sortedObligations.map(o => {
     if (_savEdit && _savEdit.id === o.id) return _savEditRow(o);
-    const ppy = o.paymentsPerYear === 2 ? 2 : 1;
+    const isStatic = o.kind === 'static';
+    const ppy = isStatic ? 1 : (o.paymentsPerYear === 2 ? 2 : 1);
     const paid = (paidMap[o.id] || []).slice(0, ppy);
     while (paid.length < ppy) paid.push(false);
     const slotAmt = o.amount / ppy;
-    const checkboxes = paid.map((p, i) => `
+    const checkboxes = paid.map((p, i) => {
+      const label = isStatic
+        ? (p ? 'Funded' : 'Fund')
+        : (ppy === 2 ? (i === 0 ? 'H1' : 'H2') : 'Paid');
+      return `
       <label style="display:inline-flex;align-items:center;gap:.25rem;cursor:pointer;padding:.2rem .4rem;border-radius:4px;background:${p ? 'rgba(16,185,129,.15)' : 'rgba(239,68,68,.1)'};border:1px solid ${p ? 'rgba(16,185,129,.4)' : 'rgba(239,68,68,.3)'}">
         <input type="checkbox" ${p ? 'checked' : ''} onchange="savTogglePaid('${escAttr(o.id)}', ${i}, this.checked)" style="margin:0;cursor:pointer">
-        <span style="font-size:.72rem;font-weight:600;color:${p ? 'var(--success)' : 'var(--danger)'}">${ppy === 2 ? (i === 0 ? 'H1' : 'H2') : 'Paid'} · ${fmtShort(slotAmt)}</span>
-      </label>
-    `).join('');
+        <span style="font-size:.72rem;font-weight:600;color:${p ? 'var(--success)' : 'var(--danger)'}">${label} · ${fmtShort(slotAmt)}</span>
+      </label>`;
+    }).join('');
     const allPaid = paid.every(Boolean);
+    const freqLabel = isStatic
+      ? `<span style="display:inline-block;padding:.1rem .4rem;border-radius:999px;background:rgba(99,102,241,.12);color:#6366f1;font-weight:600;font-size:.7rem">Static</span>`
+      : `${ppy}× / yr`;
     return `<tr style="${allPaid ? 'opacity:.55' : ''}">
       <td style="padding:.5rem .6rem;border-bottom:1px solid var(--border)">
         <div style="font-weight:600">${escHtml(o.name)}</div>
         ${o.note ? `<div style="font-size:.7rem;color:var(--text-muted)">${escHtml(o.note)}</div>` : ''}
       </td>
       <td style="padding:.5rem .6rem;border-bottom:1px solid var(--border);text-align:right;font-weight:600;white-space:nowrap">${fmt(o.amount)}</td>
-      <td style="padding:.5rem .6rem;border-bottom:1px solid var(--border);text-align:center;color:var(--text-muted);font-size:.78rem;white-space:nowrap">${ppy}× / yr</td>
+      <td style="padding:.5rem .6rem;border-bottom:1px solid var(--border);text-align:center;color:var(--text-muted);font-size:.78rem;white-space:nowrap">${freqLabel}</td>
       <td style="padding:.5rem .6rem;border-bottom:1px solid var(--border);white-space:nowrap">
         <div style="display:flex;gap:.35rem;justify-content:flex-end;flex-wrap:wrap">${checkboxes}</div>
       </td>
@@ -5818,9 +5831,10 @@ function _savEditRow(o) {
       <input type="number" id="sav-edit-amount" class="form-input" step="0.01" min="0" placeholder="0" value="${escAttr(String(o.amount ?? ''))}" style="width:100%;font-size:.85rem;text-align:right">
     </td>
     <td style="padding:.4rem .6rem;border-bottom:1px solid var(--border);text-align:center">
-      <select id="sav-edit-ppy" class="form-input" style="font-size:.8rem;padding:.25rem">
-        <option value="1" ${o.paymentsPerYear === 2 ? '' : 'selected'}>1× / yr</option>
-        <option value="2" ${o.paymentsPerYear === 2 ? 'selected' : ''}>2× / yr</option>
+      <select id="sav-edit-freq" class="form-input" style="font-size:.8rem;padding:.25rem">
+        <option value="1"      ${o.kind === 'static' ? '' : (o.paymentsPerYear === 2 ? '' : 'selected')}>1× / yr</option>
+        <option value="2"      ${o.kind === 'static' ? '' : (o.paymentsPerYear === 2 ? 'selected' : '')}>2× / yr</option>
+        <option value="static" ${o.kind === 'static' ? 'selected' : ''}>Static</option>
       </select>
     </td>
     <td colspan="2" style="padding:.4rem .6rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap">
@@ -5842,7 +5856,7 @@ async function savTogglePaid(id, idx, checked) {
   if (!state.savings.payments[year]) state.savings.payments[year] = {};
   const o = state.savings.obligations.find(x => x.id === id);
   if (!o) return;
-  const ppy = o.paymentsPerYear === 2 ? 2 : 1;
+  const ppy = o.kind === 'static' ? 1 : (o.paymentsPerYear === 2 ? 2 : 1);
   const arr = (state.savings.payments[year][id] || []).slice(0, ppy);
   while (arr.length < ppy) arr.push(false);
   arr[idx] = !!checked;
@@ -5852,7 +5866,7 @@ async function savTogglePaid(id, idx, checked) {
 }
 
 function savAddNew() {
-  _savEdit = { id: 'new', name: '', amount: '', paymentsPerYear: 1, note: '' };
+  _savEdit = { id: 'new', name: '', amount: '', paymentsPerYear: 1, kind: 'recurring', note: '' };
   _renderSavingsHtml();
 }
 
@@ -5877,17 +5891,19 @@ async function savSave(id) {
   const name = (document.getElementById('sav-edit-name')?.value || '').trim();
   const note = (document.getElementById('sav-edit-note')?.value || '').trim();
   const amount = parseFloat(document.getElementById('sav-edit-amount')?.value || '0') || 0;
-  const ppy = parseInt(document.getElementById('sav-edit-ppy')?.value || '1', 10) === 2 ? 2 : 1;
+  const freqRaw = document.getElementById('sav-edit-freq')?.value || '1';
+  const kind = freqRaw === 'static' ? 'static' : 'recurring';
+  const ppy = freqRaw === '2' ? 2 : 1;
   if (!name) { alert('Name is required'); return; }
   if (amount < 0) { alert('Amount must be ≥ 0'); return; }
   if (id === 'new') {
     state.savings.obligations.push({
       id: (crypto.randomUUID ? crypto.randomUUID() : 'o_' + Math.random().toString(36).slice(2)),
-      name, amount, paymentsPerYear: ppy, note
+      name, amount, paymentsPerYear: ppy, kind, note
     });
   } else {
     const o = state.savings.obligations.find(x => x.id === id);
-    if (o) { o.name = name; o.amount = amount; o.paymentsPerYear = ppy; o.note = note; }
+    if (o) { o.name = name; o.amount = amount; o.paymentsPerYear = ppy; o.kind = kind; o.note = note; }
   }
   _savEdit = null;
   await saveSavings();
