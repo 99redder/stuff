@@ -3872,6 +3872,7 @@ function tpCalc(tp, rentalRows) {
   const dividends    = tpN(tp.rh_div);
   const cryptoInc    = tpN(tp.crypto_income);
   const propertySaleTaxableGain = tpN(tp.property_sale_taxable_gain);
+  const propertySaleDepRecapture = tpN(tp.property_sale_depr_recapture);
   const stGains      = tpN(tp.crypto_st) + tpN(tp.rh_st) + tpN(tp.ibkr_st);
   const ltGains      = tpN(tp.crypto_lt) + tpN(tp.rh_lt) + tpN(tp.ibkr_lt) + propertySaleTaxableGain;
 
@@ -3880,7 +3881,7 @@ function tpCalc(tp, rentalRows) {
   const seTax     = Math.min(netSe, TP_SE_SS_BASE) * 0.124 + netSe * 0.029;
   const halfSeTax = seTax / 2;
 
-  const grossIncome = wages + businessInc + rentalTaxInc + interest + dividends + cryptoInc + stGains + ltGains;
+  const grossIncome = wages + businessInc + rentalTaxInc + interest + dividends + cryptoInc + stGains + ltGains + propertySaleDepRecapture;
 
   // Above-the-line adjustments
   const iraAdj     = Math.min(tpN(tp.ira), TP_IRA_LIMIT);
@@ -3896,15 +3897,17 @@ function tpCalc(tp, rentalRows) {
 
   // Tax on income
   const ltcgTaxable   = Math.min(Math.max(0, ltGains), taxInc);
-  const ordinaryTaxable = Math.max(0, taxInc - ltcgTaxable);
+  const depRecaptureTaxable = Math.min(Math.max(0, propertySaleDepRecapture), Math.max(0, taxInc - ltcgTaxable));
+  const ordinaryTaxable = Math.max(0, taxInc - ltcgTaxable - depRecaptureTaxable);
   const ordTax        = tpCalcOrdinaryTax(ordinaryTaxable);
   const ltcgTax       = tpCalcLTCGTax(ordinaryTaxable, ltcgTaxable);
+  const depRecaptureTax = depRecaptureTaxable * 0.25;
 
   // NIIT (3.8% on net investment income if AGI > threshold)
-  const nii  = interest + dividends + ltGains + stGains + cryptoInc + Math.max(0, rentalTaxInc);
+  const nii  = interest + dividends + ltGains + stGains + cryptoInc + propertySaleDepRecapture + Math.max(0, rentalTaxInc);
   const niit = agi > TP_NIIT_THRESHOLD ? Math.min(nii, agi - TP_NIIT_THRESHOLD) * 0.038 : 0;
 
-  const grossFedTax = ordTax + ltcgTax + seTax + niit;
+  const grossFedTax = ordTax + ltcgTax + depRecaptureTax + seTax + niit;
 
   // Child Tax Credit (2 children)
   const ctcRaw     = 2 * TP_CTC_PER_CHILD;
@@ -3923,6 +3926,7 @@ function tpCalc(tp, rentalRows) {
   return {
     wages, businessInc, rentalNet, rentalDepr, rentalTaxInc,
     interest, dividends, cryptoInc, stGains, ltGains, propertySaleTaxableGain,
+    propertySaleDepRecapture, depRecaptureTaxable, depRecaptureTax,
     seTax, halfSeTax, grossIncome, iraAdj, adjustments, agi,
     stdDed, qbiDed, totDed, taxInc, ordinaryTaxable, ltcgTaxable,
     ordTax, ltcgTax, niit, grossFedTax, ctc, netFedTax,
@@ -3973,6 +3977,49 @@ function tpBuildPayments(payments) {
       <input type="number" step="0.01" min="0" placeholder="0.00" value="${p.amount || ''}" onchange="tpPayAmt(${i},this.value)">
       <button class="btn btn-ghost btn-sm" style="color:var(--danger);padding:.2rem .5rem" onclick="tpRemovePayment(${i})">×</button>
     </div>`).join('');
+}
+
+const TP_COLLAPSE_KEY = `rentals_tp_collapsed_${CURRENT_YEAR}`;
+function tpCollapsedMap() { try { return JSON.parse(localStorage.getItem(TP_COLLAPSE_KEY) || '{}'); } catch { return {}; } }
+function tpSaveCollapsedMap(map) { localStorage.setItem(TP_COLLAPSE_KEY, JSON.stringify(map || {})); }
+function tpToggleSection(id) {
+  const map = tpCollapsedMap();
+  map[id] = !map[id];
+  tpSaveCollapsedMap(map);
+  tpHydrateCollapsibleSections();
+}
+function tpHydrateCollapsibleSections() {
+  const map = tpCollapsedMap();
+  const cards = document.querySelectorAll('#app .tp-layout > div:first-child > .card');
+  cards.forEach((card, idx) => {
+    const header = card.querySelector(':scope > .card-header');
+    const body = card.querySelector(':scope > .card-body');
+    const title = header?.querySelector('.card-title')?.textContent?.trim() || `Section ${idx + 1}`;
+    if (!header || !body) return;
+    const id = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `section-${idx}`;
+    card.dataset.tpSection = id;
+    const collapsed = !!map[id];
+    body.style.display = collapsed ? 'none' : '';
+    header.style.cursor = 'pointer';
+    header.style.display = 'flex';
+    header.style.alignItems = 'center';
+    header.style.justifyContent = 'space-between';
+    header.onclick = (e) => {
+      if (e.target.closest('button,input,select,a,label')) return;
+      tpToggleSection(id);
+    };
+    let btn = header.querySelector('.tp-collapse-btn');
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-ghost btn-sm tp-collapse-btn';
+      btn.style.cssText = 'margin-left:.5rem;font-size:.8rem;padding:.2rem .5rem';
+      btn.onclick = (e) => { e.stopPropagation(); tpToggleSection(id); };
+      header.appendChild(btn);
+    }
+    btn.textContent = collapsed ? 'Expand' : 'Minimize';
+    btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  });
 }
 
 // ── View: Monthly Budget ──────────────────────────────────────────────────────
@@ -5171,6 +5218,10 @@ async function renderTaxPlanning() {
   const propertySaleRows = Object.fromEntries(PROPERTIES.map(p => [p, calcPropertySaleTaxDetails(p)]));
   const selectedSaleProp = tp.property_sale_property || '';
   const selectedSale = selectedSaleProp ? propertySaleRows[selectedSaleProp] : null;
+  if (selectedSaleProp && tp.property_sale_imported && selectedSale && tp.property_sale_depr_recapture === undefined) {
+    tp.property_sale_depr_recapture = selectedSale.depreciationRecapture;
+    tpSave(tp);
+  }
   const saleOptions = `<option value="">— Select property —</option>` + PROPERTIES.map(p => `<option value="${p}" ${selectedSaleProp === p ? 'selected' : ''}>${p}</option>`).join('');
   const propertySaleDetails = selectedSaleProp && tp.property_sale_imported
     ? `<div style="margin-top:.75rem;padding:.75rem;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);font-size:.85rem">
@@ -5181,11 +5232,13 @@ async function renderTaxPlanning() {
         <div style="display:flex;justify-content:space-between;gap:1rem"><span>Total basis / capital invested</span><span>${fmt(tp.property_sale_basis || 0)}</span></div>
         <div style="display:flex;justify-content:space-between;gap:1rem"><span>Capital gain before exclusion</span><span>${fmt(tp.property_sale_capital_gain || 0)}</span></div>
         ${(tp.property_sale_primary_exclusion || 0) > 0 ? `<div style="display:flex;justify-content:space-between;gap:1rem"><span>§121 exclusion</span><span>(${fmt(tp.property_sale_primary_exclusion || 0)})</span></div>` : ''}
+        <div style="display:flex;justify-content:space-between;gap:1rem"><span>Depreciation recapture</span><span>${fmt(tp.property_sale_depr_recapture || 0)}</span></div>
         <div style="display:flex;justify-content:space-between;gap:1rem;border-top:1px solid var(--border);padding-top:.4rem;margin-top:.4rem"><span>Taxable long-term capital gain added to federal worksheet</span><strong style="color:var(--success)">${fmt(tp.property_sale_taxable_gain || 0)}</strong></div>
-        <div style="display:flex;justify-content:space-between;gap:1rem"><span>State/local taxable gain included in Maryland AGI</span><strong style="color:var(--success)">${fmt(tp.property_sale_taxable_gain || 0)}</strong></div>
+        <div style="display:flex;justify-content:space-between;gap:1rem"><span>Depreciation recapture taxed federally at 25%</span><strong style="color:var(--danger)">${fmt((tp.property_sale_depr_recapture || 0) * 0.25)}</strong></div>
+        <div style="display:flex;justify-content:space-between;gap:1rem"><span>State/local taxable gain + recapture included in Maryland AGI</span><strong style="color:var(--success)">${fmt((tp.property_sale_taxable_gain || 0) + (tp.property_sale_depr_recapture || 0))}</strong></div>
         <div class="tp-note" style="margin-top:.5rem">Imported from ${escHtml(selectedSaleProp)} ${selectedSale?.source === 'Actual sale closeout' ? 'final sale closeout' : 'hypothetical sale estimate'} in the property tab.</div>
       </div>`
-    : `<div class="tp-note" style="margin-top:.5rem">Select a property to import its property-tab sale estimate/closeout. This adds its taxable long-term gain to federal capital gains and Maryland AGI.</div>`;
+    : `<div class="tp-note" style="margin-top:.5rem">Select a property to import its property-tab sale estimate/closeout. This adds taxable long-term gain and depreciation recapture to the tax plan.</div>`;
 
   const rentalTableRows = rentalRows.map(p => `
     <tr>
@@ -5465,6 +5518,7 @@ async function renderTaxPlanning() {
 
   </div><!-- end tp-layout -->`;
 
+  tpHydrateCollapsibleSections();
   tpUpdateResults();
 }
 
@@ -6210,6 +6264,13 @@ function calcPropertySaleTaxDetails(prop) {
     }
   }
 
+  let cumulativeDepreciation = 0;
+  if (!isPrimaryResidence && dc) {
+    const sched = calcDepreciationSchedule(dc.costBasis, dc.placedInService);
+    if (sched.length) cumulativeDepreciation = sched[sched.length - 1].cumulative;
+  }
+  const depreciationRecapture = isPrimaryResidence ? 0 : (isSold && saleCloseout.depreciationRecaptureTax != null ? saleCloseout.depreciationRecaptureTax / 0.25 : cumulativeDepreciation);
+
   const basis = purchasePrice + purchaseClosing + cumulativeImprovements;
   // Match the property tab's hypothetical sale math exactly: unsold properties use the saved sale closing %;
   // finalized sales use the actual closeout amount/breakdown.
@@ -6229,6 +6290,7 @@ function calcPropertySaleTaxDetails(prop) {
     basis,
     capitalGain,
     primaryExclusion,
+    depreciationRecapture,
     taxableGain
   };
 }
@@ -6259,6 +6321,7 @@ function tpApplyPropertySale(prop) {
     property_sale_basis: details.basis,
     property_sale_capital_gain: details.capitalGain,
     property_sale_primary_exclusion: details.primaryExclusion,
+    property_sale_depr_recapture: details.depreciationRecapture,
     property_sale_taxable_gain: details.taxableGain
   });
   tpSave(tp);
@@ -6275,6 +6338,7 @@ function tpClearPropertySale() {
   delete tp.property_sale_basis;
   delete tp.property_sale_capital_gain;
   delete tp.property_sale_primary_exclusion;
+  delete tp.property_sale_depr_recapture;
   delete tp.property_sale_taxable_gain;
   tpSave(tp);
   renderTaxPlanning();
@@ -6311,6 +6375,7 @@ function tpUpdateResults(tp) {
       ${row('Interest & Dividends', r.interest + r.dividends + r.cryptoInc, 'in')}
       ${r.stGains !== 0 ? row('ST Capital Gains', r.stGains, 'in') : ''}
       ${r.propertySaleTaxableGain > 0 ? row(`Property Sale LT Gain (${tp.property_sale_property || 'selected property'})`, r.propertySaleTaxableGain, 'in') : ''}
+      ${r.propertySaleDepRecapture > 0 ? row(`Property Depreciation Recapture (${tp.property_sale_property || 'selected property'})`, r.propertySaleDepRecapture, 'in') : ''}
       ${r.ltGains !== 0 ? row('Total LT Capital Gains', r.ltGains, 'in') : ''}
       ${row('Gross Income', r.grossIncome, 'sub')}
 
@@ -6327,6 +6392,7 @@ function tpUpdateResults(tp) {
       ${sec('Federal Tax')}
       ${row('Tax on Ordinary Income', r.ordTax, 'in')}
       ${r.ltcgTaxable > 0 ? row('Tax on LT Capital Gains', r.ltcgTax, 'in') : ''}
+      ${r.depRecaptureTaxable > 0 ? row('Tax on Depreciation Recapture (25%)', r.depRecaptureTax, 'in') : ''}
       ${r.seTax > 0 ? row('Self-Employment Tax', r.seTax, 'in') : ''}
       ${r.niit > 0 ? row('Net Investment Income Tax (3.8%)', r.niit, 'in') : ''}
       ${row('Gross Federal Tax', r.grossFedTax, 'sub')}
@@ -6344,7 +6410,7 @@ function tpUpdateResults(tp) {
       </div>
 
       ${sec('Maryland State & Local Tax')}
-      ${r.propertySaleTaxableGain > 0 ? row(`Property Sale Gain Included in State AGI (${tp.property_sale_property || 'selected property'})`, r.propertySaleTaxableGain, 'in') : ''}
+      ${(r.propertySaleTaxableGain + r.propertySaleDepRecapture) > 0 ? row(`Property Sale Gain + Recapture Included in State AGI (${tp.property_sale_property || 'selected property'})`, r.propertySaleTaxableGain + r.propertySaleDepRecapture, 'in') : ''}
       ${md.navyExempt > 0 ? row(`Less Navy Retirement (exempt, cap $${md.exemptCap.toLocaleString()})`, md.navyExempt, 'in', true) : ''}
       ${md.md529 > 0 ? row('Less 529 Contributions', md.md529, 'in', true) : ''}
       ${row('Maryland AGI', md.mdAgi, 'in')}
@@ -6593,6 +6659,7 @@ window.tpAddPayment            = tpAddPayment;
 window.tpRemovePayment         = tpRemovePayment;
 window.tpPayDate               = tpPayDate;
 window.tpPayAmt                = tpPayAmt;
+window.tpToggleSection         = tpToggleSection;
 window.tpApplyPropertySale     = tpApplyPropertySale;
 window.tpClearPropertySale     = tpClearPropertySale;
 window.toggleMaintImprovement  = toggleMaintImprovement;
