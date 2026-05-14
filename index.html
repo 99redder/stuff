@@ -871,15 +871,36 @@
           Supply/Energy ($/kWh)
           <input type="number" id="calc-supply" class="form-input" step=".0001" value="0.0852" oninput="updateCalcResult()">
         </label>
-        <label style="grid-column:span 2;display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
-          Taxes &amp; Surcharges ($)
-          <input type="number" id="calc-tax" class="form-input" step=".01" min="0" value="0.00" oninput="updateCalcResult()">
-        </label>
+      </div>
+      <div style="margin-bottom:1rem;padding:.85rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg)">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:.65rem">Taxes &amp; Surcharges</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.65rem">
+          <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
+            Environmental Surcharge ($/kWh)
+            <input type="number" id="calc-env-surcharge" class="form-input" step=".000001" value="0" oninput="updateCalcResult()">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
+            Empower MD Charge ($/kWh)
+            <input type="number" id="calc-empower-md" class="form-input" step=".000001" value="0" oninput="updateCalcResult()">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
+            Administrative Credit ($)
+            <input type="number" id="calc-admin-credit" class="form-input" step=".01" value="0" oninput="updateCalcResult()">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
+            MD Franchise Tax ($/kWh)
+            <input type="number" id="calc-md-franchise-tax" class="form-input" step=".000001" value="0" oninput="updateCalcResult()">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
+            Universal Service Program ($)
+            <input type="number" id="calc-universal-service" class="form-input" step=".01" value="0" oninput="updateCalcResult()">
+          </label>
+        </div>
       </div>
       <div style="padding:.85rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg)">
         <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:.25rem">Estimated Bill Without Solar</div>
         <div id="calc-result-amount" style="font-size:1.8rem;font-weight:700;color:var(--success)">—</div>
-        <div id="calc-result-breakdown" style="font-size:.78rem;color:var(--text-muted);margin-top:.2rem"></div>
+        <div id="calc-result-breakdown" style="font-size:.78rem;color:var(--text-muted);margin-top:.2rem;white-space:pre-line"></div>
       </div>
     </div>
     <div class="modal-footer">
@@ -4675,8 +4696,23 @@ function _renderSolarHtml() {
             <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.82rem">
               Supply ($/kWh)<input type="number" id="scfg-supply" class="form-input" step=".0001" value="${escAttr(String(cr.supplyRate ?? 0.0852))}">
             </label>
+          </div>
+          <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.04em;margin-bottom:.5rem">Taxes &amp; Surcharges Defaults</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-bottom:.75rem">
             <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.82rem">
-              Taxes &amp; Surcharges ($)<input type="number" id="scfg-tax" class="form-input" step=".01" min="0" value="${escAttr(String(cr.taxesSurchargesAmount ?? 0))}">
+              Environmental Surcharge ($/kWh)<input type="number" id="scfg-env-surcharge" class="form-input" step=".000001" value="${escAttr(String(cr.environmentalSurchargeRate ?? 0))}">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.82rem">
+              Empower MD Charge ($/kWh)<input type="number" id="scfg-empower-md" class="form-input" step=".000001" value="${escAttr(String(cr.empowerMdChargeRate ?? 0))}">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.82rem">
+              Administrative Credit ($)<input type="number" id="scfg-admin-credit" class="form-input" step=".01" value="${escAttr(String(cr.administrativeCreditAmount ?? cr.taxesSurchargesAmount ?? 0))}">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.82rem">
+              MD Franchise Tax ($/kWh)<input type="number" id="scfg-md-franchise-tax" class="form-input" step=".000001" value="${escAttr(String(cr.mdFranchiseTaxRate ?? 0))}">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.82rem">
+              Universal Service Program ($)<input type="number" id="scfg-universal-service" class="form-input" step=".01" value="${escAttr(String(cr.universalServiceProgramAmount ?? 0))}">
             </label>
           </div>
           <div id="solar-cfg-error" class="error-msg hidden"></div>
@@ -4864,7 +4900,11 @@ async function saveSolarConfig() {
     distRate:       parseFloat(document.getElementById('scfg-dist')?.value),
     transRate:      parseFloat(document.getElementById('scfg-trans')?.value),
     supplyRate:     parseFloat(document.getElementById('scfg-supply')?.value),
-    taxesSurchargesAmount: parseFloat(document.getElementById('scfg-tax')?.value),
+    environmentalSurchargeRate: parseFloat(document.getElementById('scfg-env-surcharge')?.value),
+    empowerMdChargeRate: parseFloat(document.getElementById('scfg-empower-md')?.value),
+    administrativeCreditAmount: parseFloat(document.getElementById('scfg-admin-credit')?.value),
+    mdFranchiseTaxRate: parseFloat(document.getElementById('scfg-md-franchise-tax')?.value),
+    universalServiceProgramAmount: parseFloat(document.getElementById('scfg-universal-service')?.value),
   };
 
   const newCfg = {
@@ -4897,7 +4937,11 @@ function openSolarCalcModal() {
   document.getElementById('calc-dist').value   = cr.distRate  ?? 0.0678;
   document.getElementById('calc-trans').value  = cr.transRate ?? 0.0334;
   document.getElementById('calc-supply').value = cr.supplyRate ?? 0.0852;
-  document.getElementById('calc-tax').value    = cr.taxesSurchargesAmount ?? 0;
+  document.getElementById('calc-env-surcharge').value = cr.environmentalSurchargeRate ?? 0;
+  document.getElementById('calc-empower-md').value = cr.empowerMdChargeRate ?? 0;
+  document.getElementById('calc-admin-credit').value = cr.administrativeCreditAmount ?? cr.taxesSurchargesAmount ?? 0;
+  document.getElementById('calc-md-franchise-tax').value = cr.mdFranchiseTaxRate ?? 0;
+  document.getElementById('calc-universal-service').value = cr.universalServiceProgramAmount ?? 0;
   document.getElementById('calc-kwh').value    = '';
   document.getElementById('calc-result-amount').textContent    = '—';
   document.getElementById('calc-result-breakdown').textContent = '';
@@ -4917,7 +4961,11 @@ function updateCalcResult() {
   const dist   = parseFloat(document.getElementById('calc-dist')?.value) || 0;
   const trans  = parseFloat(document.getElementById('calc-trans')?.value) || 0;
   const supply = parseFloat(document.getElementById('calc-supply')?.value) || 0;
-  const taxesSurcharges = parseFloat(document.getElementById('calc-tax')?.value) || 0;
+  const envSurchargeRate = parseFloat(document.getElementById('calc-env-surcharge')?.value) || 0;
+  const empowerMdRate = parseFloat(document.getElementById('calc-empower-md')?.value) || 0;
+  const administrativeCredit = parseFloat(document.getElementById('calc-admin-credit')?.value) || 0;
+  const mdFranchiseTaxRate = parseFloat(document.getElementById('calc-md-franchise-tax')?.value) || 0;
+  const universalServiceProgram = parseFloat(document.getElementById('calc-universal-service')?.value) || 0;
 
   if (!kwh) {
     document.getElementById('calc-result-amount').textContent    = '—';
@@ -4927,13 +4975,28 @@ function updateCalcResult() {
     return;
   }
 
-  const energyCharge = kwh * (dist + trans + supply);
-  const subtotal     = cust + energyCharge;
-  const total        = subtotal + taxesSurcharges;
+  const distributionCharge = kwh * dist;
+  const transmissionCharge = kwh * trans;
+  const supplyCharge = kwh * supply;
+  const environmentalSurcharge = kwh * envSurchargeRate;
+  const empowerMdCharge = kwh * empowerMdRate;
+  const mdFranchiseTax = kwh * mdFranchiseTaxRate;
+  const taxesSurcharges = environmentalSurcharge + empowerMdCharge + administrativeCredit + mdFranchiseTax + universalServiceProgram;
+  const total = cust + distributionCharge + transmissionCharge + supplyCharge + taxesSurcharges;
 
   document.getElementById('calc-result-amount').textContent = fmt(total);
-  document.getElementById('calc-result-breakdown').textContent =
-    `Customer: ${fmt(cust)} + Energy (${kwh} kWh × $${(dist+trans+supply).toFixed(4)}): ${fmt(energyCharge)} + Taxes & Surcharges: ${fmt(taxesSurcharges)}`;
+  document.getElementById('calc-result-breakdown').textContent = [
+    `Customer Charge: ${fmt(cust)}`,
+    `Distribution (${kwh} kWh × $${dist.toFixed(4)}): ${fmt(distributionCharge)}`,
+    `Transmission (${kwh} kWh × $${trans.toFixed(4)}): ${fmt(transmissionCharge)}`,
+    `Supply/Energy (${kwh} kWh × $${supply.toFixed(4)}): ${fmt(supplyCharge)}`,
+    `Environmental Surcharge (${kwh} kWh × $${envSurchargeRate.toFixed(6)}): ${fmt(environmentalSurcharge)}`,
+    `Empower MD Charge (${kwh} kWh × $${empowerMdRate.toFixed(6)}): ${fmt(empowerMdCharge)}`,
+    `Administrative Credit: ${fmt(administrativeCredit)}`,
+    `MD Franchise Tax (${kwh} kWh × $${mdFranchiseTaxRate.toFixed(6)}): ${fmt(mdFranchiseTax)}`,
+    `Universal Service Program: ${fmt(universalServiceProgram)}`,
+    `Taxes & Surcharges Total: ${fmt(taxesSurcharges)}`
+  ].join('\n');
   document.getElementById('calc-use-btn').disabled = false;
   _sCalcAmt = total;
 }
