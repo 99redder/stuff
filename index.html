@@ -850,30 +850,10 @@
       </div>
     </div>
     <div class="modal-body">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.65rem;margin-bottom:1rem">
+      <div style="display:grid;grid-template-columns:1fr;gap:.65rem;margin-bottom:1rem">
         <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem;font-weight:600">
-          Use (kWh) from Meter Information
+          Meter Information — Use (kWh)
           <input type="number" id="calc-kwh" class="form-input" step="1" min="0" placeholder="e.g. 722" oninput="updateCalcResult()">
-        </label>
-        <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem;font-weight:600">
-          Excess Gen (kWh)
-          <input type="number" id="calc-excess-gen" class="form-input" step="1" min="0" placeholder="e.g. 540" oninput="updateCalcResult()">
-        </label>
-        <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
-          Customer Charge ($)
-          <input type="number" id="calc-cust" class="form-input" step=".01" value="9.43" oninput="updateCalcResult()">
-        </label>
-        <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
-          Distribution Charge ($/kWh)
-          <input type="number" id="calc-dist" class="form-input" step=".000001" value="0.062598" oninput="updateCalcResult()">
-        </label>
-        <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
-          Std Offer Service / Transmission ($/kWh)
-          <input type="number" id="calc-trans" class="form-input" step=".000001" value="0.120590" oninput="updateCalcResult()">
-        </label>
-        <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
-          Procurement Cost Adjustment ($/kWh)
-          <input type="number" id="calc-procurement" class="form-input" step=".000001" value="0.0066884" oninput="updateCalcResult()">
         </label>
       </div>
       <div style="margin-bottom:1rem;padding:.85rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg)">
@@ -892,12 +872,38 @@
             <input type="number" id="calc-admin-credit" class="form-input" step=".01" value="-0.25" oninput="updateCalcResult()">
           </label>
           <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
+            Universal Service Program ($)
+            <input type="number" id="calc-universal-service" class="form-input" step=".01" value="0.32" oninput="updateCalcResult()">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
             MD Franchise Tax ($/kWh)
             <input type="number" id="calc-md-franchise-tax" class="form-input" step=".000001" value="0.000620" oninput="updateCalcResult()">
           </label>
+        </div>
+      </div>
+      <div style="margin-bottom:1rem;padding:.85rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg)">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:.65rem">Supply</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.65rem">
           <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
-            Universal Service Program ($)
-            <input type="number" id="calc-universal-service" class="form-input" step=".01" value="0.32" oninput="updateCalcResult()">
+            Std Offer Service / Transmission ($/kWh)
+            <input type="number" id="calc-trans" class="form-input" step=".000001" value="0.120590" oninput="updateCalcResult()">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
+            Procurement Cost Adjustment ($/kWh)
+            <input type="number" id="calc-procurement" class="form-input" step=".000001" value="0.0066884" oninput="updateCalcResult()">
+          </label>
+        </div>
+      </div>
+      <div style="margin-bottom:1rem;padding:.85rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg)">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:.65rem">Delivery</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.65rem">
+          <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
+            Customer Charge ($)
+            <input type="number" id="calc-cust" class="form-input" step=".01" value="9.43" oninput="updateCalcResult()">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
+            Distribution Charge ($/kWh)
+            <input type="number" id="calc-dist" class="form-input" step=".000001" value="0.062598" oninput="updateCalcResult()">
           </label>
         </div>
       </div>
@@ -4947,7 +4953,6 @@ function openSolarCalcModal() {
   document.getElementById('calc-md-franchise-tax').value = cr.mdFranchiseTaxRate ?? 0.000620;
   document.getElementById('calc-universal-service').value = cr.universalServiceProgramAmount ?? 0.32;
   document.getElementById('calc-kwh').value = '';
-  document.getElementById('calc-excess-gen').value = '';
   document.getElementById('calc-result-amount').textContent    = '—';
   document.getElementById('calc-result-breakdown').textContent = '';
   document.getElementById('calc-use-btn').disabled = true;
@@ -4962,8 +4967,6 @@ function closeSolarCalcModal() {
 
 function updateCalcResult() {
   const kwh    = parseFloat(document.getElementById('calc-kwh')?.value) || 0;
-  const excessGen = parseFloat(document.getElementById('calc-excess-gen')?.value) || 0;
-  const billedKwhWithSolar = Math.max(0, kwh - excessGen);
   const noSolarKwh = kwh;
   const cust   = parseFloat(document.getElementById('calc-cust')?.value) || 0;
   const dist   = parseFloat(document.getElementById('calc-dist')?.value) || 0;
@@ -4994,18 +4997,21 @@ function updateCalcResult() {
 
   document.getElementById('calc-result-amount').textContent = fmt(total);
   document.getElementById('calc-result-breakdown').textContent = [
-    `Bill image: Use ${kwh} kWh − Excess Gen ${excessGen} kWh = ${billedKwhWithSolar} kWh charged with solar`,
-    `No-solar estimate uses ${noSolarKwh} kWh`,
-    `Customer Charge: ${fmt(cust)}`,
-    `Distribution Charge (${noSolarKwh} kWh × $${dist.toFixed(6)}): ${fmt(distributionCharge)}`,
-    `Std Offer Service / Transmission (${noSolarKwh} kWh × $${trans.toFixed(6)}): ${fmt(transmissionCharge)}`,
-    `Procurement Cost Adjustment (${noSolarKwh} kWh × $${procurement.toFixed(7)}): ${fmt(procurementCostAdj)}`,
+    `No-solar estimate uses Meter Information Use: ${noSolarKwh} kWh`,
+    `TAXES & SURCHARGES`,
     `Environmental Surcharge (${noSolarKwh} kWh × $${envSurchargeRate.toFixed(6)}): ${fmt(environmentalSurcharge)}`,
     `Empower MD Charge (${noSolarKwh} kWh × $${empowerMdRate.toFixed(6)}): ${fmt(empowerMdCharge)}`,
     `Administrative Credit: ${fmt(administrativeCredit)}`,
-    `MD Franchise Tax (${noSolarKwh} kWh × $${mdFranchiseTaxRate.toFixed(6)}): ${fmt(mdFranchiseTax)}`,
     `Universal Service Program: ${fmt(universalServiceProgram)}`,
-    `Taxes & Surcharges Total: ${fmt(taxesSurcharges)}`
+    `MD Franchise Tax (${noSolarKwh} kWh × $${mdFranchiseTaxRate.toFixed(6)}): ${fmt(mdFranchiseTax)}`,
+    `Taxes & Surcharges Total: ${fmt(taxesSurcharges)}`,
+    `SUPPLY`,
+    `Std Offer Service / Transmission (${noSolarKwh} kWh × $${trans.toFixed(6)}): ${fmt(transmissionCharge)}`,
+    `Procurement Cost Adjustment (${noSolarKwh} kWh × $${procurement.toFixed(7)}): ${fmt(procurementCostAdj)}`,
+    `DELIVERY`,
+    `Customer Charge: ${fmt(cust)}`,
+    `Distribution Charge (${noSolarKwh} kWh × $${dist.toFixed(6)}): ${fmt(distributionCharge)}`,
+    `Service Period Total: ${fmt(total)}`
   ].join('\n');
   document.getElementById('calc-use-btn').disabled = false;
   _sCalcAmt = total;
