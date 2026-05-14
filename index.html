@@ -1173,12 +1173,11 @@ function calcMarylandTax(tp, agi) {
   return { county, countyRate, exemptCap, navyExempt, md529, mdAgi, mdStdDed, mdExemptAmt, mdTaxInc, stateTax, countyTax, totalTax, withheld, owed };
 }
 
-const FMG_API = 'https://florencemaegifts.com';
 const ESAI_API = 'https://eastern-shore-ai-contact.99redder.workers.dev';
 const TP_KEY = `rentals_tax_${CURRENT_YEAR}`;
 
-// Session-only (never persisted): admin passwords for FMG/ESAI fetch
-const TP_SESSION = { fmg_pw: '', esai_pw: '' };
+// Session-only (never persisted): admin credentials for FMG/ESAI fetch
+const TP_SESSION = { fmg_user: '', fmg_pw: '', esai_pw: '' };
 
 function tpLoadLocal() { try { return JSON.parse(localStorage.getItem(TP_KEY) || '{}'); } catch { return {}; } }
 
@@ -5263,8 +5262,13 @@ async function renderTaxPlanning() {
         <div class="tp-fetch-row" style="margin-bottom:.25rem">
           ${tpFld('tp-fmg','Net Income ($)',tp.fmg)}
           <div class="form-group">
+            <label class="tp-lbl">Admin Username</label>
+            <input type="text" id="tp-fmg-user" placeholder="admin" autocomplete="username"
+                   value="${escAttr(TP_SESSION.fmg_user)}" oninput="TP_SESSION.fmg_user=this.value" style="width:130px">
+          </div>
+          <div class="form-group">
             <label class="tp-lbl">Admin Password</label>
-            <input type="password" id="tp-fmg-pw" placeholder="••••••••" autocomplete="off"
+            <input type="password" id="tp-fmg-pw" placeholder="••••••••" autocomplete="current-password"
                    value="${escAttr(TP_SESSION.fmg_pw)}" oninput="TP_SESSION.fmg_pw=this.value" style="width:130px">
           </div>
           <div class="form-group" style="justify-content:flex-end">
@@ -6359,19 +6363,18 @@ function tpUpdateResults(tp) {
 }
 
 async function tpFetchFMG() {
+  const username = document.getElementById('tp-fmg-user')?.value.trim() || 'admin';
   const pw = document.getElementById('tp-fmg-pw')?.value;
   const msg = document.getElementById('tp-fmg-msg');
-  if (!pw) { msg.textContent = 'Enter admin password first.'; return; }
+  if (!username || !pw) { msg.textContent = 'Enter FMG admin username and password first.'; return; }
   msg.textContent = 'Fetching…';
   try {
-    const res = await fetch(`${FMG_API}/api/tax/transactions?year=${CURRENT_YEAR}&type=all&limit=5000`,
-      { headers: { 'X-Admin-Password': pw } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const incCents = (data.income || []).reduce((s, r) => s + Number(r.amount_cents || 0), 0);
-    const expCents = (data.expenses || []).reduce((s, r) => s + Number(r.amount_cents || 0), 0);
-    const dollars = (incCents - expCents) / 100;
+    const data = await callApi({ action: 'fetch_fmg_tax_summary', year: String(CURRENT_YEAR), username, password: pw });
+    const incCents = Number(data.incomeCents || 0);
+    const expCents = Number(data.expenseCents || 0);
+    const dollars = Number(data.netCents || 0) / 100;
     document.getElementById('tp-fmg').value = dollars.toFixed(2);
+    TP_SESSION.fmg_user = username;
     TP_SESSION.fmg_pw = pw;
     msg.textContent = `Fetched: ${fmt(incCents/100)} income − ${fmt(expCents/100)} expenses = ${fmt(dollars)} net`;
     tpChanged();

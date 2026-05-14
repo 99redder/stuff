@@ -76,6 +76,7 @@ async function handleDataApi(request, env) {
   // Non-property actions
   if (action === 'get_tax_planning') return handleGetTaxPlanning(env, body.year);
   if (action === 'save_tax_planning') return handleSaveTaxPlanning(env, body.year, body.data);
+  if (action === 'fetch_fmg_tax_summary') return handleFetchFmgTaxSummary(body);
   if (action === 'get_budget') return handleGetBudget(env);
   if (action === 'save_budget') return handleSaveBudget(env, body.data);
 
@@ -208,6 +209,47 @@ async function handleLogout(request, env) {
   return jsonResponse({ success: true }, 200, {
     'Set-Cookie': `${SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=None`,
   });
+}
+
+async function handleFetchFmgTaxSummary(body) {
+  const username = String(body.username || '').trim();
+  const password = String(body.password || '');
+  const year = String(body.year || '').trim();
+
+  if (!username || !password) return jsonResponse({ error: 'FMG username and password are required' }, 400);
+  if (!/^\d{4}$/.test(year)) return jsonResponse({ error: 'Invalid year' }, 400);
+
+  const loginRes = await fetch('https://florencemaegifts.com/api/admin/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+  });
+
+  if (!loginRes.ok) {
+    const err = await loginRes.json().catch(() => ({}));
+    return jsonResponse({ error: err.error || `FMG login failed (${loginRes.status})` }, loginRes.status === 429 ? 429 : 401);
+  }
+
+  const setCookie = loginRes.headers.get('Set-Cookie') || '';
+  const sessionCookie = setCookie.split(';')[0];
+  if (!sessionCookie) return jsonResponse({ error: 'FMG login did not return a session cookie' }, 502);
+
+  const txUrl = `https://florencemaegifts.com/api/tax/transactions?year=${encodeURIComponent(year)}&type=all&limit=5000`;
+  const txRes = await fetch(txUrl, { headers: { Cookie: sessionCookie } });
+  const data = await txRes.json().catch(() => ({}));
+
+  if (!txRes.ok) {
+    return jsonResponse({ error: data.error || `FMG tax fetch failed (${txRes.status})` }, txRes.status === 401 ? 401 : 502);
+  }
+
+  const incomeCents = Array.isArray(data.income)
+    ? data.income.reduce((s, r) => s + Number(r.amount_cents || 0), 0)
+    : 0;
+  const expenseCents = Array.isArray(data.expenses)
+    ? data.expenses.reduce((s, r) => s + Number(r.amount_cents || 0), 0)
+    : 0;
+
+  return jsonResponse({ ok: true, incomeCents, expenseCents, netCents: incomeCents - expenseCents });
 }
 
 async function isAuthenticated(request, env) {
