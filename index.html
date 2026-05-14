@@ -872,8 +872,8 @@
           <input type="number" id="calc-supply" class="form-input" step=".0001" value="0.0852" oninput="updateCalcResult()">
         </label>
         <label style="grid-column:span 2;display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
-          Taxes &amp; Fees (%)
-          <input type="number" id="calc-tax" class="form-input" step=".1" value="6.0" oninput="updateCalcResult()">
+          Taxes &amp; Surcharges ($)
+          <input type="number" id="calc-tax" class="form-input" step=".01" min="0" value="0.00" oninput="updateCalcResult()">
         </label>
       </div>
       <div style="padding:.85rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg)">
@@ -4676,7 +4676,7 @@ function _renderSolarHtml() {
               Supply ($/kWh)<input type="number" id="scfg-supply" class="form-input" step=".0001" value="${escAttr(String(cr.supplyRate ?? 0.0852))}">
             </label>
             <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.82rem">
-              Tax &amp; Fees (%)<input type="number" id="scfg-tax" class="form-input" step=".1" value="${escAttr(String(cr.taxPct ?? 6.0))}">
+              Taxes &amp; Surcharges ($)<input type="number" id="scfg-tax" class="form-input" step=".01" min="0" value="${escAttr(String(cr.taxesSurchargesAmount ?? 0))}">
             </label>
           </div>
           <div id="solar-cfg-error" class="error-msg hidden"></div>
@@ -4864,7 +4864,7 @@ async function saveSolarConfig() {
     distRate:       parseFloat(document.getElementById('scfg-dist')?.value),
     transRate:      parseFloat(document.getElementById('scfg-trans')?.value),
     supplyRate:     parseFloat(document.getElementById('scfg-supply')?.value),
-    taxPct:         parseFloat(document.getElementById('scfg-tax')?.value),
+    taxesSurchargesAmount: parseFloat(document.getElementById('scfg-tax')?.value),
   };
 
   const newCfg = {
@@ -4897,7 +4897,7 @@ function openSolarCalcModal() {
   document.getElementById('calc-dist').value   = cr.distRate  ?? 0.0678;
   document.getElementById('calc-trans').value  = cr.transRate ?? 0.0334;
   document.getElementById('calc-supply').value = cr.supplyRate ?? 0.0852;
-  document.getElementById('calc-tax').value    = cr.taxPct ?? 6.0;
+  document.getElementById('calc-tax').value    = cr.taxesSurchargesAmount ?? 0;
   document.getElementById('calc-kwh').value    = '';
   document.getElementById('calc-result-amount').textContent    = '—';
   document.getElementById('calc-result-breakdown').textContent = '';
@@ -4917,7 +4917,7 @@ function updateCalcResult() {
   const dist   = parseFloat(document.getElementById('calc-dist')?.value) || 0;
   const trans  = parseFloat(document.getElementById('calc-trans')?.value) || 0;
   const supply = parseFloat(document.getElementById('calc-supply')?.value) || 0;
-  const taxPct = parseFloat(document.getElementById('calc-tax')?.value) || 0;
+  const taxesSurcharges = parseFloat(document.getElementById('calc-tax')?.value) || 0;
 
   if (!kwh) {
     document.getElementById('calc-result-amount').textContent    = '—';
@@ -4929,12 +4929,11 @@ function updateCalcResult() {
 
   const energyCharge = kwh * (dist + trans + supply);
   const subtotal     = cust + energyCharge;
-  const tax          = subtotal * (taxPct / 100);
-  const total        = subtotal + tax;
+  const total        = subtotal + taxesSurcharges;
 
   document.getElementById('calc-result-amount').textContent = fmt(total);
   document.getElementById('calc-result-breakdown').textContent =
-    `Customer: ${fmt(cust)} + Energy (${kwh} kWh × $${(dist+trans+supply).toFixed(4)}): ${fmt(energyCharge)} + Taxes: ${fmt(tax)}`;
+    `Customer: ${fmt(cust)} + Energy (${kwh} kWh × $${(dist+trans+supply).toFixed(4)}): ${fmt(energyCharge)} + Taxes & Surcharges: ${fmt(taxesSurcharges)}`;
   document.getElementById('calc-use-btn').disabled = false;
   _sCalcAmt = total;
 }
