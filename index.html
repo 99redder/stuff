@@ -547,7 +547,10 @@
       border-radius: var(--radius-lg);
       box-shadow: 0 20px 60px rgba(0,0,0,0.2), 0 4px 12px rgba(0,0,0,0.1);
       width: min(480px, 92vw);
+      max-height: 92vh;
       overflow: hidden;
+      display: flex;
+      flex-direction: column;
       animation: slideUp 0.18s ease;
     }
 
@@ -576,7 +579,18 @@
     .modal-title { font-size: 1rem; font-weight: 700; }
     .modal-subtitle { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.1rem; }
 
-    .modal-body { padding: 1.25rem 1.5rem; }
+    .modal-body { padding: 1.25rem 1.5rem; overflow-y: auto; }
+
+    .solar-calc-modal { width: min(560px, 94vw); max-height: 88vh; }
+    .solar-calc-modal .modal-header { padding: 0.85rem 1rem 0.7rem; }
+    .solar-calc-modal .modal-body { padding: 0.8rem 1rem; }
+    .solar-calc-modal .modal-footer { padding: 0.75rem 1rem; }
+    .solar-calc-modal .calc-section { margin-bottom: 0.65rem; padding: 0.65rem 0.75rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+    .solar-calc-modal .calc-section-title { font-size: .7rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); letter-spacing: .05em; margin-bottom: .5rem; }
+    .solar-calc-modal .calc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+    .solar-calc-modal label { gap: .15rem !important; font-size: .8rem !important; }
+    .solar-calc-modal .form-input { padding: .5rem .6rem; }
+    @media (max-width: 560px) { .solar-calc-modal .calc-grid { grid-template-columns: 1fr; } }
 
     .modal-detail {
       background: var(--surface2);
@@ -841,7 +855,7 @@
 
 <!-- ── Billing Cycle Calculator Modal ── -->
 <div class="modal-overlay hidden" id="solar-calc-modal" onclick="handleModalOverlayClick(event,'solar-calc-modal')">
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="solar-calc-title" style="max-width:500px">
+  <div class="modal solar-calc-modal" role="dialog" aria-modal="true" aria-labelledby="solar-calc-title">
     <div class="modal-header">
       <div class="modal-icon" style="background:linear-gradient(135deg,#f59e0b,#d97706);font-size:1.2rem">🧮</div>
       <div>
@@ -850,15 +864,17 @@
       </div>
     </div>
     <div class="modal-body">
-      <div style="display:grid;grid-template-columns:1fr;gap:.65rem;margin-bottom:1rem">
+      <div class="calc-section">
+        <div class="calc-grid" style="grid-template-columns:1fr">
         <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem;font-weight:600">
           Meter Information — Use (kWh)
           <input type="number" id="calc-kwh" class="form-input" step="1" min="0" placeholder="e.g. 722" oninput="updateCalcResult()">
         </label>
+        </div>
       </div>
-      <div style="margin-bottom:1rem;padding:.85rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg)">
-        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:.65rem">Taxes &amp; Surcharges</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.65rem">
+      <div class="calc-section">
+        <div class="calc-section-title">Taxes &amp; Surcharges</div>
+        <div class="calc-grid">
           <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
             Environmental Surcharge ($/kWh)
             <input type="number" id="calc-env-surcharge" class="form-input" step=".000001" value="0.000151" oninput="updateCalcResult()">
@@ -881,9 +897,9 @@
           </label>
         </div>
       </div>
-      <div style="margin-bottom:1rem;padding:.85rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg)">
-        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:.65rem">Supply</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.65rem">
+      <div class="calc-section">
+        <div class="calc-section-title">Supply</div>
+        <div class="calc-grid">
           <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
             Std Offer Service / Transmission ($/kWh)
             <input type="number" id="calc-trans" class="form-input" step=".000001" value="0.120590" oninput="updateCalcResult()">
@@ -894,9 +910,9 @@
           </label>
         </div>
       </div>
-      <div style="margin-bottom:1rem;padding:.85rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg)">
-        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:.65rem">Delivery</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.65rem">
+      <div class="calc-section">
+        <div class="calc-section-title">Delivery</div>
+        <div class="calc-grid">
           <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
             Customer Charge ($)
             <input type="number" id="calc-cust" class="form-input" step=".01" value="9.43" oninput="updateCalcResult()">
@@ -907,8 +923,8 @@
           </label>
         </div>
       </div>
-      <div style="padding:.85rem 1rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg)">
-        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.05em;margin-bottom:.25rem">Estimated Bill Without Solar</div>
+      <div class="calc-section" style="margin-bottom:0">
+        <div class="calc-section-title" style="margin-bottom:.25rem">Estimated Bill Without Solar</div>
         <div id="calc-result-amount" style="font-size:1.8rem;font-weight:700;color:var(--success)">—</div>
         <div id="calc-result-breakdown" style="font-size:.78rem;color:var(--text-muted);margin-top:.2rem;white-space:pre-line"></div>
       </div>
@@ -1824,6 +1840,8 @@ function handleModalOverlayClick(e, modalId) {
     if (modalId === 'notice-modal') closeNoticeModal();
     if (modalId === 'ded-delete-modal') closeDedDeleteModal();
     if (modalId === 'edit-modal') closeEditModal();
+    if (modalId === 'budget-worksheet-modal') closeBudgetWorksheetModal();
+    if (modalId === 'solar-calc-modal') closeSolarCalcModal();
   }
 }
 
