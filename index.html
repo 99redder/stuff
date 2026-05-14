@@ -3872,8 +3872,9 @@ function tpCalc(tp, rentalRows) {
                        tpN(tp.rh_int) + tpN(tp.ibkr_int);
   const dividends    = tpN(tp.rh_div);
   const cryptoInc    = tpN(tp.crypto_income);
+  const propertySaleTaxableGain = tpN(tp.property_sale_taxable_gain);
   const stGains      = tpN(tp.crypto_st) + tpN(tp.rh_st) + tpN(tp.ibkr_st);
-  const ltGains      = tpN(tp.crypto_lt) + tpN(tp.rh_lt) + tpN(tp.ibkr_lt);
+  const ltGains      = tpN(tp.crypto_lt) + tpN(tp.rh_lt) + tpN(tp.ibkr_lt) + propertySaleTaxableGain;
 
   // Self-employment tax (only applies when net SE income is positive)
   const netSe     = Math.max(0, businessInc) * 0.9235;
@@ -3922,7 +3923,7 @@ function tpCalc(tp, rentalRows) {
 
   return {
     wages, businessInc, rentalNet, rentalDepr, rentalTaxInc,
-    interest, dividends, cryptoInc, stGains, ltGains,
+    interest, dividends, cryptoInc, stGains, ltGains, propertySaleTaxableGain,
     seTax, halfSeTax, grossIncome, iraAdj, adjustments, agi,
     stdDed, qbiDed, totDed, taxInc, ordinaryTaxable, ltcgTaxable,
     ordTax, ltcgTax, niit, grossFedTax, ctc, netFedTax,
@@ -5137,9 +5138,13 @@ function useCalcResult() {
 }
 
 async function renderTaxPlanning() {
-  // Load all rental transaction + depreciation data
+  // Load all rental transaction + depreciation data, plus investment sale data for the property-sale capital gains worksheet.
   const rentalPropsOnly = PROPERTIES.filter(p => !PRIMARY_PROPERTIES.has(p));
-  await Promise.all(rentalPropsOnly.flatMap(p => [ensureLoaded(p,'transactions'), ensureLoaded(p,'depreciation')]));
+  await Promise.all(PROPERTIES.flatMap(p => {
+    const keys = ['transactions', 'summaries', 'depreciation', 'investment'];
+    if (PRIMARY_PROPERTIES.has(p)) keys.push('maintenance');
+    return keys.map(k => ensureLoaded(p, k));
+  }));
 
   const rentalRows = rentalPropsOnly.map(prop => {
     const txns = (state.data[prop].transactions || []).filter(t => t.date.startsWith(String(CURRENT_YEAR)));
@@ -5163,6 +5168,25 @@ async function renderTaxPlanning() {
   // Seed 529 deduction default
   if (tp.md_529 === undefined) tp.md_529 = 4800;
   if (tp.md_529_locked === undefined) tp.md_529_locked = true;
+
+  const propertySaleRows = Object.fromEntries(PROPERTIES.map(p => [p, calcPropertySaleTaxDetails(p)]));
+  const selectedSaleProp = tp.property_sale_property || '';
+  const selectedSale = selectedSaleProp ? propertySaleRows[selectedSaleProp] : null;
+  const saleOptions = `<option value="">— Select property —</option>` + PROPERTIES.map(p => `<option value="${p}" ${selectedSaleProp === p ? 'selected' : ''}>${p}</option>`).join('');
+  const propertySaleDetails = selectedSaleProp && tp.property_sale_imported
+    ? `<div style="margin-top:.75rem;padding:.75rem;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);font-size:.85rem">
+        <input type="hidden" id="tp-property-sale-taxable-gain" value="${escAttr(String(tp.property_sale_taxable_gain || 0))}">
+        <div style="display:flex;justify-content:space-between;gap:1rem;margin-bottom:.35rem"><span>Sale source</span><strong>${escHtml(tp.property_sale_source || 'Hypothetical property tab estimate')}</strong></div>
+        <div style="display:flex;justify-content:space-between;gap:1rem"><span>Sale price</span><strong>${fmt(tp.property_sale_price || 0)}</strong></div>
+        <div style="display:flex;justify-content:space-between;gap:1rem"><span>Closing costs</span><span>${fmt(tp.property_sale_closing_costs || 0)}</span></div>
+        <div style="display:flex;justify-content:space-between;gap:1rem"><span>Total basis / capital invested</span><span>${fmt(tp.property_sale_basis || 0)}</span></div>
+        <div style="display:flex;justify-content:space-between;gap:1rem"><span>Capital gain before exclusion</span><span>${fmt(tp.property_sale_capital_gain || 0)}</span></div>
+        ${(tp.property_sale_primary_exclusion || 0) > 0 ? `<div style="display:flex;justify-content:space-between;gap:1rem"><span>§121 exclusion</span><span>(${fmt(tp.property_sale_primary_exclusion || 0)})</span></div>` : ''}
+        <div style="display:flex;justify-content:space-between;gap:1rem;border-top:1px solid var(--border);padding-top:.4rem;margin-top:.4rem"><span>Taxable long-term capital gain added to federal worksheet</span><strong style="color:var(--success)">${fmt(tp.property_sale_taxable_gain || 0)}</strong></div>
+        <div style="display:flex;justify-content:space-between;gap:1rem"><span>State/local taxable gain included in Maryland AGI</span><strong style="color:var(--success)">${fmt(tp.property_sale_taxable_gain || 0)}</strong></div>
+        <div class="tp-note" style="margin-top:.5rem">Imported from ${escHtml(selectedSaleProp)} ${selectedSale?.source === 'Actual sale closeout' ? 'final sale closeout' : 'hypothetical sale estimate'} in the property tab.</div>
+      </div>`
+    : `<div class="tp-note" style="margin-top:.5rem">Select a property to import its property-tab sale estimate/closeout. This adds its taxable long-term gain to federal capital gains and Maryland AGI.</div>`;
 
   const rentalTableRows = rentalRows.map(p => `
     <tr>
@@ -5330,6 +5354,16 @@ async function renderTaxPlanning() {
           ${tpFld('tp-rh-lt','RH Stock LT Gains',tp.rh_lt)}
           ${tpFld('tp-ibkr-lt','IBKR Stock LT Gains',tp.ibkr_lt)}
         </div>
+
+        <div class="tp-group" style="margin-top:1rem">Property Sale — federal + state capital gains</div>
+        <div style="display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap">
+          <div class="form-group" style="min-width:180px;margin-bottom:0">
+            <label class="tp-lbl">Property</label>
+            <select id="tp-property-sale-property" onchange="tpApplyPropertySale(this.value)">${saleOptions}</select>
+          </div>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="tpClearPropertySale()" ${selectedSaleProp ? '' : 'disabled'}>Clear</button>
+        </div>
+        ${propertySaleDetails}
       </div>
     </div>
 
@@ -6124,6 +6158,9 @@ function tpReadForm() {
   tp.crypto_income = g('tp-crypto-income');
   tp.crypto_st = g('tp-crypto-st'); tp.rh_st = g('tp-rh-st'); tp.ibkr_st = g('tp-ibkr-st');
   tp.crypto_lt = g('tp-crypto-lt'); tp.rh_lt = g('tp-rh-lt'); tp.ibkr_lt = g('tp-ibkr-lt');
+  const salePropEl = document.getElementById('tp-property-sale-property');
+  if (salePropEl) tp.property_sale_property = salePropEl.value || '';
+  if (tp.property_sale_imported) tp.property_sale_taxable_gain = g('tp-property-sale-taxable-gain');
   if (!tp.ira_locked) tp.ira = g('tp-ira');
   tp.std_ded = g('tp-std-ded') || TP_STD_DEDUCTION;
   tp.rental_depr = g('tp-rental-depr');
@@ -6138,6 +6175,105 @@ function tpChanged() {
   const tp = tpReadForm();
   tpSave(tp);
   tpUpdateResults(tp);
+}
+
+function calcPropertySaleTaxDetails(prop) {
+  if (!PROPERTIES.includes(prop)) return null;
+  const inv = state.data[prop]?.investment || {};
+  const saleCloseout = inv.saleCloseout || null;
+  const isSold = !!saleCloseout?.closedAt;
+  const dc = state.data[prop]?.depreciation;
+  const summs = state.data[prop]?.summaries || {};
+  const txns = state.data[prop]?.transactions || [];
+  const isPrimaryResidence = PRIMARY_PROPERTIES.has(prop);
+  const salePrice = isSold ? saleCloseout.salePrice : (inv.zillowEstimate || 0);
+  if (!salePrice) return null;
+
+  const purchasePrice = inv.purchasePrice || 0;
+  const purchaseClosing = inv.purchaseClosingCosts || 0;
+  const saleClosingPct = (typeof inv.saleClosingCostPct === 'number') ? inv.saleClosingCostPct : 6;
+
+  let cumulativeImprovements = 0;
+  for (const [yr, d] of Object.entries(summs)) {
+    if (yr !== String(CURRENT_YEAR)) cumulativeImprovements += (d.improvements || 0);
+  }
+  for (const t of txns) {
+    if (t.date?.startsWith(String(CURRENT_YEAR)) && t.category === 'improvements') cumulativeImprovements += t.amount || 0;
+  }
+  if (isPrimaryResidence) {
+    for (const e of (state.data[prop]?.maintenance || [])) {
+      if (e.capitalImprovement) cumulativeImprovements += (e.cost || 0);
+    }
+  }
+
+  const basis = purchasePrice + purchaseClosing + cumulativeImprovements;
+  // Match the property tab's hypothetical sale math exactly: unsold properties use the saved sale closing %;
+  // finalized sales use the actual closeout amount/breakdown.
+  const saleClosingCosts = isSold ? (saleCloseout.saleClosingCosts || 0) : salePrice * (saleClosingPct / 100);
+  const grossAfterClosing = salePrice - saleClosingCosts;
+  const capitalGain = Math.max(0, grossAfterClosing - basis);
+  const primaryExclusion = isPrimaryResidence ? Math.min(capitalGain, PRIMARY_RESIDENCE_GAIN_EXCLUSION) : 0;
+  const taxableGain = isSold
+    ? (saleCloseout.taxableCapitalGain ?? Math.max(0, capitalGain - primaryExclusion))
+    : Math.max(0, capitalGain - primaryExclusion);
+
+  return {
+    prop,
+    source: isSold ? 'Actual sale closeout' : 'Hypothetical property tab estimate',
+    salePrice,
+    saleClosingCosts,
+    basis,
+    capitalGain,
+    primaryExclusion,
+    taxableGain
+  };
+}
+
+function tpApplyPropertySale(prop) {
+  const tp = tpReadForm();
+  if (!prop) {
+    tpClearPropertySale();
+    return;
+  }
+  const details = calcPropertySaleTaxDetails(prop);
+  if (!details) {
+    alert('No sale estimate/closeout is available for that property yet. Add a Zillow estimate or finalize a sale in the property tab first.');
+    tp.property_sale_property = '';
+    tp.property_sale_imported = false;
+    tp.property_sale_taxable_gain = 0;
+    tpSave(tp);
+    renderTaxPlanning();
+    return;
+  }
+
+  Object.assign(tp, {
+    property_sale_imported: true,
+    property_sale_property: prop,
+    property_sale_source: details.source,
+    property_sale_price: details.salePrice,
+    property_sale_closing_costs: details.saleClosingCosts,
+    property_sale_basis: details.basis,
+    property_sale_capital_gain: details.capitalGain,
+    property_sale_primary_exclusion: details.primaryExclusion,
+    property_sale_taxable_gain: details.taxableGain
+  });
+  tpSave(tp);
+  renderTaxPlanning();
+}
+
+function tpClearPropertySale() {
+  const tp = tpReadForm();
+  delete tp.property_sale_imported;
+  delete tp.property_sale_property;
+  delete tp.property_sale_source;
+  delete tp.property_sale_price;
+  delete tp.property_sale_closing_costs;
+  delete tp.property_sale_basis;
+  delete tp.property_sale_capital_gain;
+  delete tp.property_sale_primary_exclusion;
+  delete tp.property_sale_taxable_gain;
+  tpSave(tp);
+  renderTaxPlanning();
 }
 
 function tpUpdateResults(tp) {
@@ -6170,7 +6306,8 @@ function tpUpdateResults(tp) {
       ${r.rentalDepr > 0 ? row('Less Depreciation', r.rentalDepr, 'in', true) : ''}
       ${row('Interest & Dividends', r.interest + r.dividends + r.cryptoInc, 'in')}
       ${r.stGains !== 0 ? row('ST Capital Gains', r.stGains, 'in') : ''}
-      ${r.ltGains !== 0 ? row('LT Capital Gains', r.ltGains, 'in') : ''}
+      ${r.propertySaleTaxableGain > 0 ? row(`Property Sale LT Gain (${tp.property_sale_property || 'selected property'})`, r.propertySaleTaxableGain, 'in') : ''}
+      ${r.ltGains !== 0 ? row('Total LT Capital Gains', r.ltGains, 'in') : ''}
       ${row('Gross Income', r.grossIncome, 'sub')}
 
       ${sec('Adjustments')}
@@ -6203,6 +6340,7 @@ function tpUpdateResults(tp) {
       </div>
 
       ${sec('Maryland State & Local Tax')}
+      ${r.propertySaleTaxableGain > 0 ? row(`Property Sale Gain Included in State AGI (${tp.property_sale_property || 'selected property'})`, r.propertySaleTaxableGain, 'in') : ''}
       ${md.navyExempt > 0 ? row(`Less Navy Retirement (exempt, cap $${md.exemptCap.toLocaleString()})`, md.navyExempt, 'in', true) : ''}
       ${md.md529 > 0 ? row('Less 529 Contributions', md.md529, 'in', true) : ''}
       ${row('Maryland AGI', md.mdAgi, 'in')}
@@ -6452,6 +6590,8 @@ window.tpAddPayment            = tpAddPayment;
 window.tpRemovePayment         = tpRemovePayment;
 window.tpPayDate               = tpPayDate;
 window.tpPayAmt                = tpPayAmt;
+window.tpApplyPropertySale     = tpApplyPropertySale;
+window.tpClearPropertySale     = tpClearPropertySale;
 window.toggleMaintImprovement  = toggleMaintImprovement;
 window.saveInvestmentConfig    = saveInvestmentConfig;
 window.closeOutInvestmentSale  = closeOutInvestmentSale;
