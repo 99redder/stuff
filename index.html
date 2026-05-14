@@ -4414,6 +4414,7 @@ async function _saveBudget() {
 let _sEdit     = null;  // { id:'new'|uuid, date, description, code, amount } — entry edit state
 let _sYearEdit = null;  // 'new' | year string | null — summary edit state
 let _sCalcAmt  = null;  // computed ELECNOSOLAR amount from calculator
+let _sEntrySort = localStorage.getItem('solar_entry_sort') || 'date_desc'; // date_desc = recent first, date_asc = beginning first
 
 async function renderSolar() {
   if (state.solar.config === null) {
@@ -4566,7 +4567,14 @@ function _renderSolarHtml() {
   for (const sc of SOLAR_CODES) cyTotals[sc.code] = 0;
   for (const e of entries) if (cyTotals.hasOwnProperty(e.code)) cyTotals[e.code] += e.amount;
 
-  const entryRows = entries.map(e => {
+  const sortedEntries = [...entries].sort((a, b) => {
+    const da = String(a.date || '');
+    const db = String(b.date || '');
+    if (da === db) return String(b.id || '').localeCompare(String(a.id || ''));
+    return _sEntrySort === 'date_asc' ? da.localeCompare(db) : db.localeCompare(da);
+  });
+
+  const entryRows = sortedEntries.map(e => {
     if (_sEdit && _sEdit.id === e.id) return _solarEntryEditRow(e);
     const sc = SOLAR_CODE_MAP[e.code];
     const badgeColor = sc?.type === 'cost' ? '#ef4444' : sc?.type === 'income' ? '#22c55e' : '#3b82f6';
@@ -4587,9 +4595,18 @@ function _renderSolarHtml() {
 
   const cySection = `
     <div class="card" style="margin-bottom:1rem">
-      <div class="card-header">
+      <div class="card-header" style="gap:.75rem;flex-wrap:wrap">
         <div class="card-title">${curYear} Ledger</div>
-        <button class="btn btn-primary btn-sm" onclick="solarStartAddEntry()">+ Add Entry</button>
+        <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-left:auto">
+          <label style="display:flex;align-items:center;gap:.35rem;font-size:.8rem;color:var(--text-muted);font-weight:600">
+            Sort
+            <select class="form-input" style="width:auto;min-width:170px;font-size:.82rem;padding:.4rem .55rem" onchange="solarSetEntrySort(this.value)">
+              <option value="date_desc"${_sEntrySort === 'date_desc' ? ' selected' : ''}>Recent first</option>
+              <option value="date_asc"${_sEntrySort === 'date_asc' ? ' selected' : ''}>Beginning of year first</option>
+            </select>
+          </label>
+          <button class="btn btn-primary btn-sm" onclick="solarStartAddEntry()">+ Add Entry</button>
+        </div>
       </div>
       ${!showEntryTable ? `<div class="card-body"><p style="color:var(--text-muted);font-size:.88rem;margin:0">No entries yet for ${curYear}. Click + Add Entry or use the 🧮 Billing Cycle Calculator above.</p></div>` : ''}
       ${showEntryTable ? `
@@ -4781,6 +4798,12 @@ function _renderSolarHtml() {
 }
 
 // ── Solar: entry helpers ──────────────────────────────────────────────────────
+
+function solarSetEntrySort(sort) {
+  _sEntrySort = sort === 'date_asc' ? 'date_asc' : 'date_desc';
+  localStorage.setItem('solar_entry_sort', _sEntrySort);
+  _renderSolarHtml();
+}
 
 function solarStartAddEntry() {
   _sEdit = { id: 'new', date: new Date().toISOString().slice(0, 10), code: 'ELECPAID', description: '', amount: '' };
@@ -6372,6 +6395,7 @@ window.syncSaleClosingCosts    = syncSaleClosingCosts;
 window.toggleSaleClosingCostLock = toggleSaleClosingCostLock;
 window.refreshZillowEstimate   = refreshZillowEstimate;
 window.toggleInvestmentConfig  = toggleInvestmentConfig;
+window.solarSetEntrySort       = solarSetEntrySort;
 window.solarStartAddEntry      = solarStartAddEntry;
 window.solarEditEntry          = solarEditEntry;
 window.solarCancelEntry        = solarCancelEntry;
