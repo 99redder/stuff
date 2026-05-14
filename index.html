@@ -884,8 +884,8 @@
             <input type="number" id="calc-empower-md" class="form-input" step=".000001" value="0.020055" oninput="updateCalcResult()">
           </label>
           <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
-            Administrative Credit ($)
-            <input type="number" id="calc-admin-credit" class="form-input" step=".01" value="-0.25" oninput="updateCalcResult()">
+            Administrative Credit ($/kWh)
+            <input type="number" id="calc-admin-credit" class="form-input" step=".000001" value="-0.001393" oninput="updateCalcResult()">
           </label>
           <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
             Universal Service Program ($)
@@ -4751,7 +4751,7 @@ function _renderSolarHtml() {
               Empower MD Charge ($/kWh)<input type="number" id="scfg-empower-md" class="form-input" step=".000001" value="${escAttr(String(cr.empowerMdChargeRate ?? 0.020055))}">
             </label>
             <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.82rem">
-              Administrative Credit ($)<input type="number" id="scfg-admin-credit" class="form-input" step=".01" value="${escAttr(String(cr.administrativeCreditAmount ?? cr.taxesSurchargesAmount ?? -0.25))}">
+              Administrative Credit ($/kWh)<input type="number" id="scfg-admin-credit" class="form-input" step=".000001" value="${escAttr(String(cr.administrativeCreditRate ?? cr.administrativeCreditAmount ?? -0.001393))}">
             </label>
             <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.82rem">
               MD Franchise Tax ($/kWh)<input type="number" id="scfg-md-franchise-tax" class="form-input" step=".000001" value="${escAttr(String(cr.mdFranchiseTaxRate ?? 0.000620))}">
@@ -4953,7 +4953,7 @@ async function saveSolarConfig() {
     procurementCostAdjRate: parseFloat(document.getElementById('scfg-procurement')?.value),
     environmentalSurchargeRate: parseFloat(document.getElementById('scfg-env-surcharge')?.value),
     empowerMdChargeRate: parseFloat(document.getElementById('scfg-empower-md')?.value),
-    administrativeCreditAmount: parseFloat(document.getElementById('scfg-admin-credit')?.value),
+    administrativeCreditRate: parseFloat(document.getElementById('scfg-admin-credit')?.value),
     mdFranchiseTaxRate: parseFloat(document.getElementById('scfg-md-franchise-tax')?.value),
     universalServiceProgramAmount: parseFloat(document.getElementById('scfg-universal-service')?.value),
   };
@@ -4990,7 +4990,7 @@ function openSolarCalcModal() {
   document.getElementById('calc-procurement').value = cr.procurementCostAdjRate ?? cr.supplyRate ?? 0.0066884;
   document.getElementById('calc-env-surcharge').value = cr.environmentalSurchargeRate ?? 0.000151;
   document.getElementById('calc-empower-md').value = cr.empowerMdChargeRate ?? 0.020055;
-  document.getElementById('calc-admin-credit').value = cr.administrativeCreditAmount ?? cr.taxesSurchargesAmount ?? -0.25;
+  document.getElementById('calc-admin-credit').value = cr.administrativeCreditRate ?? cr.administrativeCreditAmount ?? -0.001393;
   document.getElementById('calc-md-franchise-tax').value = cr.mdFranchiseTaxRate ?? 0.000620;
   document.getElementById('calc-universal-service').value = cr.universalServiceProgramAmount ?? 0.32;
   document.getElementById('calc-kwh').value = '';
@@ -5015,7 +5015,7 @@ function updateCalcResult() {
   const procurement = parseFloat(document.getElementById('calc-procurement')?.value) || 0;
   const envSurchargeRate = parseFloat(document.getElementById('calc-env-surcharge')?.value) || 0;
   const empowerMdRate = parseFloat(document.getElementById('calc-empower-md')?.value) || 0;
-  const administrativeCredit = parseFloat(document.getElementById('calc-admin-credit')?.value) || 0;
+  const administrativeCreditRate = parseFloat(document.getElementById('calc-admin-credit')?.value) || 0;
   const mdFranchiseTaxRate = parseFloat(document.getElementById('calc-md-franchise-tax')?.value) || 0;
   const universalServiceProgram = parseFloat(document.getElementById('calc-universal-service')?.value) || 0;
 
@@ -5033,6 +5033,7 @@ function updateCalcResult() {
   const environmentalSurcharge = noSolarKwh * envSurchargeRate;
   const empowerMdCharge = noSolarKwh * empowerMdRate;
   const mdFranchiseTax = noSolarKwh * mdFranchiseTaxRate;
+  const administrativeCredit = noSolarKwh * administrativeCreditRate;
   const taxesSurcharges = environmentalSurcharge + empowerMdCharge + administrativeCredit + mdFranchiseTax + universalServiceProgram;
   const total = cust + distributionCharge + transmissionCharge + procurementCostAdj + taxesSurcharges;
 
@@ -5042,7 +5043,7 @@ function updateCalcResult() {
     `TAXES & SURCHARGES`,
     `Environmental Surcharge (${noSolarKwh} kWh × $${envSurchargeRate.toFixed(6)}): ${fmt(environmentalSurcharge)}`,
     `Empower MD Charge (${noSolarKwh} kWh × $${empowerMdRate.toFixed(6)}): ${fmt(empowerMdCharge)}`,
-    `Administrative Credit: ${fmt(administrativeCredit)}`,
+    `Administrative Credit (${noSolarKwh} kWh × $${administrativeCreditRate.toFixed(6)}): ${fmt(administrativeCredit)}`,
     `Universal Service Program: ${fmt(universalServiceProgram)}`,
     `MD Franchise Tax (${noSolarKwh} kWh × $${mdFranchiseTaxRate.toFixed(6)}): ${fmt(mdFranchiseTax)}`,
     `Taxes & Surcharges Total: ${fmt(taxesSurcharges)}`,
