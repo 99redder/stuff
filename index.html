@@ -590,7 +590,15 @@
     .solar-calc-modal .calc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
     .solar-calc-modal label { gap: .15rem !important; font-size: .8rem !important; }
     .solar-calc-modal .form-input { padding: .5rem .6rem; }
-    @media (max-width: 560px) { .solar-calc-modal .calc-grid { grid-template-columns: 1fr; } }
+    .solar-calc-modal .calc-result-total { font-size:1.8rem; font-weight:700; color:var(--success); margin-bottom:.5rem; }
+    .solar-calc-modal .calc-breakdown { display:flex; flex-direction:column; gap:.45rem; font-size:.78rem; color:var(--text); }
+    .solar-calc-modal .calc-breakdown-section { border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; background:var(--surface2); }
+    .solar-calc-modal .calc-breakdown-heading { display:flex; justify-content:space-between; gap:.5rem; padding:.38rem .5rem; font-weight:700; background:var(--hover); }
+    .solar-calc-modal .calc-breakdown-row { display:grid; grid-template-columns:1.15fr 1.35fr auto; gap:.45rem; align-items:center; padding:.32rem .5rem; border-top:1px solid var(--border); }
+    .solar-calc-modal .calc-breakdown-row span:nth-child(2) { color:var(--text-muted); font-variant-numeric:tabular-nums; }
+    .solar-calc-modal .calc-breakdown-row span:last-child { font-weight:700; text-align:right; font-variant-numeric:tabular-nums; }
+    .solar-calc-modal .calc-final-math { padding:.45rem .5rem; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface2); font-weight:700; line-height:1.5; }
+    @media (max-width: 560px) { .solar-calc-modal .calc-grid { grid-template-columns: 1fr; } .solar-calc-modal .calc-breakdown-row { grid-template-columns:1fr; gap:.15rem; } .solar-calc-modal .calc-breakdown-row span:last-child { text-align:left; } }
 
     .modal-detail {
       background: var(--surface2);
@@ -925,8 +933,8 @@
       </div>
       <div class="calc-section" style="margin-bottom:0">
         <div class="calc-section-title" style="margin-bottom:.25rem">Estimated Bill Without Solar</div>
-        <div id="calc-result-amount" style="font-size:1.8rem;font-weight:700;color:var(--success)">—</div>
-        <div id="calc-result-breakdown" style="font-size:.78rem;color:var(--text-muted);margin-top:.2rem;white-space:pre-line"></div>
+        <div id="calc-result-amount" class="calc-result-total">—</div>
+        <div id="calc-result-breakdown" class="calc-breakdown"></div>
       </div>
     </div>
     <div class="modal-footer">
@@ -5037,24 +5045,43 @@ function updateCalcResult() {
   const taxesSurcharges = environmentalSurcharge + empowerMdCharge + administrativeCredit + mdFranchiseTax + universalServiceProgram;
   const total = cust + distributionCharge + transmissionCharge + procurementCostAdj + taxesSurcharges;
 
-  document.getElementById('calc-result-amount').textContent = fmt(total);
-  document.getElementById('calc-result-breakdown').textContent = [
-    `No-solar estimate uses Meter Information Use: ${noSolarKwh} kWh`,
-    `TAXES & SURCHARGES`,
-    `Environmental Surcharge (${noSolarKwh} kWh × $${envSurchargeRate.toFixed(6)}): ${fmt(environmentalSurcharge)}`,
-    `Empower MD Charge (${noSolarKwh} kWh × $${empowerMdRate.toFixed(6)}): ${fmt(empowerMdCharge)}`,
-    `Administrative Credit (${noSolarKwh} kWh × $${administrativeCreditRate.toFixed(6)}): ${fmt(administrativeCredit)}`,
-    `Universal Service Program: ${fmt(universalServiceProgram)}`,
-    `MD Franchise Tax (${noSolarKwh} kWh × $${mdFranchiseTaxRate.toFixed(6)}): ${fmt(mdFranchiseTax)}`,
-    `Taxes & Surcharges Total: ${fmt(taxesSurcharges)}`,
-    `SUPPLY`,
-    `Std Offer Service / Transmission (${noSolarKwh} kWh × $${trans.toFixed(6)}): ${fmt(transmissionCharge)}`,
-    `Procurement Cost Adjustment (${noSolarKwh} kWh × $${procurement.toFixed(7)}): ${fmt(procurementCostAdj)}`,
-    `DELIVERY`,
-    `Customer Charge: ${fmt(cust)}`,
-    `Distribution Charge (${noSolarKwh} kWh × $${dist.toFixed(6)}): ${fmt(distributionCharge)}`,
-    `Service Period Total: ${fmt(total)}`
-  ].join('\n');
+  const supplyTotal = transmissionCharge + procurementCostAdj;
+  const deliveryTotal = cust + distributionCharge;
+  const money = (v) => fmt(Math.round(v * 100) / 100);
+  const rateMath = (rate, amount, decimals = 6) => `${noSolarKwh} kWh × $${rate.toFixed(decimals)} = ${money(amount)}`;
+  const fixedMath = (amount) => `Fixed amount = ${money(amount)}`;
+  const row = (label, math, amount) => `
+    <div class="calc-breakdown-row">
+      <span>${escHtml(label)}</span><span>${escHtml(math)}</span><span>${escHtml(money(amount))}</span>
+    </div>`;
+  const section = (title, subtotal, rows) => `
+    <div class="calc-breakdown-section">
+      <div class="calc-breakdown-heading"><span>${escHtml(title)}</span><span>${escHtml(money(subtotal))}</span></div>
+      ${rows.join('')}
+    </div>`;
+
+  document.getElementById('calc-result-amount').textContent = money(total);
+  document.getElementById('calc-result-breakdown').innerHTML = `
+    <div style="color:var(--text-muted);line-height:1.45">No-solar estimate uses <strong>${escHtml(String(noSolarKwh))} kWh</strong> from Meter Information.</div>
+    ${section('Taxes & Surcharges', taxesSurcharges, [
+      row('Environmental Surcharge', rateMath(envSurchargeRate, environmentalSurcharge), environmentalSurcharge),
+      row('Empower MD Charge', rateMath(empowerMdRate, empowerMdCharge), empowerMdCharge),
+      row('Administrative Credit', rateMath(administrativeCreditRate, administrativeCredit), administrativeCredit),
+      row('Universal Service Program', fixedMath(universalServiceProgram), universalServiceProgram),
+      row('MD Franchise Tax', rateMath(mdFranchiseTaxRate, mdFranchiseTax), mdFranchiseTax)
+    ])}
+    ${section('Supply', supplyTotal, [
+      row('Std Offer Service / Transmission', rateMath(trans, transmissionCharge), transmissionCharge),
+      row('Procurement Cost Adjustment', rateMath(procurement, procurementCostAdj, 7), procurementCostAdj)
+    ])}
+    ${section('Delivery', deliveryTotal, [
+      row('Customer Charge', fixedMath(cust), cust),
+      row('Distribution Charge', rateMath(dist, distributionCharge), distributionCharge)
+    ])}
+    <div class="calc-final-math">
+      Final total = Taxes &amp; Surcharges ${escHtml(money(taxesSurcharges))} + Supply ${escHtml(money(supplyTotal))} + Delivery ${escHtml(money(deliveryTotal))}<br>
+      = ${escHtml(money(total))}
+    </div>`;
   document.getElementById('calc-use-btn').disabled = false;
   _sCalcAmt = total;
 }
