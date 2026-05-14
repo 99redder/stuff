@@ -997,7 +997,21 @@ const API = 'https://rentals-api.99redder.workers.dev';
 const PROPERTIES = ['6AL', '95EB', '446BB', '731WO'];
 const PRIMARY_PROPERTIES = new Set(['731WO']); // primary residences: Investment Return + Maintenance only
 const PRIMARY_VIEWS = new Set(['investment-return', 'maintenance']);
-const CURRENT_YEAR = new Date().getFullYear();
+const APP_TIME_ZONE = 'America/New_York';
+function appTodayParts(date = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: APP_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date).map(p => [p.type, p.value]));
+  return { year: parts.year, month: parts.month, day: parts.day };
+}
+function appTodayIso(date = new Date()) {
+  const { year, month, day } = appTodayParts(date);
+  return `${year}-${month}-${day}`;
+}
+const CURRENT_YEAR = Number(appTodayParts().year);
 const PRIMARY_RESIDENCE_GAIN_EXCLUSION = 500000; // §121 MFJ exclusion cap
 
 const CATEGORIES = {
@@ -2440,7 +2454,7 @@ function renderMaintenanceSection(prop) {
           </div>
           <div class="form-group">
             <label>Date</label>
-            <input type="date" id="mf-date" value="${new Date().toISOString().slice(0,10)}">
+            <input type="date" id="mf-date" value="${appTodayIso()}">
           </div>
           <div class="form-group">
             <label>Cost ($)</label>
@@ -2991,7 +3005,7 @@ async function renderInvestmentReturn() {
           <div class="form-grid" style="max-width:620px">
             <div class="form-group">
               <label>Sale Date</label>
-              <input type="date" id="sale-closeout-date" value="${new Date().toISOString().slice(0,10)}">
+              <input type="date" id="sale-closeout-date" value="${appTodayIso()}">
             </div>
             <div class="form-group">
               <label>Final Sale Price ($)</label>
@@ -3537,7 +3551,7 @@ async function renderAddEntry() {
   }
   await ensureLoaded(prop, 'defaults');
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = appTodayIso();
   const defaults = state.data[prop].defaults || {};
   const nmCfg = NORMAL_MONTH_CONFIG[prop];
 
@@ -3718,7 +3732,7 @@ async function saveEntry() {
     // Reset form (keep type/category, clear amount/notes, reset date to today)
     document.getElementById('entry-amount').value = '';
     document.getElementById('entry-notes').value = '';
-    document.getElementById('entry-date').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('entry-date').value = appTodayIso();
     document.getElementById('entry-amount').focus();
 
     // Show "save as default?" prompt
@@ -4442,7 +4456,7 @@ async function renderSolar() {
 
 function _solarEntryEditRow(entry) {
   // entry=null → new row; entry=object → edit existing
-  const d = entry ? entry.date        : (_sEdit?.date || new Date().toISOString().slice(0, 10));
+  const d = entry ? entry.date        : (_sEdit?.date || appTodayIso());
   const c = entry ? entry.code        : (_sEdit?.code || 'ELECPAID');
   const n = entry ? entry.description : (_sEdit?.description || '');
   const a = entry ? entry.amount      : (_sEdit?.amount !== undefined ? _sEdit.amount : '');
@@ -4814,7 +4828,7 @@ function solarSetEntrySort(sort) {
 }
 
 function solarStartAddEntry() {
-  _sEdit = { id: 'new', date: new Date().toISOString().slice(0, 10), code: 'ELECPAID', description: '', amount: '' };
+  _sEdit = { id: 'new', date: appTodayIso(), code: 'ELECPAID', description: '', amount: '' };
   _renderSolarHtml();
   setTimeout(() => document.getElementById('sentry-amt')?.focus(), 50);
 }
@@ -5091,7 +5105,7 @@ function useCalcResult() {
   closeSolarCalcModal();
   _sEdit = {
     id: 'new',
-    date: new Date().toISOString().slice(0, 10),
+    date: appTodayIso(),
     code: 'ELECNOSOLAR',
     description: 'Estimated bill without solar',
     amount: Math.round(_sCalcAmt * 100) / 100,
@@ -5430,7 +5444,7 @@ async function renderDeductions() {
 
   const isAddingNew = _dEdit && _dEdit.id === 'new';
   const newRow = isAddingNew
-    ? _deductionEditRow({ id: 'new', date: new Date().toISOString().slice(0, 10), description: '', category: 'Other', amount: '' })
+    ? _deductionEditRow({ id: 'new', date: appTodayIso(), description: '', category: 'Other', amount: '' })
     : '';
   const existingRows = yearDeductions.length === 0
     ? (isAddingNew ? '' : `<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--text-muted)">No deductions recorded for ${year} yet.</td></tr>`)
@@ -6227,7 +6241,7 @@ async function tpFetchESAI() {
 function tpAddPayment() {
   const tp = tpReadForm();
   if (!tp.estimated_payments) tp.estimated_payments = [];
-  tp.estimated_payments.push({ date: new Date().toISOString().slice(0,10), amount: 0 });
+  tp.estimated_payments.push({ date: appTodayIso(), amount: 0 });
   tpSave(tp);
   document.getElementById('tp-payments').innerHTML = tpBuildPayments(tp.estimated_payments);
   tpUpdateResults(tp);
