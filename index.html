@@ -1176,9 +1176,6 @@ function calcMarylandTax(tp, agi) {
 const ESAI_API = 'https://eastern-shore-ai-contact.99redder.workers.dev';
 const TP_KEY = `rentals_tax_${CURRENT_YEAR}`;
 
-// Session-only (never persisted): admin credentials for FMG/ESAI fetch
-const TP_SESSION = { fmg_user: '', fmg_pw: '', esai_pw: '' };
-
 function tpLoadLocal() { try { return JSON.parse(localStorage.getItem(TP_KEY) || '{}'); } catch { return {}; } }
 
 async function tpLoadFromAPI() {
@@ -5316,13 +5313,11 @@ async function renderTaxPlanning() {
           ${tpFld('tp-fmg','Net Income ($)',tp.fmg)}
           <div class="form-group">
             <label class="tp-lbl">Admin Username</label>
-            <input type="text" id="tp-fmg-user" placeholder="admin" autocomplete="username"
-                   value="${escAttr(TP_SESSION.fmg_user)}" oninput="TP_SESSION.fmg_user=this.value" style="width:130px">
+            <input type="text" id="tp-fmg-user" placeholder="admin" autocomplete="username" style="width:130px">
           </div>
           <div class="form-group">
             <label class="tp-lbl">Admin Password</label>
-            <input type="password" id="tp-fmg-pw" placeholder="••••••••" autocomplete="current-password"
-                   value="${escAttr(TP_SESSION.fmg_pw)}" oninput="TP_SESSION.fmg_pw=this.value" style="width:130px">
+            <input type="password" id="tp-fmg-pw" placeholder="••••••••" autocomplete="current-password" style="width:130px">
           </div>
           <div class="form-group" style="justify-content:flex-end">
             <label class="tp-lbl">&nbsp;</label>
@@ -5336,8 +5331,7 @@ async function renderTaxPlanning() {
           ${tpFld('tp-esai','Income ($)',tp.esai)}
           <div class="form-group">
             <label class="tp-lbl">Admin Password</label>
-            <input type="password" id="tp-esai-pw" placeholder="••••••••" autocomplete="off"
-                   value="${escAttr(TP_SESSION.esai_pw)}" oninput="TP_SESSION.esai_pw=this.value" style="width:130px">
+            <input type="password" id="tp-esai-pw" placeholder="••••••••" autocomplete="off" style="width:130px">
           </div>
           <div class="form-group" style="justify-content:flex-end">
             <label class="tp-lbl">&nbsp;</label>
@@ -6429,9 +6423,11 @@ function tpUpdateResults(tp) {
 }
 
 async function tpFetchFMG() {
-  const username = document.getElementById('tp-fmg-user')?.value.trim() || 'admin';
-  const pw = document.getElementById('tp-fmg-pw')?.value;
+  const usernameInput = document.getElementById('tp-fmg-user');
+  const passwordInput = document.getElementById('tp-fmg-pw');
   const msg = document.getElementById('tp-fmg-msg');
+  const username = usernameInput?.value.trim() || 'admin';
+  const pw = passwordInput?.value;
   if (!username || !pw) { msg.textContent = 'Enter FMG admin username and password first.'; return; }
   msg.textContent = 'Fetching…';
   try {
@@ -6440,16 +6436,16 @@ async function tpFetchFMG() {
     const expCents = Number(data.expenseCents || 0);
     const dollars = Number(data.netCents || 0) / 100;
     document.getElementById('tp-fmg').value = dollars.toFixed(2);
-    TP_SESSION.fmg_user = username;
-    TP_SESSION.fmg_pw = pw;
     msg.textContent = `Fetched: ${fmt(incCents/100)} income − ${fmt(expCents/100)} expenses = ${fmt(dollars)} net`;
     tpChanged();
   } catch (e) { msg.textContent = `Failed: ${e.message}`; }
+  finally { if (passwordInput) passwordInput.value = ''; }
 }
 
 async function tpFetchESAI() {
-  const pw = document.getElementById('tp-esai-pw')?.value;
+  const passwordInput = document.getElementById('tp-esai-pw');
   const msg = document.getElementById('tp-esai-msg');
+  const pw = passwordInput?.value;
   if (!pw) { msg.textContent = 'Enter admin password first.'; return; }
   msg.textContent = 'Fetching…';
   try {
@@ -6461,10 +6457,10 @@ async function tpFetchESAI() {
     const expCents = (data.expenses || []).reduce((s, r) => s + Number(r.amount_cents || 0), 0);
     const dollars = (incCents - expCents) / 100;
     document.getElementById('tp-esai').value = dollars.toFixed(2);
-    TP_SESSION.esai_pw = pw;
     msg.textContent = `Fetched: ${fmt(incCents/100)} income − ${fmt(expCents/100)} expenses = ${fmt(dollars)} net`;
     tpChanged();
   } catch (e) { msg.textContent = `Failed: ${e.message}`; }
+  finally { if (passwordInput) passwordInput.value = ''; }
 }
 
 function tpAddPayment() {

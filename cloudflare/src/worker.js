@@ -25,6 +25,14 @@ const CORS_HEADERS = {
   'Vary': 'Origin',
 };
 
+const SECURITY_HEADERS = {
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+  'Cache-Control': 'no-store, no-cache, must-revalidate',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'no-referrer',
+};
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin') || '';
@@ -34,7 +42,7 @@ export default {
 
     // Handle CORS preflight
     if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: CORS_HEADERS });
+      return addSecurityHeaders(new Response(null, { status: 204, headers: CORS_HEADERS }));
     }
 
     const url = new URL(request.url);
@@ -959,14 +967,25 @@ async function handleSaveSavings(env, data) {
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
+function addSecurityHeaders(response) {
+  const headers = new Headers(response.headers);
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+    headers.set(name, value);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 function jsonResponse(data, status = 200, extraHeaders = {}) {
-  return new Response(JSON.stringify(data), {
+  return addSecurityHeaders(new Response(JSON.stringify(data), {
     status,
     headers: {
       ...CORS_HEADERS,
       'Content-Type': 'application/json',
-      'Cache-Control': 'no-store',
       ...extraHeaders,
     }
-  });
+  }));
 }
