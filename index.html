@@ -3814,12 +3814,21 @@ async function postNormalMonth() {
   try {
     document.querySelectorAll('[onclick="postNormalMonth()"]').forEach(b => { b.disabled = true; b.textContent = 'Posting…'; });
 
-    const result = await callApi({
-      action: 'add_transactions',
-      property: prop,
-      transactions: toPost.map(t => ({ ...t, date }))
-    });
-    const transactions = result.transactions || [];
+    let transactions = [];
+    try {
+      const result = await callApi({
+        action: 'add_transactions',
+        property: prop,
+        transactions: toPost.map(t => ({ ...t, date }))
+      });
+      transactions = result.transactions || [];
+    } catch (e) {
+      if (!/Invalid action/i.test(e.message || '')) throw e;
+      for (const t of toPost) {
+        const result = await callApi({ action: 'add_transaction', property: prop, transaction: { ...t, date } });
+        transactions.push(result.transaction);
+      }
+    }
 
     // Update cache
     if (!state.data[prop].transactions) state.data[prop].transactions = [];
