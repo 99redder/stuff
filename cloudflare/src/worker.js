@@ -113,7 +113,7 @@ async function handleDataApi(request, env) {
   }
 
   const readOnlyWhenSold = new Set([
-    'add_transaction', 'delete_transaction',
+    'add_transaction', 'add_transactions', 'delete_transaction',
     'save_summary', 'delete_summary',
     'save_defaults', 'save_depreciation',
     'save_maintenance', 'add_maintenance_entry', 'update_maintenance_entry', 'delete_maintenance_entry'
@@ -128,6 +128,9 @@ async function handleDataApi(request, env) {
 
     case 'add_transaction':
       return handleAddTransaction(env, property, body.transaction);
+
+    case 'add_transactions':
+      return handleAddTransactions(env, property, body.transactions);
 
     case 'delete_transaction':
       return handleDeleteTransaction(env, property, body.id);
@@ -305,23 +308,53 @@ async function handleGetTransactions(env, property) {
 }
 
 async function handleAddTransaction(env, property, transaction) {
+  const result = buildTransaction(property, transaction);
+  if (result.error) return result.error;
+
+  const transactions = await env.RENTALS.get(`transactions:${property}`, 'json') || [];
+  transactions.push(result.transaction);
+  await env.RENTALS.put(`transactions:${property}`, JSON.stringify(transactions));
+
+  return jsonResponse({ transaction: result.transaction });
+}
+
+async function handleAddTransactions(env, property, incomingTransactions) {
+  if (!Array.isArray(incomingTransactions) || incomingTransactions.length === 0) {
+    return jsonResponse({ error: 'Missing transactions array' }, 400);
+  }
+
+  const newTransactions = [];
+  for (const transaction of incomingTransactions) {
+    const result = buildTransaction(property, transaction);
+    if (result.error) return result.error;
+    newTransactions.push(result.transaction);
+  }
+
+  const transactions = await env.RENTALS.get(`transactions:${property}`, 'json') || [];
+  transactions.push(...newTransactions);
+  await env.RENTALS.put(`transactions:${property}`, JSON.stringify(transactions));
+
+  return jsonResponse({ transactions: newTransactions });
+}
+
+function buildTransaction(property, transaction) {
   if (!transaction || typeof transaction !== 'object') {
-    return jsonResponse({ error: 'Missing transaction object' }, 400);
+    return { error: jsonResponse({ error: 'Missing transaction object' }, 400) };
   }
 
   const { type, category, date, amount, description = '' } = transaction;
 
   if (!['income', 'expense'].includes(type)) {
-    return jsonResponse({ error: 'Invalid type' }, 400);
+    return { error: jsonResponse({ error: 'Invalid type' }, 400) };
   }
   if (!VALID_CATEGORIES.includes(category)) {
-    return jsonResponse({ error: 'Invalid category' }, 400);
+    return { error: jsonResponse({ error: 'Invalid category' }, 400) };
   }
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return jsonResponse({ error: 'Invalid date format (expected YYYY-MM-DD)' }, 400);
+    return { error: jsonResponse({ error: 'Invalid date format (expected YYYY-MM-DD)' }, 400) };
   }
   if (typeof amount !== 'number' || !isFinite(amount) || amount <= 0) {
-    return jsonResponse({ error: 'Amount must be a positive number' }, 400);
+    return { error: jsonResponse({ error: 'Amount must be a positive number' }, 400) };
   }
 
   const newTransaction = {
@@ -334,11 +367,7 @@ async function handleAddTransaction(env, property, transaction) {
     description: String(description).trim()
   };
 
-  const transactions = await env.RENTALS.get(`transactions:${property}`, 'json') || [];
-  transactions.push(newTransaction);
-  await env.RENTALS.put(`transactions:${property}`, JSON.stringify(transactions));
-
-  return jsonResponse({ transaction: newTransaction });
+  return { transaction: newTransaction };
 }
 
 async function handleDeleteTransaction(env, property, id) {

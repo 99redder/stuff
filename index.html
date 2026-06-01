@@ -3814,13 +3814,16 @@ async function postNormalMonth() {
   try {
     document.querySelectorAll('[onclick="postNormalMonth()"]').forEach(b => { b.disabled = true; b.textContent = 'Posting…'; });
 
-    const results = await Promise.all(toPost.map(t =>
-      callApi({ action: 'add_transaction', property: prop, transaction: { ...t, date } })
-    ));
+    const result = await callApi({
+      action: 'add_transactions',
+      property: prop,
+      transactions: toPost.map(t => ({ ...t, date }))
+    });
+    const transactions = result.transactions || [];
 
     // Update cache
     if (!state.data[prop].transactions) state.data[prop].transactions = [];
-    results.forEach(r => state.data[prop].transactions.push(r.transaction));
+    transactions.forEach(t => state.data[prop].transactions.push(t));
 
     const lines = toPost.map(t => `${CAT_MAP[t.category]} ${fmt(t.amount)}`).join(', ');
     sucMsg.textContent = `Posted for ${fmtDate(date)}: ${lines}`;
