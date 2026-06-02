@@ -5858,6 +5858,7 @@ const DEFAULT_SAVINGS_OBLIGATIONS = [
 
 let _savEdit = null;       // { id, name, amount, paymentsPerYear, note } when editing/adding
 let _savSort = 'default';  // 'default' | 'amount' | 'alpha' | 'status'
+let _savFilter = 'all';    // 'all' | 'needs' | 'partial' | 'done' | 'static'
 
 async function loadSavings() {
   if (state.savings) return;
@@ -5923,6 +5924,23 @@ function savingsObligationStats() {
   return { totalAnnual, totalPaid, outstanding, paidSlots, totalSlots };
 }
 
+function savProgressFor(o, paidMap) {
+  const isStatic = o.kind === 'static';
+  const ppy = isStatic ? 1 : (o.paymentsPerYear === 2 ? 2 : 1);
+  const paid = (paidMap[o.id] || []).slice(0, ppy);
+  while (paid.length < ppy) paid.push(false);
+  const paidCount = paid.filter(Boolean).length;
+  const slotAmt = o.amount / ppy;
+  const outstanding = slotAmt * (ppy - paidCount);
+  const isDone = paidCount === ppy;
+  const isPartial = paidCount > 0 && paidCount < ppy;
+  const statusKey = isDone ? 'done' : (isPartial ? 'partial' : 'needs');
+  const statusLabel = isStatic
+    ? (isDone ? 'Funded' : 'Unfunded')
+    : (isDone ? 'Paid' : (isPartial ? 'Partial' : 'Unpaid'));
+  return { isStatic, ppy, paid, paidCount, slotAmt, outstanding, isDone, isPartial, statusKey, statusLabel };
+}
+
 async function renderSavings() {
   await loadSavings();
   _renderSavingsHtml();
@@ -5936,6 +5954,26 @@ function _renderSavingsHtml() {
 
   const totalLiquid = (s.accounts.robinhood || 0) + (s.accounts.ibkr || 0);
   const progressPct = stats.totalAnnual > 0 ? Math.min(100, (stats.totalPaid / stats.totalAnnual) * 100) : 0;
+  const obligationProgress = s.obligations.map(o => ({ obligation: o, progress: savProgressFor(o, paidMap) }));
+  const statusCounts = obligationProgress.reduce((acc, item) => {
+    const p = item.progress;
+    if (p.isDone) {
+      acc.doneCount++;
+      acc.doneAmount += item.obligation.amount || 0;
+    } else {
+      acc.needsCount++;
+      acc.needsAmount += p.outstanding;
+    }
+    if (p.isPartial) {
+      acc.partialCount++;
+      acc.partialAmount += p.outstanding;
+    }
+    if (p.isStatic) {
+      acc.staticCount++;
+      if (p.isDone) acc.staticDoneCount++;
+    }
+    return acc;
+  }, { needsCount: 0, needsAmount: 0, partialCount: 0, partialAmount: 0, doneCount: 0, doneAmount: 0, staticCount: 0, staticDoneCount: 0 });
 
   const statsBar = `
     <div style="display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:1.25rem;padding:.75rem 1rem;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius)">
@@ -5955,6 +5993,21 @@ function _renderSavingsHtml() {
         </div>
         <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem">${progressPct.toFixed(0)}% paid</div>
       </div>
+    </div>`;
+
+  const summaryTile = (label, value, sub, color) => `
+    <button type="button" onclick="savFilter('${label.key}')" style="text-align:left;cursor:pointer;padding:.7rem .8rem;background:var(--surface);border:1px solid ${_savFilter === label.key ? color : 'var(--border)'};border-radius:var(--radius);box-shadow:${_savFilter === label.key ? '0 0 0 2px rgba(37,99,235,.12)' : 'none'}">
+      <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.18rem">${label.text}</div>
+      <div style="font-size:1.15rem;font-weight:750;color:${color};line-height:1.1">${value}</div>
+      <div style="font-size:.72rem;color:var(--text-muted);margin-top:.18rem">${sub}</div>
+    </button>`;
+
+  const statusSummary = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.75rem;margin-bottom:1rem">
+      ${summaryTile({ key: 'needs', text: 'Needs Action' }, String(statusCounts.needsCount), `${fmt(statusCounts.needsAmount)} outstanding`, 'var(--danger)')}
+      ${summaryTile({ key: 'partial', text: 'Partial' }, String(statusCounts.partialCount), `${fmt(statusCounts.partialAmount)} left`, 'var(--warning)')}
+      ${summaryTile({ key: 'done', text: 'Done' }, String(statusCounts.doneCount), `${fmt(statusCounts.doneAmount)} cleared`, 'var(--success)')}
+      ${summaryTile({ key: 'static', text: 'Static Funds' }, `${statusCounts.staticDoneCount}/${statusCounts.staticCount}`, 'funded buckets', '#6366f1')}
     </div>`;
 
   // ── Left: Account Balances
@@ -6013,30 +6066,50 @@ function _renderSavingsHtml() {
     sortedObligations.sort((a, b) => outstandingFor(b) - outstandingFor(a));
   }
 
-  const obligationRows = sortedObligations.map(o => {
+  const filteredObligations = sortedObligations.filter(o => {
+    if (_savFilter === 'all') return true;
+    const p = savProgressFor(o, paidMap);
+    if (_savFilter === 'needs') return !p.isDone;
+    if (_savFilter === 'partial') return p.isPartial;
+    if (_savFilter === 'done') return p.isDone;
+    if (_savFilter === 'static') return p.isStatic;
+    return true;
+  });
+
+  const obligationRows = filteredObligations.map(o => {
     if (_savEdit && _savEdit.id === o.id) return _savEditRow(o);
-    const isStatic = o.kind === 'static';
-    const ppy = isStatic ? 1 : (o.paymentsPerYear === 2 ? 2 : 1);
-    const paid = (paidMap[o.id] || []).slice(0, ppy);
-    while (paid.length < ppy) paid.push(false);
-    const slotAmt = o.amount / ppy;
-    const checkboxes = paid.map((p, i) => `
-      <label title="${p ? 'Paid' : 'Unpaid'} — ${fmt(slotAmt)}" style="display:inline-flex;align-items:center;cursor:pointer;padding:.3rem;border-radius:4px;background:${p ? 'rgba(16,185,129,.15)' : 'rgba(239,68,68,.1)'};border:1px solid ${p ? 'rgba(16,185,129,.4)' : 'rgba(239,68,68,.3)'}">
-        <input type="checkbox" ${p ? 'checked' : ''} onchange="savTogglePaid('${escAttr(o.id)}', ${i}, this.checked)" style="margin:0;cursor:pointer">
-      </label>`).join('');
-    const allPaid = paid.every(Boolean);
-    const freqLabel = isStatic
+    const p = savProgressFor(o, paidMap);
+    const statusTone = p.statusKey === 'done'
+      ? { bg: 'rgba(16,185,129,.12)', color: 'var(--success)', border: 'rgba(16,185,129,.35)' }
+      : (p.statusKey === 'partial'
+        ? { bg: 'rgba(217,119,6,.12)', color: 'var(--warning)', border: 'rgba(217,119,6,.35)' }
+        : { bg: 'rgba(220,38,38,.10)', color: 'var(--danger)', border: 'rgba(220,38,38,.30)' });
+    const paymentControls = p.paid.map((isPaid, i) => {
+      const label = p.isStatic ? (isPaid ? 'Funded' : 'Fund') : `${p.ppy === 2 ? (i === 0 ? 'H1' : 'H2') : 'Annual'} ${isPaid ? 'Paid' : 'Due'}`;
+      return `
+        <button type="button"
+                aria-pressed="${isPaid ? 'true' : 'false'}"
+                title="${isPaid ? (p.isStatic ? 'Funded' : 'Paid') : (p.isStatic ? 'Not funded' : 'Unpaid')} - ${fmt(p.slotAmt)}"
+                onclick="savTogglePaid('${escAttr(o.id)}', ${i}, ${isPaid ? 'false' : 'true'})"
+                style="min-width:${p.isStatic ? '76px' : '82px'};padding:.32rem .55rem;border-radius:999px;border:1px solid ${isPaid ? 'rgba(16,185,129,.45)' : 'rgba(220,38,38,.32)'};background:${isPaid ? 'rgba(16,185,129,.14)' : 'rgba(220,38,38,.08)'};color:${isPaid ? 'var(--success)' : 'var(--danger)'};font-size:.72rem;font-weight:750;cursor:pointer;white-space:nowrap">
+          ${label}
+        </button>`;
+    }).join('');
+    const freqLabel = p.isStatic
       ? `<span style="display:inline-block;padding:.1rem .4rem;border-radius:999px;background:rgba(99,102,241,.12);color:#6366f1;font-weight:600;font-size:.7rem">Static</span>`
-      : `${ppy}× / yr`;
-    return `<tr style="${allPaid ? 'opacity:.55' : ''}">
+      : `${p.ppy}× / yr`;
+    return `<tr style="${p.isDone ? 'opacity:.68' : ''}">
       <td style="padding:.5rem .6rem;border-bottom:1px solid var(--border)">
         <div style="font-weight:600">${escHtml(o.name)}</div>
         ${o.note ? `<div style="font-size:.7rem;color:var(--text-muted)">${escHtml(o.note)}</div>` : ''}
       </td>
       <td style="padding:.5rem .6rem;border-bottom:1px solid var(--border);text-align:right;font-weight:600;white-space:nowrap">${fmt(o.amount)}</td>
       <td style="padding:.5rem .6rem;border-bottom:1px solid var(--border);text-align:center;color:var(--text-muted);font-size:.78rem;white-space:nowrap">${freqLabel}</td>
+      <td style="padding:.5rem .6rem;border-bottom:1px solid var(--border);text-align:center;white-space:nowrap">
+        <span style="display:inline-block;min-width:72px;padding:.16rem .48rem;border-radius:999px;background:${statusTone.bg};color:${statusTone.color};border:1px solid ${statusTone.border};font-size:.7rem;font-weight:750">${p.statusLabel}</span>
+      </td>
       <td style="padding:.5rem .6rem;border-bottom:1px solid var(--border);white-space:nowrap">
-        <div style="display:flex;gap:.35rem;justify-content:flex-end;flex-wrap:wrap">${checkboxes}</div>
+        <div style="display:flex;gap:.35rem;justify-content:flex-end;flex-wrap:wrap">${paymentControls}</div>
       </td>
       <td style="padding:.5rem .4rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap">
         <button class="btn btn-ghost btn-sm" style="padding:.15rem .35rem;font-size:.75rem" onclick="savEdit('${escAttr(o.id)}')">Edit</button>
@@ -6048,6 +6121,7 @@ function _renderSavingsHtml() {
   const newRow = (_savEdit && _savEdit.id === 'new') ? _savEditRow(_savEdit) : '';
 
   const sortBtn = (key, label) => `<button class="btn btn-ghost" style="padding:.2rem .45rem;font-size:.72rem;opacity:${_savSort===key?1:.4}" onclick="savSort('${key}')">${label}</button>`;
+  const filterBtn = (key, label) => `<button class="btn btn-ghost" style="padding:.28rem .55rem;font-size:.74rem;opacity:${_savFilter===key?1:.55};background:${_savFilter===key?'var(--primary-light)':'transparent'};color:${_savFilter===key?'var(--primary)':'var(--text-muted)'}" onclick="savFilter('${key}')">${label}</button>`;
 
   const obligationsCard = `
     <div class="card">
@@ -6064,6 +6138,14 @@ function _renderSavingsHtml() {
           <button class="btn btn-primary btn-sm" style="padding:.35rem .75rem" onclick="savAddNew()">+ Add Obligation</button>
         </div>
       </div>
+      <div style="padding:.55rem 1rem;border-bottom:1px solid var(--border);display:flex;gap:.3rem;align-items:center;flex-wrap:wrap;background:var(--surface)">
+        <span style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;font-weight:700;margin-right:.25rem">Filter</span>
+        ${filterBtn('all', 'All')}
+        ${filterBtn('needs', 'Needs Action')}
+        ${filterBtn('partial', 'Partial')}
+        ${filterBtn('done', 'Done')}
+        ${filterBtn('static', 'Static Funds')}
+      </div>
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:.875rem">
           <thead>
@@ -6071,11 +6153,12 @@ function _renderSavingsHtml() {
               <th style="padding:.45rem .6rem;font-weight:600;color:var(--text-muted);font-size:.72rem;text-transform:uppercase">Obligation</th>
               <th style="padding:.45rem .6rem;font-weight:600;color:var(--text-muted);font-size:.72rem;text-transform:uppercase;text-align:right">Annual</th>
               <th style="padding:.45rem .6rem;font-weight:600;color:var(--text-muted);font-size:.72rem;text-transform:uppercase;text-align:center">Freq</th>
+              <th style="padding:.45rem .6rem;font-weight:600;color:var(--text-muted);font-size:.72rem;text-transform:uppercase;text-align:center">Status</th>
               <th style="padding:.45rem .6rem;font-weight:600;color:var(--text-muted);font-size:.72rem;text-transform:uppercase;text-align:right">${year} Paid?</th>
               <th style="padding:.45rem .6rem"></th>
             </tr>
           </thead>
-          <tbody>${newRow}${obligationRows || (newRow ? '' : `<tr><td colspan="5" style="padding:2rem;text-align:center;color:var(--text-muted)">No obligations yet.</td></tr>`)}</tbody>
+          <tbody>${newRow}${obligationRows || (newRow ? '' : `<tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--text-muted)">No obligations match this filter.</td></tr>`)}</tbody>
         </table>
       </div>
     </div>`;
@@ -6089,6 +6172,7 @@ function _renderSavingsHtml() {
       </div>
     </div>
     ${statsBar}
+    ${statusSummary}
     <div style="display:grid;grid-template-columns:minmax(260px,340px) 1fr;gap:1rem;align-items:start">
       <div>${accountsCard}</div>
       <div>${obligationsCard}</div>
@@ -6113,7 +6197,7 @@ function _savEditRow(o) {
         <option value="static" ${o.kind === 'static' ? 'selected' : ''}>Static</option>
       </select>
     </td>
-    <td colspan="2" style="padding:.4rem .6rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap">
+    <td colspan="3" style="padding:.4rem .6rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap">
       <button class="btn btn-primary btn-sm" style="padding:.3rem .6rem" onclick="savSave('${escAttr(id)}')">Save</button>
       <button class="btn btn-ghost btn-sm" style="padding:.3rem .6rem" onclick="savCancelEdit()">Cancel</button>
     </td>
@@ -6148,6 +6232,11 @@ function savAddNew() {
 
 function savSort(sort) {
   _savSort = sort;
+  _renderSavingsHtml();
+}
+
+function savFilter(filter) {
+  _savFilter = filter;
   _renderSavingsHtml();
 }
 
