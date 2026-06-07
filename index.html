@@ -4161,6 +4161,7 @@ function _renderBudgetHtml() {
     .filter(d => d.amt > 0)
     .sort((a, b) => b.amt - a.amt);
   const hasBudgetExpenses = budgetExpenseEntries.length > 0;
+  let _chartCollapsed = true;
 
   const BUDGET_COLORS = [
     '#dc2626','#d97706','#7c3aed','#2563eb','#0891b2',
@@ -4391,13 +4392,20 @@ function _renderBudgetHtml() {
     </div>
     ${summaryBar}
     ${hasBudgetExpenses ? `
-    <div class="expense-breakdown" style="margin-bottom:1rem">
-      <div class="pie-chart-wrap">
-        ${budgetPieSVG}
+    <div style="margin-bottom:1rem">
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem">
+        <button class="btn btn-ghost btn-sm" onclick="budgetToggleChart()" style="padding:.15rem .4rem;font-size:.75rem;font-weight:700">${_chartCollapsed ? '▶' : '▼'} Monthly Expense Breakdown</button>
       </div>
-      <div class="expense-legend">
-        <div class="pie-total-label">Monthly Expense Breakdown</div>
-        ${budgetLegendHTML}
+      <div style="${_chartCollapsed ? 'display:none' : ''}">
+        <div class="expense-breakdown" style="margin-bottom:0">
+          <div class="pie-chart-wrap">
+            ${budgetPieSVG}
+          </div>
+          <div class="expense-legend">
+            <div class="pie-total-label">Monthly Expense Breakdown</div>
+            ${budgetLegendHTML}
+          </div>
+        </div>
       </div>
     </div>` : ''}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;align-items:flex-start">
@@ -4407,6 +4415,11 @@ function _renderBudgetHtml() {
         ${expenseCards}${totalExpensesBar}
       </div>
     </div>`;
+}
+
+function budgetToggleChart() {
+  _chartCollapsed = !_chartCollapsed;
+  _renderBudgetHtml();
 }
 
 function _budgetEditRow(section, item) {
