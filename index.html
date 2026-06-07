@@ -4103,6 +4103,7 @@ const BUDGET_EXPENSE_CATS = [
 let _bEdit = null; // { section: 'income'|catName, id: uuid|'new' }
 let _bSort = 'desc'; // 'alpha' | 'asc' | 'desc' — sorts the category cards themselves
 let _bIncomeSort = 'none'; // 'none' | 'asc' | 'desc' — sorts income rows by amount
+let _chartCollapsed = true; // expense pie chart collapsed state
 let _bModal = null; // { incomeItemId, property } — property worksheet modal state
 
 const PROP_INCOME_PROPS = ['95EB', '6AL', '446BB'];
@@ -4161,7 +4162,6 @@ function _renderBudgetHtml() {
     .filter(d => d.amt > 0)
     .sort((a, b) => b.amt - a.amt);
   const hasBudgetExpenses = budgetExpenseEntries.length > 0;
-  let _chartCollapsed = true;
 
   const BUDGET_COLORS = [
     '#dc2626','#d97706','#7c3aed','#2563eb','#0891b2',
