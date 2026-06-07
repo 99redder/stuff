@@ -3936,8 +3936,8 @@ function tpCalc(tp, rentalRows) {
                        tpN(tp.rh_int) + tpN(tp.ibkr_int);
   const dividends    = tpN(tp.rh_div);
   const cryptoInc    = tpN(tp.crypto_income);
-  const propertySaleTaxableGain = tpN(tp.property_sale_taxable_gain);
-  const propertySaleDepRecapture = tpN(tp.property_sale_depr_recapture);
+  const propertySaleTaxableGain = tpN(tp.property_sale_taxable_gain) + tpN(tp.property_sale_2_taxable_gain || 0);
+  const propertySaleDepRecapture = tpN(tp.property_sale_depr_recapture) + tpN(tp.property_sale_2_depr_recapture || 0);
   const stGains      = tpN(tp.crypto_st) + tpN(tp.rh_st) + tpN(tp.ibkr_st);
   const ltGains      = tpN(tp.crypto_lt) + tpN(tp.rh_lt) + tpN(tp.ibkr_lt) + propertySaleTaxableGain;
 
@@ -5348,6 +5348,13 @@ async function renderTaxPlanning() {
     tpSave(tp);
   }
   const saleOptions = `<option value="">— Select property —</option>` + PROPERTIES.map(p => `<option value="${p}" ${selectedSaleProp === p ? 'selected' : ''}>${p}</option>`).join('');
+  const saleOptions2 = `<option value="">— Select property —</option>` + PROPERTIES.map(p => `<option value="${p}" ${tp.property_sale_2_property === p ? 'selected' : ''}>${p}</option>`).join('');
+  const selectedSale2Prop = tp.property_sale_2_property || '';
+  const selectedSale2 = selectedSale2Prop ? propertySaleRows[selectedSale2Prop] : null;
+  if (selectedSale2Prop && tp.property_sale_2_imported && selectedSale2 && tp.property_sale_2_depr_recapture === undefined) {
+    tp.property_sale_2_depr_recapture = selectedSale2.depreciationRecapture;
+    tpSave(tp);
+  }
   const propertySaleDetails = selectedSaleProp && tp.property_sale_imported
     ? `<div style="margin-top:.75rem;padding:.75rem;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);font-size:.85rem">
         <input type="hidden" id="tp-property-sale-taxable-gain" value="${escAttr(String(tp.property_sale_taxable_gain || 0))}">
@@ -5364,6 +5371,24 @@ async function renderTaxPlanning() {
         <div class="tp-note" style="margin-top:.5rem">Imported from ${escHtml(selectedSaleProp)} ${selectedSale?.source === 'Actual sale closeout' ? 'final sale closeout' : 'hypothetical sale estimate'} in the property tab.</div>
       </div>`
     : `<div class="tp-note" style="margin-top:.5rem">Select a property to import its property-tab sale estimate/closeout. This adds taxable long-term gain and depreciation recapture to the tax plan.</div>`;
+
+  // Second property sale details
+  const propertySale2Details = selectedSale2Prop && tp.property_sale_2_imported
+    ? `<div style="margin-top:.75rem;padding:.75rem;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);font-size:.85rem">
+        <input type="hidden" id="tp-property-sale-2-taxable-gain" value="${escAttr(String(tp.property_sale_2_taxable_gain || 0))}">
+        <div style="display:flex;justify-content:space-between;gap:1rem;margin-bottom:.35rem"><span>Sale source</span><strong>${escHtml(tp.property_sale_2_source || 'Hypothetical property tab estimate')}</strong></div>
+        <div style="display:flex;justify-content:space-between;gap:1rem"><span>Sale price</span><strong>${fmt(tp.property_sale_2_price || 0)}</strong></div>
+        <div style="display:flex;justify-content:space-between;gap:1rem"><span>Closing costs</span><span>${fmt(tp.property_sale_2_closing_costs || 0)}</span></div>
+        <div style="display:flex;justify-content:space-between;gap:1rem"><span>Total basis / capital invested</span><span>${fmt(tp.property_sale_2_basis || 0)}</span></div>
+        <div style="display:flex;justify-content:space-between;gap:1rem"><span>Capital gain before exclusion</span><span>${fmt(tp.property_sale_2_capital_gain || 0)}</span></div>
+        ${(tp.property_sale_2_primary_exclusion || 0) > 0 ? `<div style="display:flex;justify-content:space-between;gap:1rem"><span>§121 exclusion</span><span>(${fmt(tp.property_sale_2_primary_exclusion || 0)})</span></div>` : ''}
+        <div style="display:flex;justify-content:space-between;gap:1rem"><span>Depreciation recapture</span><span>${fmt(tp.property_sale_2_depr_recapture || 0)}</span></div>
+        <div style="display:flex;justify-content:space-between;gap:1rem;border-top:1px solid var(--border);padding-top:.4rem;margin-top:.4rem"><span>Taxable long-term capital gain added to federal worksheet</span><strong style="color:var(--success)">${fmt(tp.property_sale_2_taxable_gain || 0)}</strong></div>
+        <div style="display:flex;justify-content:space-between;gap:1rem"><span>Depreciation recapture taxed federally at 25%</span><strong style="color:var(--danger)">${fmt((tp.property_sale_2_depr_recapture || 0) * 0.25)}</strong></div>
+        <div style="display:flex;justify-content:space-between;gap:1rem"><span>State/local taxable gain + recapture included in Maryland AGI</span><strong style="color:var(--success)">${fmt((tp.property_sale_2_taxable_gain || 0) + (tp.property_sale_2_depr_recapture || 0))}</strong></div>
+        <div class="tp-note" style="margin-top:.5rem">Imported from ${escHtml(selectedSale2Prop)} ${selectedSale2?.source === 'Actual sale closeout' ? 'final sale closeout' : 'hypothetical sale estimate'} in the property tab.</div>
+      </div>`
+    : `<div class="tp-note" style="margin-top:.5rem">Select a second property to import its sale estimate/closeout.</div>`;
 
   const rentalTableRows = rentalRows.map(p => `
     <tr>
@@ -5543,6 +5568,16 @@ async function renderTaxPlanning() {
           <button class="btn btn-ghost btn-sm" type="button" onclick="tpClearPropertySale()" ${selectedSaleProp ? '' : 'disabled'}>Clear</button>
         </div>
         ${propertySaleDetails}
+
+        <div class="tp-group" style="margin-top:1.25rem">Property Sale #2 — federal + state capital gains</div>
+        <div style="display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap">
+          <div class="form-group" style="min-width:180px;margin-bottom:0">
+            <label class="tp-lbl">Property</label>
+            <select id="tp-property-sale-2-property" onchange="tpApplyPropertySale(this.value, 2)">${saleOptions2}</select>
+          </div>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="tpClearPropertySale(2)" ${selectedSale2Prop ? '' : 'disabled'}>Clear</button>
+        </div>
+        ${propertySale2Details}
       </div>
     </div>
 
@@ -6430,6 +6465,9 @@ function tpReadForm() {
   const salePropEl = document.getElementById('tp-property-sale-property');
   if (salePropEl) tp.property_sale_property = salePropEl.value || '';
   if (tp.property_sale_imported) tp.property_sale_taxable_gain = g('tp-property-sale-taxable-gain');
+  const sale2PropEl = document.getElementById('tp-property-sale-2-property');
+  if (sale2PropEl) tp.property_sale_2_property = sale2PropEl.value || '';
+  if (tp.property_sale_2_imported) tp.property_sale_2_taxable_gain = g('tp-property-sale-2-taxable-gain');
   if (!tp.ira_locked) tp.ira = g('tp-ira');
   tp.std_ded = g('tp-std-ded') || TP_STD_DEDUCTION;
   tp.rental_depr = g('tp-rental-depr');
@@ -6506,51 +6544,91 @@ function calcPropertySaleTaxDetails(prop) {
   };
 }
 
-function tpApplyPropertySale(prop) {
+function tpApplyPropertySale(prop, saleNum) {
+  saleNum = saleNum || 1;
   const tp = tpReadForm();
   if (!prop) {
-    tpClearPropertySale();
+    if (saleNum === 2) {
+      tpClearPropertySale(2);
+    } else {
+      tpClearPropertySale();
+    }
     return;
   }
   const details = calcPropertySaleTaxDetails(prop);
   if (!details) {
     alert('No sale estimate/closeout is available for that property yet. Add a Zillow estimate or finalize a sale in the property tab first.');
-    tp.property_sale_property = '';
-    tp.property_sale_imported = false;
-    tp.property_sale_taxable_gain = 0;
+    if (saleNum === 2) {
+      tp.property_sale_2_property = '';
+      tp.property_sale_2_imported = false;
+      tp.property_sale_2_taxable_gain = 0;
+    } else {
+      tp.property_sale_property = '';
+      tp.property_sale_imported = false;
+      tp.property_sale_taxable_gain = 0;
+    }
     tpSave(tp);
     renderTaxPlanning();
     return;
   }
 
-  Object.assign(tp, {
-    property_sale_imported: true,
-    property_sale_property: prop,
-    property_sale_source: details.source,
-    property_sale_price: details.salePrice,
-    property_sale_closing_costs: details.saleClosingCosts,
-    property_sale_basis: details.basis,
-    property_sale_capital_gain: details.capitalGain,
-    property_sale_primary_exclusion: details.primaryExclusion,
-    property_sale_depr_recapture: details.depreciationRecapture,
-    property_sale_taxable_gain: details.taxableGain
-  });
+  if (saleNum === 2) {
+    Object.assign(tp, {
+      property_sale_2_imported: true,
+      property_sale_2_property: prop,
+      property_sale_2_source: details.source,
+      property_sale_2_price: details.salePrice,
+      property_sale_2_closing_costs: details.saleClosingCosts,
+      property_sale_2_basis: details.basis,
+      property_sale_2_capital_gain: details.capitalGain,
+      property_sale_2_primary_exclusion: details.primaryExclusion,
+      property_sale_2_depr_recapture: details.depreciationRecapture,
+      property_sale_2_taxable_gain: details.taxableGain
+    });
+  } else {
+    Object.assign(tp, {
+      property_sale_imported: true,
+      property_sale_property: prop,
+      property_sale_source: details.source,
+      property_sale_price: details.salePrice,
+      property_sale_closing_costs: details.saleClosingCosts,
+      property_sale_basis: details.basis,
+      property_sale_capital_gain: details.capitalGain,
+      property_sale_primary_exclusion: details.primaryExclusion,
+      property_sale_depr_recapture: details.depreciationRecapture,
+      property_sale_taxable_gain: details.taxableGain
+    });
+  }
   tpSave(tp);
   renderTaxPlanning();
 }
 
-function tpClearPropertySale() {
+function tpClearPropertySale(saleNum) {
+  saleNum = saleNum || 1;
   const tp = tpReadForm();
-  delete tp.property_sale_imported;
-  delete tp.property_sale_property;
-  delete tp.property_sale_source;
-  delete tp.property_sale_price;
-  delete tp.property_sale_closing_costs;
-  delete tp.property_sale_basis;
-  delete tp.property_sale_capital_gain;
-  delete tp.property_sale_primary_exclusion;
-  delete tp.property_sale_depr_recapture;
-  delete tp.property_sale_taxable_gain;
+  if (saleNum === 2) {
+    delete tp.property_sale_2_imported;
+    delete tp.property_sale_2_property;
+    delete tp.property_sale_2_source;
+    delete tp.property_sale_2_price;
+    delete tp.property_sale_2_closing_costs;
+    delete tp.property_sale_2_basis;
+    delete tp.property_sale_2_capital_gain;
+    delete tp.property_sale_2_primary_exclusion;
+    delete tp.property_sale_2_depr_recapture;
+    delete tp.property_sale_2_taxable_gain;
+  } else {
+    delete tp.property_sale_imported;
+    delete tp.property_sale_property;
+    delete tp.property_sale_source;
+    delete tp.property_sale_price;
+    delete tp.property_sale_closing_costs;
+    delete tp.property_sale_basis;
+    delete tp.property_sale_capital_gain;
+    delete tp.property_sale_primary_exclusion;
+    delete tp.property_sale_depr_recapture;
+    delete tp.property_sale_taxable_gain;
+  }
   tpSave(tp);
   renderTaxPlanning();
 }
