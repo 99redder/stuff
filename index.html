@@ -264,8 +264,8 @@
     /* ── Expense Breakdown / Pie Chart ─────────────────────────────────── */
     .expense-breakdown {
       display: grid;
-      grid-template-columns: 320px 1fr;
-      gap: 1.25rem;
+      grid-template-columns: 400px 1fr;
+      gap: 1rem;
       align-items: start;
       margin: 0 auto 1.25rem;
       max-width: 1200px;
@@ -283,28 +283,28 @@
     .expense-legend {
       display: flex;
       flex-direction: column;
-      gap: 0.15rem;
+      gap: 0.05rem;
     }
     .legend-item {
       display: flex;
       align-items: center;
-      gap: 0.35rem;
-      padding: 0.15rem 0.3rem;
+      gap: 0.3rem;
+      padding: 0.08rem 0.25rem;
       border-radius: var(--radius);
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       transition: background 0.12s;
       cursor: default;
     }
     .legend-item:hover { background: var(--surface2); }
     .legend-swatch {
-      width: 10px;
-      height: 10px;
+      width: 9px;
+      height: 9px;
       border-radius: 2px;
       flex-shrink: 0;
     }
     .legend-label { flex: 1; color: var(--text); font-weight: 500; }
-    .legend-pct { font-weight: 700; color: var(--text-muted); font-size: 0.7rem; width: 2.5rem; text-align: right; font-variant-numeric: tabular-nums; }
-    .legend-amt { font-weight: 600; color: var(--text); font-size: 0.7rem; width: 4.5rem; text-align: right; font-variant-numeric: tabular-nums; }
+    .legend-pct { font-weight: 700; color: var(--text-muted); font-size: 0.65rem; width: 2.2rem; text-align: right; font-variant-numeric: tabular-nums; }
+    .legend-amt { font-weight: 600; color: var(--text); font-size: 0.65rem; width: 4rem; text-align: right; font-variant-numeric: tabular-nums; }
     .pie-total-label {
       font-size: 0.65rem;
       font-weight: 700;
@@ -4193,7 +4193,7 @@ function _renderBudgetHtml() {
     </svg>`;
   }
 
-  const budgetPieSVG = hasBudgetExpenses ? buildBudgetPieSVG(budgetExpenseEntries, totalExpenses, 340) : '';
+  const budgetPieSVG = hasBudgetExpenses ? buildBudgetPieSVG(budgetExpenseEntries, totalExpenses, 380) : '';
 
   const budgetLegendHTML = hasBudgetExpenses ? budgetExpenseEntries.map((d, i) => {
     const pct = ((d.amt / totalExpenses) * 100).toFixed(1);
