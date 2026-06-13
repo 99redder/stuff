@@ -4776,7 +4776,7 @@ const MOM_BUDGET_DEFAULT = {
 };
 
 let _mbMonth = appTodayIso().slice(0, 7);
-let _mbFixedSort = 'template';
+let _mbFixedSort = 'amount';
 
 function mbClone(obj) {
   return JSON.parse(JSON.stringify(obj));
@@ -5112,7 +5112,7 @@ async function mbSetMonth(value) {
 }
 
 function mbSetFixedSort(value) {
-  _mbFixedSort = ['template', 'amount', 'az', 'za'].includes(value) ? value : 'template';
+  _mbFixedSort = ['template', 'amount', 'az', 'za'].includes(value) ? value : 'amount';
   _renderMomBudgetHtml();
 }
 
