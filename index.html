@@ -4772,6 +4772,7 @@ const MOM_BUDGET_DEFAULT = {
 };
 
 let _mbMonth = appTodayIso().slice(0, 7);
+let _mbFixedSort = 'template';
 
 function mbClone(obj) {
   return JSON.parse(JSON.stringify(obj));
@@ -4926,7 +4927,14 @@ function _renderMomBudgetHtml() {
       ${sub ? `<div class="stat-sub">${sub}</div>` : ''}
     </div>`;
 
-  const fixedRows = t.fixed.map(item => {
+  const fixedItems = [...t.fixed].sort((a, b) => {
+    if (_mbFixedSort === 'amount') return (Number(b.amount) || 0) - (Number(a.amount) || 0) || String(a.name || '').localeCompare(String(b.name || ''));
+    if (_mbFixedSort === 'az') return String(a.name || '').localeCompare(String(b.name || ''));
+    if (_mbFixedSort === 'za') return String(b.name || '').localeCompare(String(a.name || ''));
+    return 0;
+  });
+
+  const fixedRows = fixedItems.map(item => {
     const paid = !!m.fixedPaid?.[item.id];
     const planned = Number(item.amount) || 0;
     const actualValue = m.fixedActual?.[item.id];
@@ -4981,7 +4989,15 @@ function _renderMomBudgetHtml() {
     <div class="tp-layout">
       <div>
         <div class="card tp-card">
-          <div class="card-header"><div class="card-title">Fixed Bills — ${escHtml(_mbMonth)}</div></div>
+          <div class="card-header" style="gap:.75rem;flex-wrap:wrap">
+            <div class="card-title">Fixed Bills — ${escHtml(_mbMonth)}</div>
+            <select class="form-input" style="width:155px;margin-left:auto" onchange="mbSetFixedSort(this.value)">
+              <option value="template"${_mbFixedSort === 'template' ? ' selected' : ''}>Template order</option>
+              <option value="amount"${_mbFixedSort === 'amount' ? ' selected' : ''}>Amount high to low</option>
+              <option value="az"${_mbFixedSort === 'az' ? ' selected' : ''}>A to Z</option>
+              <option value="za"${_mbFixedSort === 'za' ? ' selected' : ''}>Z to A</option>
+            </select>
+          </div>
           <div class="card-body"><div class="mb-fixed-list">${fixedRows}</div></div>
         </div>
 
@@ -5089,6 +5105,11 @@ async function mbSetMonth(value) {
   if (!state.momBudget.months[_mbMonth]) state.momBudget.months[_mbMonth] = mbBlankMonth();
   _renderMomBudgetHtml();
   await _saveMomBudget();
+}
+
+function mbSetFixedSort(value) {
+  _mbFixedSort = ['template', 'amount', 'az', 'za'].includes(value) ? value : 'template';
+  _renderMomBudgetHtml();
 }
 
 async function mbToggleFixed(id, checked) {
