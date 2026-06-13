@@ -791,6 +791,15 @@
       border-radius: var(--radius);
       background: var(--surface2);
     }
+    .mb-fixed-template-row-title {
+      grid-column: 1 / -1;
+      text-align: center;
+      font-size: 0.88rem;
+      font-weight: 800;
+      color: var(--text);
+      padding-bottom: 0.1rem;
+      margin-bottom: -0.2rem;
+    }
     .mb-fixed-template-row.is-alt { background: var(--card-bg); }
     .mb-fixed-template-row::before {
       content: '';
@@ -825,10 +834,9 @@
     .mb-fixed-row {
       display: grid;
       grid-template-columns: 1.15rem 2.35rem minmax(0, 1fr);
-      grid-template-rows: auto auto 1fr;
       align-items: start;
       column-gap: 0.85rem;
-      row-gap: 0.4rem;
+      row-gap: 0.65rem;
       min-height: 0;
       padding: 0.95rem;
       border: 1px solid var(--border);
@@ -838,16 +846,6 @@
       text-transform: none;
       letter-spacing: 0;
       color: var(--text);
-    }
-    .mb-fixed-row-title {
-      grid-column: 3;
-      grid-row: 1;
-      text-align: center;
-      font-size: 0.92rem;
-      font-weight: 800;
-      color: var(--text);
-      letter-spacing: 0.2px;
-      padding-bottom: 0.15rem;
     }
     .mb-fixed-row:hover { background: var(--bg); }
     .mb-fixed-row.is-paid { border-color: rgba(22, 163, 74, 0.45); background: var(--success-light); }
@@ -872,11 +870,11 @@
       line-height: 1;
     }
     .mb-fixed-name {
-      grid-column: 3;
-      grid-row: 3;
       min-width: 0;
       overflow-wrap: normal;
       word-break: normal;
+      font-size: 1rem;
+      font-weight: 700;
       line-height: 1.25;
       color: var(--text);
     }
@@ -902,11 +900,9 @@
     }
     .mb-fixed-paid {
       grid-column: 3;
-      grid-row: 2 / 4;
       justify-self: stretch;
       display: grid;
-      gap: 0.25rem;
-      align-items: center;
+      gap: 0.2rem;
       min-width: 0;
     }
     .mb-fixed-paid-label {
@@ -915,18 +911,12 @@
       text-transform: uppercase;
       letter-spacing: 0.04em;
       color: var(--text-muted);
-      text-align: center;
-    }
-    .mb-fixed-paid .mb-money {
-      min-width: 0;
     }
     .mb-fixed-paid input {
       width: 100%;
       min-width: 0;
-      font-size: 0.95rem;
+      font-size: 0.88rem;
       font-weight: 700;
-      text-align: right;
-      padding: 0.4rem 0.55rem;
     }
     .mb-fixed-over {
       white-space: nowrap;
@@ -944,8 +934,7 @@
       .mb-fixed-list { grid-template-columns: 1fr; }
       .mb-fixed-row { grid-template-columns: 1.15rem 2.15rem minmax(0, 1fr); padding: 0.85rem; }
       .mb-fixed-icon { width: 2.15rem; height: 2.15rem; }
-      .mb-fixed-paid { grid-column: 1 / -1; grid-row: auto; }
-      .mb-fixed-row-title { grid-column: 1 / -1; grid-row: auto; }
+      .mb-fixed-paid { grid-column: 1 / -1; }
       .mb-fixed-template-row { grid-template-columns: minmax(0, 1fr) 4.7rem 78px auto; }
       .mb-fixed-schedule { grid-template-columns: 1fr; }
     }
@@ -5161,8 +5150,8 @@ function _renderMomBudgetHtml() {
       <div class="mb-fixed-row${paid ? ' is-paid' : ''}">
         <input class="mb-fixed-check" type="checkbox" ${paid ? 'checked' : ''} ${due ? '' : 'title="Not scheduled this month"'} onchange="mbToggleFixed('${escAttr(item.id)}', this.checked)">
         <span class="mb-fixed-icon" aria-hidden="true">${mbBillIcon(item)}</span>
-        <span class="mb-fixed-row-title">${escHtml(item.name)}</span>
         <span class="mb-fixed-name">
+          ${escHtml(item.name)}
           <span class="mb-fixed-sub">Reserve ${fmt(planned)} / mo · ${escHtml(mbFrequencyLabel(item))}</span>
           ${due ? `<span class="mb-fixed-due">Due ${fmt(expected)}</span>` : ''}
         </span>
@@ -5293,6 +5282,7 @@ function mbFixedTemplateRow(item, index = 0) {
   const locked = !!item.locked;
   const dueOptions = MB_MONTH_NAMES.map((name, idx) => `<option value="${idx + 1}"${Number(item.dueMonth || 1) === idx + 1 ? ' selected' : ''}>${name}</option>`).join('');
   return `<div class="mb-fixed-template-row${index % 2 ? ' is-alt' : ''}">
+    <span class="mb-fixed-template-row-title">${escHtml(item.name)}</span>
     <input type="text" class="form-input mb-template-name" value="${escAttr(item.name)}" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','name',this.value)">
     ${mbLockButton(locked, `mbToggleTemplateLock('fixed','${escAttr(item.id)}')`, locked ? 'Unlock monthly reserve' : 'Lock monthly reserve')}
     <span class="mb-money mb-template-money"><input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(String(item.amount))}" ${locked ? 'disabled' : ''} title="Monthly reserve" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','amount',this.value)"></span>
