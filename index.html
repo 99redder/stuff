@@ -752,14 +752,32 @@
       color: var(--danger);
     }
     .mb-fixed-template-row {
+      position: relative;
       display: grid;
       grid-template-columns: minmax(0, 1fr) 4.7rem 88px auto;
       gap: 0.5rem;
       align-items: center;
-      padding: 0.6rem 0;
-      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 0.75rem 0.75rem 0.95rem;
+      margin: 0.45rem 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface2);
     }
-    .mb-fixed-template-row:last-child { border-bottom:none; }
+    .mb-fixed-template-row.is-alt { background: var(--card-bg); }
+    .mb-fixed-template-row::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0.65rem;
+      bottom: 0.65rem;
+      width: 4px;
+      border-radius: 0 4px 4px 0;
+      background: rgba(59, 130, 246, 0.72);
+    }
+    .mb-fixed-template-row:hover {
+      border-color: rgba(59, 130, 246, 0.35);
+      box-shadow: 0 1px 8px rgba(15, 23, 42, 0.08);
+    }
     .mb-fixed-schedule {
       grid-column: 1 / -1;
       display: grid;
@@ -5078,7 +5096,7 @@ function _renderMomBudgetHtml() {
   }).join('');
 
   const templateIncomeRows = t.income.map(item => mbTemplateRow('income', item)).join('');
-  const templateFixedRows = t.fixed.map(item => mbFixedTemplateRow(item)).join('');
+  const templateFixedRows = t.fixed.map((item, index) => mbFixedTemplateRow(item, index)).join('');
 
   document.getElementById('app').innerHTML = `
     <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
@@ -5188,10 +5206,10 @@ function mbTemplateRow(section, item) {
   </div>`;
 }
 
-function mbFixedTemplateRow(item) {
+function mbFixedTemplateRow(item, index = 0) {
   const locked = !!item.locked;
   const dueOptions = MB_MONTH_NAMES.map((name, idx) => `<option value="${idx + 1}"${Number(item.dueMonth || 1) === idx + 1 ? ' selected' : ''}>${name}</option>`).join('');
-  return `<div class="mb-fixed-template-row">
+  return `<div class="mb-fixed-template-row${index % 2 ? ' is-alt' : ''}">
     <input type="text" class="form-input mb-template-name" value="${escAttr(item.name)}" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','name',this.value)">
     ${mbLockButton(locked, `mbToggleTemplateLock('fixed','${escAttr(item.id)}')`, locked ? 'Unlock monthly reserve' : 'Lock monthly reserve')}
     <input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(String(item.amount))}" ${locked ? 'disabled' : ''} title="Monthly reserve" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','amount',this.value)">
