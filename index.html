@@ -734,6 +734,11 @@
     .tp-pay-row input[type="number"] { flex:1; }
     .mb-template-name { flex:1 1 auto; min-width:0; }
     .tp-pay-row .mb-template-amount { flex:0 0 88px; width:88px; text-align:right; }
+    .mb-template-add input {
+      background: rgba(245, 158, 11, 0.08);
+      border-color: rgba(245, 158, 11, 0.35);
+    }
+    .mb-template-add input::placeholder { color: rgba(146, 64, 14, 0.72); }
     .tp-note { font-size:0.75rem; color:var(--text-muted); font-style:italic; margin-top:0.35rem; }
     .mb-fixed-list {
       display: grid;
@@ -5068,7 +5073,7 @@ function mbTemplateRow(section, item) {
 }
 
 function mbTemplateAddRow(section, label) {
-  return `<div class="tp-pay-row">
+  return `<div class="tp-pay-row mb-template-add">
     <input type="text" id="mb-${section}-new-name" class="form-input mb-template-name" placeholder="Name">
     <input type="number" id="mb-${section}-new-amount" class="form-input mb-template-amount" step=".01" min="0" placeholder="0.00">
     <button class="btn btn-ghost btn-sm" onclick="mbAddTemplateItem('${section}')">${escHtml(label)}</button>
