@@ -735,16 +735,17 @@
     .tp-note { font-size:0.75rem; color:var(--text-muted); font-style:italic; margin-top:0.35rem; }
     .mb-fixed-list {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 0.65rem;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 0.85rem;
     }
     .mb-fixed-row {
       display: grid;
-      grid-template-columns: 1.15rem 2.15rem minmax(0, 1fr) minmax(7.5rem, auto);
-      align-items: center;
-      gap: 0.75rem;
-      min-height: 4.5rem;
-      padding: 0.75rem 0.85rem;
+      grid-template-columns: 1.15rem 2.35rem minmax(0, 1fr);
+      align-items: start;
+      column-gap: 0.85rem;
+      row-gap: 0.65rem;
+      min-height: 0;
+      padding: 0.95rem;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       background: var(--surface2);
@@ -764,8 +765,8 @@
       accent-color: var(--success);
     }
     .mb-fixed-icon {
-      width: 2.15rem;
-      height: 2.15rem;
+      width: 2.35rem;
+      height: 2.35rem;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -777,10 +778,11 @@
     }
     .mb-fixed-name {
       min-width: 0;
-      overflow-wrap: anywhere;
-      font-size: 0.9rem;
+      overflow-wrap: normal;
+      word-break: normal;
+      font-size: 1rem;
       font-weight: 700;
-      line-height: 1.2;
+      line-height: 1.25;
       color: var(--text);
     }
     .mb-fixed-sub {
@@ -791,10 +793,11 @@
       color: var(--text-muted);
     }
     .mb-fixed-paid {
-      justify-self: end;
+      grid-column: 3;
+      justify-self: stretch;
       display: grid;
       gap: 0.2rem;
-      min-width: 7.5rem;
+      min-width: 0;
     }
     .mb-fixed-paid-label {
       font-size: 0.68rem;
@@ -820,8 +823,9 @@
     }
     @media (max-width: 520px) {
       .mb-fixed-list { grid-template-columns: 1fr; }
-      .mb-fixed-row { grid-template-columns: 1.15rem 2rem minmax(0, 1fr); }
-      .mb-fixed-paid { grid-column: 3; justify-self: stretch; }
+      .mb-fixed-row { grid-template-columns: 1.15rem 2.15rem minmax(0, 1fr); padding: 0.85rem; }
+      .mb-fixed-icon { width: 2.15rem; height: 2.15rem; }
+      .mb-fixed-paid { grid-column: 1 / -1; }
     }
     @media (max-width:960px) { .tp-layout { grid-template-columns:1fr; } .tp-sticky { position:static; } }
     @media (max-width:768px) { .tp-grid-3 { grid-template-columns:1fr 1fr; } .tp-grid-2 { grid-template-columns:1fr; } }
