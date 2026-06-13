@@ -5073,7 +5073,7 @@ function mbTemplateRow(section, item) {
     <input type="text" class="form-input mb-template-name" value="${escAttr(item.name)}" onchange="mbUpdateTemplateItem('${section}','${escAttr(item.id)}','name',this.value)">
     <button class="btn btn-ghost btn-sm" title="${locked ? 'Unlock amount' : 'Lock amount'}" onclick="mbToggleTemplateLock('${section}','${escAttr(item.id)}')">${locked ? '🔒' : '🔓'}</button>
     <input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(String(item.amount))}" ${locked ? 'disabled' : ''} onchange="mbUpdateTemplateItem('${section}','${escAttr(item.id)}','amount',this.value)">
-    <button class="btn btn-ghost btn-sm" style="color:var(--danger)" ${locked ? 'disabled title="Unlock before deleting"' : ''} onclick="mbDeleteTemplateItem('${section}','${escAttr(item.id)}')">×</button>
+    <button class="btn btn-ghost btn-sm" style="color:var(--danger)" title="Delete ${escAttr(item.name)}" onclick="mbDeleteTemplateItem('${section}','${escAttr(item.id)}')">×</button>
   </div>`;
 }
 
@@ -5193,8 +5193,14 @@ async function mbUpdateTemplateItem(section, id, field, value) {
 
 async function mbDeleteTemplateItem(section, id) {
   const item = state.momBudget.template[section].find(i => i.id === id);
-  if (item?.locked) return;
+  if (!item) return;
   state.momBudget.template[section] = state.momBudget.template[section].filter(i => i.id !== id);
+  if (section === 'fixed') {
+    Object.values(state.momBudget.months || {}).forEach(month => {
+      if (month.fixedPaid) delete month.fixedPaid[id];
+      if (month.fixedActual) delete month.fixedActual[id];
+    });
+  }
   _renderMomBudgetHtml();
   await _saveMomBudget();
 }
