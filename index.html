@@ -732,6 +732,8 @@
     .tp-pay-row:last-child { border-bottom:none; }
     .tp-pay-row input[type="date"] { width:155px; flex-shrink:0; }
     .tp-pay-row input[type="number"] { flex:1; }
+    .mb-template-name { flex:1 1 auto; min-width:0; }
+    .tp-pay-row .mb-template-amount { flex:0 0 88px; width:88px; text-align:right; }
     .tp-note { font-size:0.75rem; color:var(--text-muted); font-style:italic; margin-top:0.35rem; }
     .mb-fixed-list {
       display: grid;
@@ -5058,17 +5060,17 @@ function _renderMomBudgetHtml() {
 function mbTemplateRow(section, item) {
   const locked = !!item.locked;
   return `<div class="tp-pay-row">
-    <input type="text" class="form-input" style="flex:1" value="${escAttr(item.name)}" onchange="mbUpdateTemplateItem('${section}','${escAttr(item.id)}','name',this.value)">
+    <input type="text" class="form-input mb-template-name" value="${escAttr(item.name)}" onchange="mbUpdateTemplateItem('${section}','${escAttr(item.id)}','name',this.value)">
     <button class="btn btn-ghost btn-sm" title="${locked ? 'Unlock amount' : 'Lock amount'}" onclick="mbToggleTemplateLock('${section}','${escAttr(item.id)}')">${locked ? '🔒' : '🔓'}</button>
-    <input type="number" class="form-input" style="width:105px;text-align:right" step=".01" min="0" value="${escAttr(String(item.amount))}" ${locked ? 'disabled' : ''} onchange="mbUpdateTemplateItem('${section}','${escAttr(item.id)}','amount',this.value)">
+    <input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(String(item.amount))}" ${locked ? 'disabled' : ''} onchange="mbUpdateTemplateItem('${section}','${escAttr(item.id)}','amount',this.value)">
     <button class="btn btn-ghost btn-sm" style="color:var(--danger)" ${locked ? 'disabled title="Unlock before deleting"' : ''} onclick="mbDeleteTemplateItem('${section}','${escAttr(item.id)}')">×</button>
   </div>`;
 }
 
 function mbTemplateAddRow(section, label) {
   return `<div class="tp-pay-row">
-    <input type="text" id="mb-${section}-new-name" class="form-input" style="flex:1" placeholder="Name">
-    <input type="number" id="mb-${section}-new-amount" class="form-input" style="width:105px;text-align:right" step=".01" min="0" placeholder="0.00">
+    <input type="text" id="mb-${section}-new-name" class="form-input mb-template-name" placeholder="Name">
+    <input type="number" id="mb-${section}-new-amount" class="form-input mb-template-amount" step=".01" min="0" placeholder="0.00">
     <button class="btn btn-ghost btn-sm" onclick="mbAddTemplateItem('${section}')">${escHtml(label)}</button>
   </div>`;
 }
