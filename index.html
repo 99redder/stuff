@@ -5343,15 +5343,22 @@ async function mbUpdateTemplateItem(section, id, field, value) {
 async function mbDeleteTemplateItem(section, id) {
   const item = state.momBudget.template[section].find(i => i.id === id);
   if (!item) return;
-  state.momBudget.template[section] = state.momBudget.template[section].filter(i => i.id !== id);
-  if (section === 'fixed') {
-    Object.values(state.momBudget.months || {}).forEach(month => {
-      if (month.fixedPaid) delete month.fixedPaid[id];
-      if (month.fixedActual) delete month.fixedActual[id];
-    });
-  }
-  _renderMomBudgetHtml();
-  await _saveMomBudget();
+  showBrandedNotice({
+    title: `Remove ${section === 'income' ? 'Income' : 'Fixed Expense'}`,
+    message: `Remove "${item.name}" from the Mom Budget template?`,
+    type: 'danger',
+    onConfirm: () => {
+      state.momBudget.template[section] = state.momBudget.template[section].filter(i => i.id !== id);
+      if (section === 'fixed') {
+        Object.values(state.momBudget.months || {}).forEach(month => {
+          if (month.fixedPaid) delete month.fixedPaid[id];
+          if (month.fixedActual) delete month.fixedActual[id];
+        });
+      }
+      _renderMomBudgetHtml();
+      _saveMomBudget();
+    }
+  });
 }
 
 async function mbToggleTemplateLock(section, id) {
