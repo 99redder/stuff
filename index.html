@@ -707,6 +707,12 @@
     .tp-lbl { font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:0.3px; color:var(--text-muted); }
     .tp-group { font-size:0.8rem; font-weight:700; color:var(--text); margin:0.85rem 0 0.5rem; padding-bottom:0.35rem; border-bottom:1px solid var(--border); }
     .tp-group:first-child { margin-top:0; }
+    .mb-template-section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
     .tp-card { margin-bottom: 1.25rem; }
     .budget-item { display:flex; align-items:center; gap:.4rem; padding:.35rem 0; border-bottom:1px solid var(--border); font-size:.875rem; }
     .budget-item:last-child { border-bottom:none; }
@@ -788,16 +794,6 @@
     .mb-fixed-schedule select,
     .mb-fixed-schedule input { min-width:0; }
     .mb-fixed-schedule .mb-template-amount { width:88px; text-align:right; }
-    .mb-template-add-income input {
-      background: rgba(34, 197, 94, 0.1);
-      border-color: rgba(34, 197, 94, 0.38);
-    }
-    .mb-template-add-income input::placeholder { color: rgba(22, 101, 52, 0.72); }
-    .mb-template-add-fixed input {
-      background: rgba(59, 130, 246, 0.09);
-      border-color: rgba(59, 130, 246, 0.38);
-    }
-    .mb-template-add-fixed input::placeholder { color: rgba(30, 64, 175, 0.72); }
     .tp-note { font-size:0.75rem; color:var(--text-muted); font-style:italic; margin-top:0.35rem; }
     .mb-fixed-list {
       display: grid;
@@ -1026,6 +1022,36 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeNoticeModal()">Cancel</button>
       <button class="btn btn-danger" id="notice-modal-confirm-btn" onclick="noticeModalConfirm()" style="background:#991b1b">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Mom Budget Add Template Item Modal ── -->
+<div class="modal-overlay hidden" id="mom-template-modal" onclick="handleModalOverlayClick(event,'mom-template-modal')">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mom-template-modal-title">
+    <div class="modal-header">
+      <div class="modal-icon primary" id="mom-template-modal-icon">＋</div>
+      <div>
+        <div class="modal-title" id="mom-template-modal-title">Add Item</div>
+        <div class="modal-subtitle" id="mom-template-modal-subtitle">Mom Budget template</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label for="mom-template-name">Name</label>
+          <input type="text" id="mom-template-name" placeholder="Item name" onkeydown="if(event.key==='Enter') mbSaveTemplateAdd()">
+        </div>
+        <div class="form-group full">
+          <label for="mom-template-amount" id="mom-template-amount-label">Monthly Amount ($)</label>
+          <input type="number" id="mom-template-amount" step="0.01" min="0" placeholder="0.00" onkeydown="if(event.key==='Enter') mbSaveTemplateAdd()">
+        </div>
+      </div>
+      <div id="mom-template-error" class="error-msg hidden" style="margin-top:0.75rem"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeMomTemplateModal()">Cancel</button>
+      <button class="btn btn-primary" id="mom-template-save-btn" onclick="mbSaveTemplateAdd()">Add Item</button>
     </div>
   </div>
 </div>
@@ -2096,6 +2122,7 @@ function handleModalOverlayClick(e, modalId) {
     if (modalId === 'notice-modal') closeNoticeModal();
     if (modalId === 'ded-delete-modal') closeDedDeleteModal();
     if (modalId === 'edit-modal') closeEditModal();
+    if (modalId === 'mom-template-modal') closeMomTemplateModal();
     if (modalId === 'budget-worksheet-modal') closeBudgetWorksheetModal();
     if (modalId === 'solar-calc-modal') closeSolarCalcModal();
   }
@@ -5174,13 +5201,17 @@ function _renderMomBudgetHtml() {
         <div class="card tp-card">
           <div class="card-header"><div class="card-title">Monthly Template</div></div>
           <div class="card-body">
-            <div class="tp-group">Income</div>
+            <div class="tp-group mb-template-section-head">
+              <span>Income</span>
+              <button class="btn btn-primary btn-sm" onclick="mbOpenTemplateAdd('income')">+ Add Income</button>
+            </div>
             ${templateIncomeRows}
-            ${mbTemplateAddRow('income', 'Add Income')}
 
-            <div class="tp-group">Fixed Expenses</div>
+            <div class="tp-group mb-template-section-head">
+              <span>Fixed Expenses</span>
+              <button class="btn btn-primary btn-sm" onclick="mbOpenTemplateAdd('fixed')">+ Add Expense</button>
+            </div>
             ${templateFixedRows}
-            ${mbTemplateAddRow('fixed', 'Add Fixed Expense')}
 
             <div class="tp-group">Variable Budgets</div>
             <div class="tp-pay-row">
@@ -5236,12 +5267,51 @@ function mbFixedTemplateRow(item, index = 0) {
   </div>`;
 }
 
-function mbTemplateAddRow(section, label) {
-  return `<div class="tp-pay-row mb-template-add-${escAttr(section)}">
-    <input type="text" id="mb-${section}-new-name" class="form-input mb-template-name" placeholder="Name">
-    <input type="number" id="mb-${section}-new-amount" class="form-input mb-template-amount" step=".01" min="0" placeholder="0.00">
-    <button class="btn btn-ghost btn-sm" onclick="mbAddTemplateItem('${section}')">${escHtml(label)}</button>
-  </div>`;
+let _mbTemplateAddSection = null;
+
+function mbOpenTemplateAdd(section) {
+  if (!['income', 'fixed'].includes(section)) return;
+  _mbTemplateAddSection = section;
+  const isIncome = section === 'income';
+  document.getElementById('mom-template-modal-title').textContent = isIncome ? 'Add Income' : 'Add Fixed Expense';
+  document.getElementById('mom-template-modal-subtitle').textContent = isIncome ? 'Monthly income source' : 'Monthly reserve or scheduled bill';
+  document.getElementById('mom-template-modal-icon').textContent = isIncome ? '+' : '＋';
+  document.getElementById('mom-template-amount-label').textContent = isIncome ? 'Monthly Income ($)' : 'Monthly Reserve ($)';
+  document.getElementById('mom-template-save-btn').textContent = isIncome ? 'Add Income' : 'Add Expense';
+  document.getElementById('mom-template-name').value = '';
+  document.getElementById('mom-template-amount').value = '';
+  document.getElementById('mom-template-error').classList.add('hidden');
+  document.getElementById('mom-template-error').textContent = '';
+  document.getElementById('mom-template-modal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('mom-template-name')?.focus(), 0);
+}
+
+function closeMomTemplateModal() {
+  document.getElementById('mom-template-modal').classList.add('hidden');
+  _mbTemplateAddSection = null;
+}
+
+async function mbSaveTemplateAdd() {
+  const section = _mbTemplateAddSection;
+  if (!['income', 'fixed'].includes(section)) return;
+  const err = document.getElementById('mom-template-error');
+  const name = document.getElementById('mom-template-name')?.value.trim() || '';
+  const amount = parseFloat(document.getElementById('mom-template-amount')?.value) || 0;
+  if (!name) {
+    err.textContent = 'Enter a name.';
+    err.classList.remove('hidden');
+    return;
+  }
+  const item = { id: mbUuid(section), name, amount, locked: false };
+  if (section === 'fixed') {
+    item.frequency = 'reserve';
+    item.dueMonth = 1;
+    item.paymentAmount = 0;
+  }
+  state.momBudget.template[section].push(item);
+  closeMomTemplateModal();
+  _renderMomBudgetHtml();
+  await _saveMomBudget();
 }
 
 function mbLedgerCard(title, section, entries, label, nameKey) {
@@ -5328,21 +5398,6 @@ async function mbAddLedger(section, nameKey) {
 async function mbDeleteLedger(section, id) {
   const m = state.momBudget.months[_mbMonth] || (state.momBudget.months[_mbMonth] = mbBlankMonth());
   m[section] = (m[section] || []).filter(e => e.id !== id);
-  _renderMomBudgetHtml();
-  await _saveMomBudget();
-}
-
-async function mbAddTemplateItem(section) {
-  const name = document.getElementById(`mb-${section}-new-name`)?.value.trim() || '';
-  const amount = parseFloat(document.getElementById(`mb-${section}-new-amount`)?.value) || 0;
-  if (!name) return;
-  const item = { id: mbUuid(section), name, amount, locked: false };
-  if (section === 'fixed') {
-    item.frequency = 'reserve';
-    item.dueMonth = 1;
-    item.paymentAmount = 0;
-  }
-  state.momBudget.template[section].push(item);
   _renderMomBudgetHtml();
   await _saveMomBudget();
 }
@@ -7779,7 +7834,9 @@ window.mbSetMonth              = mbSetMonth;
 window.mbToggleFixed           = mbToggleFixed;
 window.mbAddLedger             = mbAddLedger;
 window.mbDeleteLedger          = mbDeleteLedger;
-window.mbAddTemplateItem       = mbAddTemplateItem;
+window.mbOpenTemplateAdd       = mbOpenTemplateAdd;
+window.closeMomTemplateModal   = closeMomTemplateModal;
+window.mbSaveTemplateAdd       = mbSaveTemplateAdd;
 window.mbUpdateTemplateItem    = mbUpdateTemplateItem;
 window.mbDeleteTemplateItem    = mbDeleteTemplateItem;
 window.mbToggleTemplateLock    = mbToggleTemplateLock;
@@ -7791,6 +7848,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     closeDeleteModal();
     closeEditModal();
+    closeMomTemplateModal();
     closeSolarCalcModal();
     closeDedDeleteModal();
   }
