@@ -820,6 +820,22 @@
       color: var(--text);
       letter-spacing: 0.2px;
     }
+    .mb-fixed-template-row-delete {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.65rem;
+      font-size: 1rem;
+      line-height: 1;
+      padding: 0.15rem 0.35rem;
+      color: var(--danger);
+      background: none;
+      border: none;
+      cursor: pointer;
+      opacity: 0.5;
+      transition: opacity 0.15s;
+      z-index: 1;
+    }
+    .mb-fixed-template-row-delete:hover { opacity: 1; }
     .mb-fixed-template-row-controls {
       grid-column: 1 / -1;
       grid-row: 2;
@@ -5309,6 +5325,7 @@ function mbFixedTemplateRow(item, index = 0) {
   const locked = !!item.locked;
   const dueOptions = MB_MONTH_NAMES.map((name, idx) => `<option value="${idx + 1}"${Number(item.dueMonth || 1) === idx + 1 ? ' selected' : ''}>${name}</option>`).join('');
   return `<div class="mb-fixed-template-row${index % 2 ? ' is-alt' : ''}">
+    <button class="mb-fixed-template-row-delete" title="Delete ${escAttr(item.name)}" onclick="mbDeleteTemplateItem('fixed','${escAttr(item.id)}')">×</button>
     <div class="mb-fixed-template-row-header">
       <span class="mb-fixed-template-row-header-icon" aria-hidden="true">${mbBillIcon(item)}</span>
       <span class="mb-fixed-template-row-header-title">${escHtml(item.name)}</span>
@@ -5316,7 +5333,6 @@ function mbFixedTemplateRow(item, index = 0) {
     <div class="mb-fixed-template-row-controls">
       ${mbLockButton(locked, `mbToggleTemplateLock('fixed','${escAttr(item.id)}')`, locked ? 'Unlock monthly reserve' : 'Lock monthly reserve')}
       <span class="mb-money mb-template-money"><input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(String(item.amount))}" ${locked ? 'disabled' : ''} title="Monthly reserve" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','amount',this.value)"></span>
-      <button class="btn btn-ghost btn-sm" style="color:var(--danger);font-size:0.9rem;line-height:1;padding:0.25rem 0.4rem" title="Delete ${escAttr(item.name)}" onclick="mbDeleteTemplateItem('fixed','${escAttr(item.id)}')">×</button>
     </div>
     <div class="mb-fixed-schedule">
       <select class="form-input" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','frequency',this.value)">
