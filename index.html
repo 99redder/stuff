@@ -4701,9 +4701,12 @@ function mbNormalize(raw) {
   data.template = data.template || defaults.template;
   data.template.income = Array.isArray(data.template.income) ? data.template.income : defaults.template.income;
   data.template.fixed = Array.isArray(data.template.fixed) ? data.template.fixed : defaults.template.fixed;
+  data.template.income.forEach(item => { item.locked = !!item.locked; });
+  data.template.fixed.forEach(item => { item.locked = !!item.locked; });
   data.template.variable = data.template.variable || defaults.template.variable;
   data.template.variable.groceries = Number(data.template.variable.groceries ?? defaults.template.variable.groceries);
   data.template.variable.discretionary = Number(data.template.variable.discretionary ?? defaults.template.variable.discretionary);
+  data.template.variableLocks = data.template.variableLocks || {};
   data.months = data.months || {};
   return data;
 }
@@ -4775,6 +4778,22 @@ function mbYearSummary(year) {
   }, { months: 0, income: 0, planned: 0, actual: 0, variance: 0 });
 }
 
+function mbBillIcon(item) {
+  const id = String(item.id || '').toLowerCase();
+  const name = String(item.name || '').toLowerCase();
+  if (id.includes('rent') || name.includes('rent')) return '🏠';
+  if (id.includes('internet') || name.includes('internet')) return '🌐';
+  if (id.includes('cell') || name.includes('phone')) return '📱';
+  if (id.includes('water') || name.includes('water') || name.includes('sewer') || name.includes('trash')) return '💧';
+  if (id.includes('electric') || name.includes('electric')) return '⚡';
+  if (id.includes('gas-heat') || name.includes('heat') || name.includes('nat gas')) return '🔥';
+  if (id.includes('car') || name.includes('car') || name === 'gas') return '🚗';
+  if (id.includes('medical') || name.includes('prescription') || name.includes('copay')) return '💊';
+  if (id.includes('netflix')) return '▶️';
+  if (id.includes('britbox') || name.includes('brit')) return '📺';
+  return '•';
+}
+
 function _renderMomBudgetHtml() {
   const t = state.momBudget.template;
   const m = state.momBudget.months[_mbMonth] || mbBlankMonth();
@@ -4795,10 +4814,11 @@ function _renderMomBudgetHtml() {
     </div>`;
 
   const fixedRows = t.fixed.map(item => `
-    <label class="tp-pay-row" style="cursor:pointer">
+    <label class="tp-pay-row" style="cursor:pointer;justify-content:flex-start;text-align:left;gap:.65rem">
       <input type="checkbox" ${m.fixedPaid?.[item.id] ? 'checked' : ''} onchange="mbToggleFixed('${escAttr(item.id)}', this.checked)">
-      <span style="flex:1;font-weight:600">${escHtml(item.name)}</span>
-      <span style="font-variant-numeric:tabular-nums;color:var(--text-muted)">${fmt(Number(item.amount) || 0)}</span>
+      <span style="width:1.75rem;text-align:center;font-size:1.05rem;line-height:1" aria-hidden="true">${mbBillIcon(item)}</span>
+      <span style="flex:1;font-weight:600;min-width:0">${escHtml(item.name)}</span>
+      <span style="font-variant-numeric:tabular-nums;color:var(--text-muted);min-width:5.75rem;text-align:left">${fmt(Number(item.amount) || 0)}</span>
     </label>`).join('');
 
   const templateIncomeRows = t.income.map(item => mbTemplateRow('income', item)).join('');
@@ -4857,11 +4877,13 @@ function _renderMomBudgetHtml() {
             <div class="tp-group">Variable Budgets</div>
             <div class="tp-pay-row">
               <span style="flex:1;font-weight:600">Groceries</span>
-              <input type="number" class="form-input" style="width:110px;text-align:right" step=".01" min="0" value="${escAttr(String(t.variable.groceries))}" onchange="mbUpdateVariable('groceries', this.value)">
+              <button class="btn btn-ghost btn-sm" title="${t.variableLocks.groceries ? 'Unlock groceries budget' : 'Lock groceries budget'}" onclick="mbToggleVariableLock('groceries')">${t.variableLocks.groceries ? '🔒' : '🔓'}</button>
+              <input type="number" class="form-input" style="width:110px;text-align:right" step=".01" min="0" value="${escAttr(String(t.variable.groceries))}" ${t.variableLocks.groceries ? 'disabled' : ''} onchange="mbUpdateVariable('groceries', this.value)">
             </div>
             <div class="tp-pay-row">
               <span style="flex:1;font-weight:600">Discretionary</span>
-              <input type="number" class="form-input" style="width:110px;text-align:right" step=".01" min="0" value="${escAttr(String(t.variable.discretionary))}" onchange="mbUpdateVariable('discretionary', this.value)">
+              <button class="btn btn-ghost btn-sm" title="${t.variableLocks.discretionary ? 'Unlock discretionary budget' : 'Lock discretionary budget'}" onclick="mbToggleVariableLock('discretionary')">${t.variableLocks.discretionary ? '🔒' : '🔓'}</button>
+              <input type="number" class="form-input" style="width:110px;text-align:right" step=".01" min="0" value="${escAttr(String(t.variable.discretionary))}" ${t.variableLocks.discretionary ? 'disabled' : ''} onchange="mbUpdateVariable('discretionary', this.value)">
             </div>
           </div>
         </div>
@@ -4885,10 +4907,12 @@ function _renderMomBudgetHtml() {
 }
 
 function mbTemplateRow(section, item) {
+  const locked = !!item.locked;
   return `<div class="tp-pay-row">
     <input type="text" class="form-input" style="flex:1" value="${escAttr(item.name)}" onchange="mbUpdateTemplateItem('${section}','${escAttr(item.id)}','name',this.value)">
-    <input type="number" class="form-input" style="width:105px;text-align:right" step=".01" min="0" value="${escAttr(String(item.amount))}" onchange="mbUpdateTemplateItem('${section}','${escAttr(item.id)}','amount',this.value)">
-    <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="mbDeleteTemplateItem('${section}','${escAttr(item.id)}')">×</button>
+    <button class="btn btn-ghost btn-sm" title="${locked ? 'Unlock amount' : 'Lock amount'}" onclick="mbToggleTemplateLock('${section}','${escAttr(item.id)}')">${locked ? '🔒' : '🔓'}</button>
+    <input type="number" class="form-input" style="width:105px;text-align:right" step=".01" min="0" value="${escAttr(String(item.amount))}" ${locked ? 'disabled' : ''} onchange="mbUpdateTemplateItem('${section}','${escAttr(item.id)}','amount',this.value)">
+    <button class="btn btn-ghost btn-sm" style="color:var(--danger)" ${locked ? 'disabled title="Unlock before deleting"' : ''} onclick="mbDeleteTemplateItem('${section}','${escAttr(item.id)}')">×</button>
   </div>`;
 }
 
@@ -4969,7 +4993,7 @@ async function mbAddTemplateItem(section) {
   const name = document.getElementById(`mb-${section}-new-name`)?.value.trim() || '';
   const amount = parseFloat(document.getElementById(`mb-${section}-new-amount`)?.value) || 0;
   if (!name) return;
-  state.momBudget.template[section].push({ id: mbUuid(section), name, amount });
+  state.momBudget.template[section].push({ id: mbUuid(section), name, amount, locked: false });
   _renderMomBudgetHtml();
   await _saveMomBudget();
 }
@@ -4977,19 +5001,38 @@ async function mbAddTemplateItem(section) {
 async function mbUpdateTemplateItem(section, id, field, value) {
   const item = state.momBudget.template[section].find(i => i.id === id);
   if (!item) return;
+  if (field === 'amount' && item.locked) return;
   item[field] = field === 'amount' ? (parseFloat(value) || 0) : String(value || '').trim();
   _renderMomBudgetHtml();
   await _saveMomBudget();
 }
 
 async function mbDeleteTemplateItem(section, id) {
+  const item = state.momBudget.template[section].find(i => i.id === id);
+  if (item?.locked) return;
   state.momBudget.template[section] = state.momBudget.template[section].filter(i => i.id !== id);
   _renderMomBudgetHtml();
   await _saveMomBudget();
 }
 
+async function mbToggleTemplateLock(section, id) {
+  const item = state.momBudget.template[section].find(i => i.id === id);
+  if (!item) return;
+  item.locked = !item.locked;
+  _renderMomBudgetHtml();
+  await _saveMomBudget();
+}
+
 async function mbUpdateVariable(key, value) {
+  if (state.momBudget.template.variableLocks?.[key]) return;
   state.momBudget.template.variable[key] = parseFloat(value) || 0;
+  _renderMomBudgetHtml();
+  await _saveMomBudget();
+}
+
+async function mbToggleVariableLock(key) {
+  if (!state.momBudget.template.variableLocks) state.momBudget.template.variableLocks = {};
+  state.momBudget.template.variableLocks[key] = !state.momBudget.template.variableLocks[key];
   _renderMomBudgetHtml();
   await _saveMomBudget();
 }
@@ -7367,7 +7410,9 @@ window.mbDeleteLedger          = mbDeleteLedger;
 window.mbAddTemplateItem       = mbAddTemplateItem;
 window.mbUpdateTemplateItem    = mbUpdateTemplateItem;
 window.mbDeleteTemplateItem    = mbDeleteTemplateItem;
+window.mbToggleTemplateLock    = mbToggleTemplateLock;
 window.mbUpdateVariable        = mbUpdateVariable;
+window.mbToggleVariableLock    = mbToggleVariableLock;
 
 // Close modals on Escape
 document.addEventListener('keydown', e => {
