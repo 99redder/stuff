@@ -4846,7 +4846,7 @@ const MOM_BUDGET_DEFAULT = {
       { id: 'car-repairs', name: 'Car Repairs', amount: 50, frequency: 'reserve', paymentAmount: 0 },
       { id: 'car-insurance', name: 'Car Insurance', amount: 80, frequency: 'semiannual', dueMonth: 1, paymentAmount: 480 },
       { id: 'gas', name: 'Gas', amount: 120 },
-      { id: 'registration', name: 'Car Registration', amount: 10 },
+      { id: 'registration', name: 'Car Registration', amount: 10, frequency: 'reserve', paymentAmount: 0 },
       { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 },
       { id: 'netflix', name: 'Netflix', amount: 20 },
       { id: 'britbox', name: 'BritBox', amount: 10 }
@@ -4919,7 +4919,7 @@ function mbNormalize(raw) {
     const defaultItem = defaults.template.fixed.find(d => d.id === item.id);
     item.locked = !!item.locked;
     item.frequency = ['reserve', 'monthly', 'semiannual', 'yearly'].includes(item.frequency) ? item.frequency : (defaultItem?.frequency || 'monthly');
-    if (item.id === 'car-repairs' && !item.scheduleMigrated) {
+    if ((item.id === 'car-repairs' || item.id === 'registration') && !item.scheduleMigrated) {
       item.frequency = 'reserve';
       item.scheduleMigrated = true;
     }
