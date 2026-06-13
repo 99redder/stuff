@@ -733,6 +733,70 @@
     .tp-pay-row input[type="date"] { width:155px; flex-shrink:0; }
     .tp-pay-row input[type="number"] { flex:1; }
     .tp-note { font-size:0.75rem; color:var(--text-muted); font-style:italic; margin-top:0.35rem; }
+    .mb-fixed-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 0.65rem;
+    }
+    .mb-fixed-row {
+      display: grid;
+      grid-template-columns: 1.15rem 2.15rem minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 0.75rem;
+      min-height: 4.05rem;
+      padding: 0.75rem 0.85rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface2);
+      cursor: pointer;
+      text-align: left;
+      text-transform: none;
+      letter-spacing: 0;
+      color: var(--text);
+    }
+    .mb-fixed-row:hover { background: var(--bg); }
+    .mb-fixed-row.is-paid { border-color: rgba(22, 163, 74, 0.45); background: var(--success-light); }
+    .mb-fixed-check {
+      width: 1.15rem;
+      height: 1.15rem;
+      padding: 0;
+      margin: 0;
+      flex-shrink: 0;
+      accent-color: var(--success);
+    }
+    .mb-fixed-icon {
+      width: 2.15rem;
+      height: 2.15rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 0.55rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 1.1rem;
+      line-height: 1;
+    }
+    .mb-fixed-name {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font-size: 0.9rem;
+      font-weight: 700;
+      line-height: 1.2;
+      color: var(--text);
+    }
+    .mb-fixed-amount {
+      justify-self: end;
+      white-space: nowrap;
+      font-size: 0.92rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+    }
+    @media (max-width: 520px) {
+      .mb-fixed-list { grid-template-columns: 1fr; }
+      .mb-fixed-row { grid-template-columns: 1.15rem 2rem minmax(0, 1fr); }
+      .mb-fixed-amount { grid-column: 3; justify-self: start; color: var(--text-muted); }
+    }
     @media (max-width:960px) { .tp-layout { grid-template-columns:1fr; } .tp-sticky { position:static; } }
     @media (max-width:768px) { .tp-grid-3 { grid-template-columns:1fr 1fr; } .tp-grid-2 { grid-template-columns:1fr; } }
     @media (max-width:480px) { .tp-grid-3 { grid-template-columns:1fr; } }
@@ -4813,13 +4877,16 @@ function _renderMomBudgetHtml() {
       ${sub ? `<div class="stat-sub">${sub}</div>` : ''}
     </div>`;
 
-  const fixedRows = t.fixed.map(item => `
-    <label class="tp-pay-row" style="cursor:pointer;justify-content:flex-start;text-align:left;gap:.65rem">
-      <input type="checkbox" ${m.fixedPaid?.[item.id] ? 'checked' : ''} onchange="mbToggleFixed('${escAttr(item.id)}', this.checked)">
-      <span style="width:1.75rem;text-align:center;font-size:1.05rem;line-height:1" aria-hidden="true">${mbBillIcon(item)}</span>
-      <span style="flex:1;font-weight:600;min-width:0">${escHtml(item.name)}</span>
-      <span style="font-variant-numeric:tabular-nums;color:var(--text-muted);min-width:5.75rem;text-align:left">${fmt(Number(item.amount) || 0)}</span>
-    </label>`).join('');
+  const fixedRows = t.fixed.map(item => {
+    const paid = !!m.fixedPaid?.[item.id];
+    return `
+      <label class="mb-fixed-row${paid ? ' is-paid' : ''}">
+        <input class="mb-fixed-check" type="checkbox" ${paid ? 'checked' : ''} onchange="mbToggleFixed('${escAttr(item.id)}', this.checked)">
+        <span class="mb-fixed-icon" aria-hidden="true">${mbBillIcon(item)}</span>
+        <span class="mb-fixed-name">${escHtml(item.name)}</span>
+        <span class="mb-fixed-amount">${fmt(Number(item.amount) || 0)}</span>
+      </label>`;
+  }).join('');
 
   const templateIncomeRows = t.income.map(item => mbTemplateRow('income', item)).join('');
   const templateFixedRows = t.fixed.map(item => mbTemplateRow('fixed', item)).join('');
@@ -4854,7 +4921,7 @@ function _renderMomBudgetHtml() {
       <div>
         <div class="card tp-card">
           <div class="card-header"><div class="card-title">Fixed Bills — ${escHtml(_mbMonth)}</div></div>
-          <div class="card-body">${fixedRows}</div>
+          <div class="card-body"><div class="mb-fixed-list">${fixedRows}</div></div>
         </div>
 
         ${mbLedgerCard('Groceries', 'groceries', m.groceries || [], 'Order #', 'orderNumber')}
