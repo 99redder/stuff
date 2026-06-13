@@ -741,7 +741,8 @@
     .mb-template-name { flex:1 1 auto; min-width:0; }
     .mb-money {
       position: relative;
-      display: block;
+      display: inline-flex;
+      align-items: center;
       min-width: 0;
     }
     .mb-money::before {
@@ -824,9 +825,10 @@
     .mb-fixed-row {
       display: grid;
       grid-template-columns: 1.15rem 2.35rem minmax(0, 1fr);
+      grid-template-rows: auto auto 1fr;
       align-items: start;
       column-gap: 0.85rem;
-      row-gap: 0.65rem;
+      row-gap: 0.4rem;
       min-height: 0;
       padding: 0.95rem;
       border: 1px solid var(--border);
@@ -836,6 +838,16 @@
       text-transform: none;
       letter-spacing: 0;
       color: var(--text);
+    }
+    .mb-fixed-row-title {
+      grid-column: 3;
+      grid-row: 1;
+      text-align: center;
+      font-size: 0.92rem;
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: 0.2px;
+      padding-bottom: 0.15rem;
     }
     .mb-fixed-row:hover { background: var(--bg); }
     .mb-fixed-row.is-paid { border-color: rgba(22, 163, 74, 0.45); background: var(--success-light); }
@@ -860,11 +872,11 @@
       line-height: 1;
     }
     .mb-fixed-name {
+      grid-column: 3;
+      grid-row: 3;
       min-width: 0;
       overflow-wrap: normal;
       word-break: normal;
-      font-size: 1rem;
-      font-weight: 700;
       line-height: 1.25;
       color: var(--text);
     }
@@ -890,9 +902,11 @@
     }
     .mb-fixed-paid {
       grid-column: 3;
+      grid-row: 2 / 4;
       justify-self: stretch;
       display: grid;
-      gap: 0.2rem;
+      gap: 0.25rem;
+      align-items: center;
       min-width: 0;
     }
     .mb-fixed-paid-label {
@@ -901,12 +915,18 @@
       text-transform: uppercase;
       letter-spacing: 0.04em;
       color: var(--text-muted);
+      text-align: center;
+    }
+    .mb-fixed-paid .mb-money {
+      min-width: 0;
     }
     .mb-fixed-paid input {
       width: 100%;
       min-width: 0;
-      font-size: 0.88rem;
+      font-size: 0.95rem;
       font-weight: 700;
+      text-align: right;
+      padding: 0.4rem 0.55rem;
     }
     .mb-fixed-over {
       white-space: nowrap;
@@ -915,11 +935,17 @@
       font-variant-numeric: tabular-nums;
       color: var(--danger);
     }
+    .mb-date-input {
+      min-width: 155px;
+      font-size: 0.9rem;
+      padding: 0.5rem 0.6rem;
+    }
     @media (max-width: 520px) {
       .mb-fixed-list { grid-template-columns: 1fr; }
       .mb-fixed-row { grid-template-columns: 1.15rem 2.15rem minmax(0, 1fr); padding: 0.85rem; }
       .mb-fixed-icon { width: 2.15rem; height: 2.15rem; }
-      .mb-fixed-paid { grid-column: 1 / -1; }
+      .mb-fixed-paid { grid-column: 1 / -1; grid-row: auto; }
+      .mb-fixed-row-title { grid-column: 1 / -1; grid-row: auto; }
       .mb-fixed-template-row { grid-template-columns: minmax(0, 1fr) 4.7rem 78px auto; }
       .mb-fixed-schedule { grid-template-columns: 1fr; }
     }
@@ -5135,8 +5161,8 @@ function _renderMomBudgetHtml() {
       <div class="mb-fixed-row${paid ? ' is-paid' : ''}">
         <input class="mb-fixed-check" type="checkbox" ${paid ? 'checked' : ''} ${due ? '' : 'title="Not scheduled this month"'} onchange="mbToggleFixed('${escAttr(item.id)}', this.checked)">
         <span class="mb-fixed-icon" aria-hidden="true">${mbBillIcon(item)}</span>
+        <span class="mb-fixed-row-title">${escHtml(item.name)}</span>
         <span class="mb-fixed-name">
-          ${escHtml(item.name)}
           <span class="mb-fixed-sub">Reserve ${fmt(planned)} / mo · ${escHtml(mbFrequencyLabel(item))}</span>
           ${due ? `<span class="mb-fixed-due">Due ${fmt(expected)}</span>` : ''}
         </span>
@@ -5353,9 +5379,9 @@ function mbLedgerCard(title, section, entries, label, nameKey) {
         </table>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.4rem;margin-top:.75rem;align-items:center">
-        <input type="date" id="mb-${section}-date" class="form-input" value="${appTodayIso()}">
+        <input type="date" id="mb-${section}-date" class="form-input mb-date-input" value="${appTodayIso()}">
         <input type="text" id="mb-${section}-name" class="form-input" placeholder="${escAttr(label)}">
-        <span class="mb-money"><input type="number" id="mb-${section}-amount" class="form-input" step=".01" min="0" placeholder="0.00"></span>
+        <span class="mb-money" style="min-width:100px"><input type="number" id="mb-${section}-amount" class="form-input" step=".01" min="0" placeholder="0.00"></span>
         <input type="text" id="mb-${section}-notes" class="form-input" placeholder="Notes">
         <button class="btn btn-primary btn-sm" onclick="mbAddLedger('${section}','${nameKey}')">Add</button>
       </div>
