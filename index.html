@@ -734,6 +734,42 @@
     .tp-pay-row input[type="number"] { flex:1; }
     .mb-template-name { flex:1 1 auto; min-width:0; }
     .tp-pay-row .mb-template-amount { flex:0 0 88px; width:88px; text-align:right; }
+    .mb-lock-btn {
+      flex-shrink: 0;
+      min-width: 4.7rem;
+      justify-content: center;
+      border-color: var(--border);
+      font-weight: 700;
+    }
+    .mb-lock-btn.is-locked {
+      background: var(--success-light);
+      border-color: rgba(22, 163, 74, 0.45);
+      color: var(--success);
+    }
+    .mb-lock-btn.is-unlocked {
+      background: var(--danger-light);
+      border-color: rgba(220, 38, 38, 0.35);
+      color: var(--danger);
+    }
+    .mb-fixed-template-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 4.7rem 88px auto;
+      gap: 0.5rem;
+      align-items: center;
+      padding: 0.6rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .mb-fixed-template-row:last-child { border-bottom:none; }
+    .mb-fixed-schedule {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: 1fr 88px 1fr;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .mb-fixed-schedule select,
+    .mb-fixed-schedule input { min-width:0; }
+    .mb-fixed-schedule .mb-template-amount { width:88px; text-align:right; }
     .mb-template-add-income input {
       background: rgba(34, 197, 94, 0.1);
       border-color: rgba(34, 197, 94, 0.38);
@@ -804,6 +840,19 @@
       font-weight: 600;
       color: var(--text-muted);
     }
+    .mb-fixed-due {
+      display: inline-block;
+      margin-top: 0.35rem;
+      padding: 0.12rem 0.38rem;
+      border-radius: 999px;
+      border: 1px solid rgba(59, 130, 246, 0.35);
+      background: rgba(59, 130, 246, 0.1);
+      color: #1d4ed8;
+      font-size: 0.68rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
     .mb-fixed-paid {
       grid-column: 3;
       justify-self: stretch;
@@ -838,6 +887,8 @@
       .mb-fixed-row { grid-template-columns: 1.15rem 2.15rem minmax(0, 1fr); padding: 0.85rem; }
       .mb-fixed-icon { width: 2.15rem; height: 2.15rem; }
       .mb-fixed-paid { grid-column: 1 / -1; }
+      .mb-fixed-template-row { grid-template-columns: minmax(0, 1fr) 4.7rem 78px auto; }
+      .mb-fixed-schedule { grid-template-columns: 1fr; }
     }
     @media (max-width:960px) { .tp-layout { grid-template-columns:1fr; } .tp-sticky { position:static; } }
     @media (max-width:768px) { .tp-grid-3 { grid-template-columns:1fr 1fr; } .tp-grid-2 { grid-template-columns:1fr; } }
@@ -4768,14 +4819,14 @@ const MOM_BUDGET_DEFAULT = {
       { id: '401k', name: '401k Distribution', amount: 1000 }
     ],
     fixed: [
-      { id: 'rent', name: 'Rent', amount: 800 },
+      { id: 'rent', name: 'Rent', amount: 800, frequency: 'yearly', dueMonth: 1, paymentAmount: 9600 },
       { id: 'internet', name: 'Internet', amount: 60 },
       { id: 'cell', name: 'Cell Phone', amount: 125 },
       { id: 'water', name: 'Water / Sewer / Trash', amount: 80 },
       { id: 'electric', name: 'Electric', amount: 100 },
       { id: 'gas-heat', name: 'Nat Gas / Heat', amount: 65 },
       { id: 'car-repairs', name: 'Car Repairs', amount: 50 },
-      { id: 'car-insurance', name: 'Car Insurance', amount: 80 },
+      { id: 'car-insurance', name: 'Car Insurance', amount: 80, frequency: 'semiannual', dueMonth: 1, paymentAmount: 480 },
       { id: 'gas', name: 'Gas', amount: 120 },
       { id: 'registration', name: 'Car Registration', amount: 10 },
       { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 },
@@ -4786,6 +4837,8 @@ const MOM_BUDGET_DEFAULT = {
   },
   months: {}
 };
+
+const MB_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 let _mbMonth = appTodayIso().slice(0, 7);
 let _mbFixedSort = 'amount';
@@ -4802,6 +4855,39 @@ function mbBlankMonth() {
   return { fixedPaid: {}, fixedActual: {}, groceries: [], discretionary: [], otherExpenses: [] };
 }
 
+function mbFixedFrequencyMonths(item) {
+  if (item.frequency === 'yearly') return 12;
+  if (item.frequency === 'semiannual') return 6;
+  return 1;
+}
+
+function mbFixedPaymentAmount(item) {
+  const payment = Number(item.paymentAmount);
+  if (Number.isFinite(payment) && payment > 0) return payment;
+  return (Number(item.amount) || 0) * mbFixedFrequencyMonths(item);
+}
+
+function mbFixedDueMonths(item) {
+  if (item.frequency === 'monthly') return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  const start = Math.min(12, Math.max(1, Number(item.dueMonth) || 1));
+  if (item.frequency === 'semiannual') return [start, ((start + 5) % 12) + 1].sort((a, b) => a - b);
+  return [start];
+}
+
+function mbIsFixedDueInMonth(item, monthKey) {
+  return mbFixedDueMonths(item).includes(Number(monthKey.slice(5, 7)));
+}
+
+function mbFixedExpectedPayment(item, monthKey) {
+  return mbIsFixedDueInMonth(item, monthKey) ? mbFixedPaymentAmount(item) : 0;
+}
+
+function mbFrequencyLabel(item) {
+  if (item.frequency === 'yearly') return `Yearly in ${MB_MONTH_NAMES[(Number(item.dueMonth) || 1) - 1]}`;
+  if (item.frequency === 'semiannual') return `Every 6 months (${mbFixedDueMonths(item).map(m => MB_MONTH_NAMES[m - 1]).join(' / ')})`;
+  return 'Monthly';
+}
+
 function mbNormalize(raw) {
   const data = raw && Object.keys(raw).length ? raw : mbClone(MOM_BUDGET_DEFAULT);
   const defaults = mbClone(MOM_BUDGET_DEFAULT);
@@ -4809,7 +4895,13 @@ function mbNormalize(raw) {
   data.template.income = Array.isArray(data.template.income) ? data.template.income : defaults.template.income;
   data.template.fixed = Array.isArray(data.template.fixed) ? data.template.fixed : defaults.template.fixed;
   data.template.income.forEach(item => { item.locked = !!item.locked; });
-  data.template.fixed.forEach(item => { item.locked = !!item.locked; });
+  data.template.fixed.forEach(item => {
+    const defaultItem = defaults.template.fixed.find(d => d.id === item.id);
+    item.locked = !!item.locked;
+    item.frequency = ['monthly', 'semiannual', 'yearly'].includes(item.frequency) ? item.frequency : (defaultItem?.frequency || 'monthly');
+    item.dueMonth = Math.min(12, Math.max(1, Number(item.dueMonth ?? defaultItem?.dueMonth ?? 1) || 1));
+    item.paymentAmount = Number(item.paymentAmount ?? defaultItem?.paymentAmount ?? ((Number(item.amount) || 0) * mbFixedFrequencyMonths(item))) || 0;
+  });
   data.template.variable = data.template.variable || defaults.template.variable;
   data.template.variable.groceries = Number(data.template.variable.groceries ?? defaults.template.variable.groceries);
   data.template.variable.discretionary = Number(data.template.variable.discretionary ?? defaults.template.variable.discretionary);
@@ -4847,18 +4939,21 @@ function mbCalcMonth(monthKey) {
   const t = state.momBudget.template;
   const m = state.momBudget.months[monthKey] || mbBlankMonth();
   const base = mbTemplateTotals();
+  const fixedDue = t.fixed.reduce((s, item) => s + mbFixedExpectedPayment(item, monthKey), 0);
   const fixedPaid = t.fixed.reduce((s, item) => {
     if (!m.fixedPaid?.[item.id]) return s;
-    const planned = Number(item.amount) || 0;
+    const expected = mbFixedExpectedPayment(item, monthKey);
+    const fallback = expected || (Number(item.amount) || 0);
     const actual = Number(m.fixedActual?.[item.id]);
-    return s + (Number.isFinite(actual) && actual > 0 ? actual : planned);
+    return s + (Number.isFinite(actual) && actual > 0 ? actual : fallback);
   }, 0);
   const fixedOver = t.fixed.reduce((s, item) => {
     if (!m.fixedPaid?.[item.id]) return s;
-    const planned = Number(item.amount) || 0;
+    const expected = mbFixedExpectedPayment(item, monthKey);
+    const fallback = expected || (Number(item.amount) || 0);
     const actual = Number(m.fixedActual?.[item.id]);
-    const paid = Number.isFinite(actual) && actual > 0 ? actual : planned;
-    return s + Math.max(0, paid - planned);
+    const paid = Number.isFinite(actual) && actual > 0 ? actual : fallback;
+    return s + Math.max(0, paid - fallback);
   }, 0);
   const groceriesSpent = (m.groceries || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const discretionarySpent = (m.discretionary || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
@@ -4866,9 +4961,11 @@ function mbCalcMonth(monthKey) {
   const otherOverages = otherSpent + fixedOver;
   const groceryOver = Math.max(0, groceriesSpent - base.groceries);
   const discretionaryAdjusted = Math.max(0, base.discretionary - groceryOver - otherOverages);
-  const actualSpent = fixedPaid + groceriesSpent + discretionarySpent + otherSpent;
+  const cashSpent = fixedPaid + groceriesSpent + discretionarySpent + otherSpent;
+  const budgetSpent = base.fixed + fixedOver + groceriesSpent + discretionarySpent + otherSpent;
   return {
     ...base,
+    fixedDue,
     fixedPaid,
     fixedOver,
     groceriesSpent,
@@ -4880,8 +4977,11 @@ function mbCalcMonth(monthKey) {
     discretionaryAdjusted,
     discretionaryRemaining: discretionaryAdjusted - discretionarySpent,
     unallocated: base.income - base.planned,
-    cashLeft: base.income - actualSpent,
-    variance: base.planned - actualSpent
+    cashLeft: base.income - cashSpent,
+    reserveDelta: base.fixed - fixedPaid,
+    cashSpent,
+    budgetSpent,
+    variance: base.planned - budgetSpent
   };
 }
 
@@ -4902,7 +5002,7 @@ function mbYearSummary(year) {
     s.months += 1;
     s.income += c.income;
     s.planned += c.planned;
-    s.actual += c.fixedPaid + c.groceriesSpent + c.discretionarySpent + c.otherSpent;
+    s.actual += c.budgetSpent;
     s.variance += c.variance;
     return s;
   }, { months: 0, income: 0, planned: 0, actual: 0, variance: 0 });
@@ -4930,7 +5030,8 @@ function _renderMomBudgetHtml() {
   const c = mbCalcMonth(_mbMonth);
   const year = _mbMonth.slice(0, 4);
   const y = mbYearSummary(year);
-  const pctPaid = t.fixed.length ? (Object.values(m.fixedPaid || {}).filter(Boolean).length / t.fixed.length) * 100 : 0;
+  const dueFixedItems = t.fixed.filter(item => mbIsFixedDueInMonth(item, _mbMonth));
+  const pctPaid = dueFixedItems.length ? (dueFixedItems.filter(item => !!m.fixedPaid?.[item.id]).length / dueFixedItems.length) * 100 : 100;
   const monthOptions = Object.keys(state.momBudget.months)
     .sort().reverse()
     .map(k => `<option value="${escAttr(k)}"${k === _mbMonth ? ' selected' : ''}>${escHtml(k)}</option>`)
@@ -4953,28 +5054,31 @@ function _renderMomBudgetHtml() {
   const fixedRows = fixedItems.map(item => {
     const paid = !!m.fixedPaid?.[item.id];
     const planned = Number(item.amount) || 0;
+    const expected = mbFixedExpectedPayment(item, _mbMonth);
+    const due = expected > 0;
     const actualValue = m.fixedActual?.[item.id];
     const actual = Number(actualValue);
-    const paidAmount = Number.isFinite(actual) && actual > 0 ? actual : planned;
-    const over = paid ? Math.max(0, paidAmount - planned) : 0;
+    const paidAmount = Number.isFinite(actual) && actual > 0 ? actual : (expected || planned);
+    const over = paid ? Math.max(0, paidAmount - (expected || planned)) : 0;
     return `
       <div class="mb-fixed-row${paid ? ' is-paid' : ''}">
-        <input class="mb-fixed-check" type="checkbox" ${paid ? 'checked' : ''} onchange="mbToggleFixed('${escAttr(item.id)}', this.checked)">
+        <input class="mb-fixed-check" type="checkbox" ${paid ? 'checked' : ''} ${due ? '' : 'title="Not scheduled this month"'} onchange="mbToggleFixed('${escAttr(item.id)}', this.checked)">
         <span class="mb-fixed-icon" aria-hidden="true">${mbBillIcon(item)}</span>
         <span class="mb-fixed-name">
           ${escHtml(item.name)}
-          <span class="mb-fixed-sub">Planned ${fmt(planned)}</span>
+          <span class="mb-fixed-sub">Reserve ${fmt(planned)} / mo · ${escHtml(mbFrequencyLabel(item))}</span>
+          ${due ? `<span class="mb-fixed-due">Due ${fmt(expected)}</span>` : ''}
         </span>
         <span class="mb-fixed-paid">
           <span class="mb-fixed-paid-label">Paid amount</span>
-          <input class="form-input" type="number" step=".01" min="0" ${paid ? '' : 'disabled'} value="${escAttr(paid ? String(paidAmount) : '')}" placeholder="${escAttr(planned.toFixed(2))}" onchange="mbUpdateFixedActual('${escAttr(item.id)}', this.value)">
+          <input class="form-input" type="number" step=".01" min="0" ${paid ? '' : 'disabled'} value="${escAttr(paid ? String(paidAmount) : '')}" placeholder="${escAttr((expected || planned).toFixed(2))}" onchange="mbUpdateFixedActual('${escAttr(item.id)}', this.value)">
           ${over ? `<span class="mb-fixed-over">+${fmt(over)} over</span>` : ''}
         </span>
       </div>`;
   }).join('');
 
   const templateIncomeRows = t.income.map(item => mbTemplateRow('income', item)).join('');
-  const templateFixedRows = t.fixed.map(item => mbTemplateRow('fixed', item)).join('');
+  const templateFixedRows = t.fixed.map(item => mbFixedTemplateRow(item)).join('');
 
   document.getElementById('app').innerHTML = `
     <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
@@ -4990,7 +5094,7 @@ function _renderMomBudgetHtml() {
 
     <div class="stats-row" style="grid-template-columns:repeat(4,1fr)">
       ${stat('Monthly Income', fmt(c.income), 'var(--success)', `${fmt(c.unallocated)} unallocated`)}
-      ${stat('Fixed Paid', `${Math.round(pctPaid)}%`, pctPaid === 100 ? 'var(--success)' : 'var(--warning)', `${fmt(c.fixedPaid)} of ${fmt(c.fixed)}`)}
+      ${stat('Fixed Due Paid', `${Math.round(pctPaid)}%`, pctPaid === 100 ? 'var(--success)' : 'var(--warning)', `${fmt(c.fixedPaid)} cash paid · ${fmt(c.fixed)} reserved`)}
       ${stat('Groceries Left', `${c.groceryRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.groceryRemaining))}`, c.groceryRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.groceriesSpent)} spent`)}
       ${stat('Discretionary Left', `${c.discretionaryRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.discretionaryRemaining))}`, c.discretionaryRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.discretionaryAdjusted)} adjusted budget`)}
     </div>
@@ -5027,10 +5131,13 @@ function _renderMomBudgetHtml() {
           <div class="card-header"><div class="card-title">Month Math</div></div>
           <div class="card-body">
             <div class="tp-row"><span>Income</span><strong style="color:var(--success)">${fmt(c.income)}</strong></div>
-            <div class="tp-row"><span>Planned fixed</span><strong>${fmt(c.fixed)}</strong></div>
+            <div class="tp-row"><span>Fixed monthly reserve</span><strong>${fmt(c.fixed)}</strong></div>
+            <div class="tp-row"><span>Fixed due this month</span><strong>${fmt(c.fixedDue)}</strong></div>
+            <div class="tp-row"><span>Fixed cash paid</span><strong>${fmt(c.fixedPaid)}</strong></div>
             <div class="tp-row"><span>Groceries budget</span><strong>${fmt(c.groceries)}</strong></div>
             <div class="tp-row"><span>Discretionary base</span><strong>${fmt(c.discretionary)}</strong></div>
             <div class="tp-row sub"><span>Unallocated after template</span><strong>${c.unallocated < 0 ? '−' : ''}${fmt(Math.abs(c.unallocated))}</strong></div>
+            <div class="tp-row"><span>Reserve cash delta</span><strong style="color:${c.reserveDelta >= 0 ? 'var(--success)' : 'var(--danger)'}">${c.reserveDelta < 0 ? '−' : '+'}${fmt(Math.abs(c.reserveDelta))}</strong></div>
             <div class="tp-row"><span>Grocery overage</span><strong style="color:${c.groceryOver ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.groceryOver)}</strong></div>
             <div class="tp-row"><span>Fixed bill overage</span><strong style="color:${c.fixedOver ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.fixedOver)}</strong></div>
             <div class="tp-row"><span>Other overages</span><strong style="color:${c.otherOverages ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.otherOverages)}</strong></div>
@@ -5053,12 +5160,12 @@ function _renderMomBudgetHtml() {
             <div class="tp-group">Variable Budgets</div>
             <div class="tp-pay-row">
               <span style="flex:1;font-weight:600">Groceries</span>
-              <button class="btn btn-ghost btn-sm" title="${t.variableLocks.groceries ? 'Unlock groceries budget' : 'Lock groceries budget'}" onclick="mbToggleVariableLock('groceries')">${t.variableLocks.groceries ? '🔒' : '🔓'}</button>
+              ${mbLockButton(t.variableLocks.groceries, `mbToggleVariableLock('groceries')`, t.variableLocks.groceries ? 'Unlock groceries budget' : 'Lock groceries budget')}
               <input type="number" class="form-input" style="width:110px;text-align:right" step=".01" min="0" value="${escAttr(String(t.variable.groceries))}" ${t.variableLocks.groceries ? 'disabled' : ''} onchange="mbUpdateVariable('groceries', this.value)">
             </div>
             <div class="tp-pay-row">
               <span style="flex:1;font-weight:600">Discretionary</span>
-              <button class="btn btn-ghost btn-sm" title="${t.variableLocks.discretionary ? 'Unlock discretionary budget' : 'Lock discretionary budget'}" onclick="mbToggleVariableLock('discretionary')">${t.variableLocks.discretionary ? '🔒' : '🔓'}</button>
+              ${mbLockButton(t.variableLocks.discretionary, `mbToggleVariableLock('discretionary')`, t.variableLocks.discretionary ? 'Unlock discretionary budget' : 'Lock discretionary budget')}
               <input type="number" class="form-input" style="width:110px;text-align:right" step=".01" min="0" value="${escAttr(String(t.variable.discretionary))}" ${t.variableLocks.discretionary ? 'disabled' : ''} onchange="mbUpdateVariable('discretionary', this.value)">
             </div>
           </div>
@@ -5067,13 +5174,39 @@ function _renderMomBudgetHtml() {
     </div>`;
 }
 
+function mbLockButton(locked, onClick, title) {
+  return `<button class="btn btn-ghost btn-sm mb-lock-btn ${locked ? 'is-locked' : 'is-unlocked'}" title="${escAttr(title)}" onclick="${escAttr(onClick)}">${locked ? '🔒 Locked' : '🔓 Open'}</button>`;
+}
+
 function mbTemplateRow(section, item) {
   const locked = !!item.locked;
   return `<div class="tp-pay-row">
     <input type="text" class="form-input mb-template-name" value="${escAttr(item.name)}" onchange="mbUpdateTemplateItem('${section}','${escAttr(item.id)}','name',this.value)">
-    <button class="btn btn-ghost btn-sm" title="${locked ? 'Unlock amount' : 'Lock amount'}" onclick="mbToggleTemplateLock('${section}','${escAttr(item.id)}')">${locked ? '🔒' : '🔓'}</button>
+    ${mbLockButton(locked, `mbToggleTemplateLock('${section}','${escAttr(item.id)}')`, locked ? 'Unlock amount' : 'Lock amount')}
     <input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(String(item.amount))}" ${locked ? 'disabled' : ''} onchange="mbUpdateTemplateItem('${section}','${escAttr(item.id)}','amount',this.value)">
     <button class="btn btn-ghost btn-sm" style="color:var(--danger)" title="Delete ${escAttr(item.name)}" onclick="mbDeleteTemplateItem('${section}','${escAttr(item.id)}')">×</button>
+  </div>`;
+}
+
+function mbFixedTemplateRow(item) {
+  const locked = !!item.locked;
+  const dueOptions = MB_MONTH_NAMES.map((name, idx) => `<option value="${idx + 1}"${Number(item.dueMonth || 1) === idx + 1 ? ' selected' : ''}>${name}</option>`).join('');
+  return `<div class="mb-fixed-template-row">
+    <input type="text" class="form-input mb-template-name" value="${escAttr(item.name)}" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','name',this.value)">
+    ${mbLockButton(locked, `mbToggleTemplateLock('fixed','${escAttr(item.id)}')`, locked ? 'Unlock monthly reserve' : 'Lock monthly reserve')}
+    <input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(String(item.amount))}" ${locked ? 'disabled' : ''} title="Monthly reserve" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','amount',this.value)">
+    <button class="btn btn-ghost btn-sm" style="color:var(--danger)" title="Delete ${escAttr(item.name)}" onclick="mbDeleteTemplateItem('fixed','${escAttr(item.id)}')">×</button>
+    <div class="mb-fixed-schedule">
+      <select class="form-input" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','frequency',this.value)">
+        <option value="monthly"${item.frequency === 'monthly' ? ' selected' : ''}>Monthly</option>
+        <option value="semiannual"${item.frequency === 'semiannual' ? ' selected' : ''}>Every 6 months</option>
+        <option value="yearly"${item.frequency === 'yearly' ? ' selected' : ''}>Yearly</option>
+      </select>
+      <input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(String(mbFixedPaymentAmount(item)))}" title="Payment amount when due" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','paymentAmount',this.value)">
+      <select class="form-input" ${item.frequency === 'monthly' ? 'disabled' : ''} title="First due month" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','dueMonth',this.value)">
+        ${dueOptions}
+      </select>
+    </div>
   </div>`;
 }
 
@@ -5134,7 +5267,7 @@ async function mbToggleFixed(id, checked) {
   if (!m.fixedActual) m.fixedActual = {};
   if (checked) {
     const item = state.momBudget.template.fixed.find(i => i.id === id);
-    if (!m.fixedActual[id] && item) m.fixedActual[id] = Number(item.amount) || 0;
+    if (!m.fixedActual[id] && item) m.fixedActual[id] = mbFixedExpectedPayment(item, _mbMonth) || (Number(item.amount) || 0);
   } else {
     delete m.fixedActual[id];
   }
@@ -5148,7 +5281,7 @@ async function mbUpdateFixedActual(id, value) {
   if (!m.fixedActual) m.fixedActual = {};
   const amount = parseFloat(value) || 0;
   const item = state.momBudget.template.fixed.find(i => i.id === id);
-  m.fixedActual[id] = amount > 0 ? amount : (Number(item?.amount) || 0);
+  m.fixedActual[id] = amount > 0 ? amount : (item ? (mbFixedExpectedPayment(item, _mbMonth) || (Number(item.amount) || 0)) : 0);
   _renderMomBudgetHtml();
   await _saveMomBudget();
 }
@@ -5177,7 +5310,13 @@ async function mbAddTemplateItem(section) {
   const name = document.getElementById(`mb-${section}-new-name`)?.value.trim() || '';
   const amount = parseFloat(document.getElementById(`mb-${section}-new-amount`)?.value) || 0;
   if (!name) return;
-  state.momBudget.template[section].push({ id: mbUuid(section), name, amount, locked: false });
+  const item = { id: mbUuid(section), name, amount, locked: false };
+  if (section === 'fixed') {
+    item.frequency = 'monthly';
+    item.dueMonth = 1;
+    item.paymentAmount = amount;
+  }
+  state.momBudget.template[section].push(item);
   _renderMomBudgetHtml();
   await _saveMomBudget();
 }
@@ -5186,7 +5325,17 @@ async function mbUpdateTemplateItem(section, id, field, value) {
   const item = state.momBudget.template[section].find(i => i.id === id);
   if (!item) return;
   if (field === 'amount' && item.locked) return;
-  item[field] = field === 'amount' ? (parseFloat(value) || 0) : String(value || '').trim();
+  if (field === 'amount' || field === 'paymentAmount') {
+    item[field] = parseFloat(value) || 0;
+    if (section === 'fixed' && field === 'amount' && item.frequency === 'monthly') item.paymentAmount = item.amount;
+  } else if (field === 'dueMonth') {
+    item.dueMonth = Math.min(12, Math.max(1, Number(value) || 1));
+  } else if (field === 'frequency') {
+    item.frequency = ['monthly', 'semiannual', 'yearly'].includes(value) ? value : 'monthly';
+    item.paymentAmount = (Number(item.amount) || 0) * mbFixedFrequencyMonths(item);
+  } else {
+    item[field] = String(value || '').trim();
+  }
   _renderMomBudgetHtml();
   await _saveMomBudget();
 }
