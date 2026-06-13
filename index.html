@@ -763,6 +763,7 @@
     <div style="margin-left:auto;display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
       <button class="tp-header-btn" id="deductions-btn" onclick="switchView('deductions')">Deductions Tracker</button>
       <button class="tp-header-btn" id="budget-btn" onclick="switchView('budget')">Monthly Budget</button>
+      <button class="tp-header-btn" id="mom-budget-btn" onclick="switchView('mom-budget')">Mom Budget</button>
       <button class="tp-header-btn" id="solar-btn" onclick="switchView('solar')">☀️ Solar</button>
       <button class="tp-header-btn" id="tax-planning-btn" onclick="switchView('tax-planning')">Tax Planning</button>
       <button class="tp-header-btn" id="savings-btn" onclick="switchView('savings')">💰 Savings</button>
@@ -1040,6 +1041,7 @@
  *   Add Entry          renderAddEntry(): transaction form with "Use Default" and "Post Normal Month"
  *   Tax Planning       renderTaxPlanning(): projected federal/state liability with live inputs
  *   Monthly Budget     renderBudget(): monthly planner; property income rows open worksheet modal
+ *   Mom Budget         renderMomBudget(): mother monthly template + paid bill/monthly ledger tracking
  *   Property Worksheet openBudgetWorksheetModal(): per-property net income calculator
  *   Solar ROI          renderSolar(): solar panel ROI tracking + billing cycle calculator
  *   Security           escHtml(), escAttr() — always use on user-supplied content
@@ -1523,6 +1525,7 @@ const state = {
   pendingDefaultPrompt: null,  // { category, amount } after a save
   pendingMaintPrompt: null,    // { date, amount, description, category } after expense save
   budget: null,                // loaded once, global (not per-property)
+  momBudget: null,             // loaded once, global (not per-property)
   solar: { config: null, entries: null, summaries: null },
   savings: null                // loaded once, global (not per-property)
 };
@@ -1690,10 +1693,11 @@ function switchView(view) {
   });
   const isTaxPlanning = view === 'tax-planning';
   const isBudget = view === 'budget';
+  const isMomBudget = view === 'mom-budget';
   const isSolar = view === 'solar';
   const isDeductions = view === 'deductions';
   const isSavings = view === 'savings';
-  const isFullscreen = isTaxPlanning || isBudget || isSolar || isDeductions || isSavings;
+  const isFullscreen = isTaxPlanning || isBudget || isMomBudget || isSolar || isDeductions || isSavings;
   // Hide property tabs for portfolio, tax planning, budget, solar, deductions, savings
   document.getElementById('property-tabs').style.display =
     (view === 'portfolio' || isFullscreen) ? 'none' : '';
@@ -1704,6 +1708,8 @@ function switchView(view) {
   if (tpBtn) tpBtn.classList.toggle('active', isTaxPlanning);
   const budgetBtn = document.getElementById('budget-btn');
   if (budgetBtn) budgetBtn.classList.toggle('active', isBudget);
+  const momBudgetBtn = document.getElementById('mom-budget-btn');
+  if (momBudgetBtn) momBudgetBtn.classList.toggle('active', isMomBudget);
   const solarBtn = document.getElementById('solar-btn');
   if (solarBtn) solarBtn.classList.toggle('active', isSolar);
   const dedBtn = document.getElementById('deductions-btn');
@@ -1728,6 +1734,7 @@ async function renderView() {
       case 'portfolio':     await renderPortfolio();    break;
       case 'tax-planning':  await renderTaxPlanning();   break;
       case 'budget':        await renderBudget();        break;
+      case 'mom-budget':    await renderMomBudget();     break;
       case 'solar':         await renderSolar();         break;
       case 'deductions':    await renderDeductions();    break;
       case 'savings':       await renderSavings();       break;
@@ -4646,6 +4653,352 @@ async function _saveBudget() {
   catch { /* non-critical — data is in memory */ }
 }
 
+// ── View: Mom Budget ─────────────────────────────────────────────────────────
+
+const MOM_BUDGET_DEFAULT = {
+  template: {
+    income: [
+      { id: 'ss', name: 'Social Security', amount: 2092.50 },
+      { id: '401k', name: '401k Distribution', amount: 1000 }
+    ],
+    fixed: [
+      { id: 'rent', name: 'Rent', amount: 800 },
+      { id: 'internet', name: 'Internet', amount: 60 },
+      { id: 'cell', name: 'Cell Phone', amount: 125 },
+      { id: 'water', name: 'Water / Sewer / Trash', amount: 80 },
+      { id: 'electric', name: 'Electric', amount: 100 },
+      { id: 'gas-heat', name: 'Nat Gas / Heat', amount: 65 },
+      { id: 'car-repairs', name: 'Car Repairs', amount: 50 },
+      { id: 'car-insurance', name: 'Car Insurance', amount: 80 },
+      { id: 'gas', name: 'Gas', amount: 120 },
+      { id: 'registration', name: 'Car Registration', amount: 10 },
+      { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 },
+      { id: 'netflix', name: 'Netflix', amount: 20 },
+      { id: 'britbox', name: 'BritBox', amount: 10 }
+    ],
+    variable: { groceries: 870, discretionary: 500 }
+  },
+  months: {}
+};
+
+let _mbMonth = appTodayIso().slice(0, 7);
+
+function mbClone(obj) {
+  return JSON.parse(JSON.stringify(obj));
+}
+
+function mbUuid(prefix = 'mb') {
+  return crypto.randomUUID ? crypto.randomUUID() : `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
+function mbBlankMonth() {
+  return { fixedPaid: {}, groceries: [], discretionary: [], otherExpenses: [] };
+}
+
+function mbNormalize(raw) {
+  const data = raw && Object.keys(raw).length ? raw : mbClone(MOM_BUDGET_DEFAULT);
+  const defaults = mbClone(MOM_BUDGET_DEFAULT);
+  data.template = data.template || defaults.template;
+  data.template.income = Array.isArray(data.template.income) ? data.template.income : defaults.template.income;
+  data.template.fixed = Array.isArray(data.template.fixed) ? data.template.fixed : defaults.template.fixed;
+  data.template.variable = data.template.variable || defaults.template.variable;
+  data.template.variable.groceries = Number(data.template.variable.groceries ?? defaults.template.variable.groceries);
+  data.template.variable.discretionary = Number(data.template.variable.discretionary ?? defaults.template.variable.discretionary);
+  data.months = data.months || {};
+  return data;
+}
+
+async function renderMomBudget() {
+  if (!state.momBudget) {
+    const result = await callApi({ action: 'get_mom_budget' });
+    state.momBudget = mbNormalize(result.data || {});
+  }
+  if (!state.momBudget.months[_mbMonth]) state.momBudget.months[_mbMonth] = mbBlankMonth();
+  _renderMomBudgetHtml();
+}
+
+function mbTemplateTotals() {
+  const t = state.momBudget.template;
+  const income = t.income.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  const fixed = t.fixed.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  const groceries = Number(t.variable.groceries) || 0;
+  const discretionary = Number(t.variable.discretionary) || 0;
+  return { income, fixed, groceries, discretionary, planned: fixed + groceries + discretionary };
+}
+
+function mbCalcMonth(monthKey) {
+  const t = state.momBudget.template;
+  const m = state.momBudget.months[monthKey] || mbBlankMonth();
+  const base = mbTemplateTotals();
+  const fixedPaid = t.fixed.reduce((s, item) => s + (m.fixedPaid?.[item.id] ? (Number(item.amount) || 0) : 0), 0);
+  const groceriesSpent = (m.groceries || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const discretionarySpent = (m.discretionary || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const otherSpent = (m.otherExpenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const groceryOver = Math.max(0, groceriesSpent - base.groceries);
+  const discretionaryAdjusted = Math.max(0, base.discretionary - groceryOver - otherSpent);
+  const actualSpent = fixedPaid + groceriesSpent + discretionarySpent + otherSpent;
+  return {
+    ...base,
+    fixedPaid,
+    groceriesSpent,
+    discretionarySpent,
+    otherSpent,
+    groceryRemaining: base.groceries - groceriesSpent,
+    groceryOver,
+    discretionaryAdjusted,
+    discretionaryRemaining: discretionaryAdjusted - discretionarySpent,
+    unallocated: base.income - base.planned,
+    cashLeft: base.income - actualSpent,
+    variance: base.planned - actualSpent
+  };
+}
+
+function mbMonthHasActivity(month) {
+  return Object.values(month.fixedPaid || {}).some(Boolean)
+    || (month.groceries || []).length > 0
+    || (month.discretionary || []).length > 0
+    || (month.otherExpenses || []).length > 0;
+}
+
+function mbYearSummary(year) {
+  const months = Object.keys(state.momBudget.months)
+    .filter(k => k.startsWith(`${year}-`) && mbMonthHasActivity(state.momBudget.months[k] || mbBlankMonth()))
+    .sort();
+  return months.reduce((s, key) => {
+    const c = mbCalcMonth(key);
+    s.months += 1;
+    s.income += c.income;
+    s.planned += c.planned;
+    s.actual += c.fixedPaid + c.groceriesSpent + c.discretionarySpent + c.otherSpent;
+    s.variance += c.variance;
+    return s;
+  }, { months: 0, income: 0, planned: 0, actual: 0, variance: 0 });
+}
+
+function _renderMomBudgetHtml() {
+  const t = state.momBudget.template;
+  const m = state.momBudget.months[_mbMonth] || mbBlankMonth();
+  const c = mbCalcMonth(_mbMonth);
+  const year = _mbMonth.slice(0, 4);
+  const y = mbYearSummary(year);
+  const pctPaid = t.fixed.length ? (Object.values(m.fixedPaid || {}).filter(Boolean).length / t.fixed.length) * 100 : 0;
+  const monthOptions = Object.keys(state.momBudget.months)
+    .sort().reverse()
+    .map(k => `<option value="${escAttr(k)}"${k === _mbMonth ? ' selected' : ''}>${escHtml(k)}</option>`)
+    .join('');
+
+  const stat = (label, value, color = 'var(--text)', sub = '') => `
+    <div class="stat-card">
+      <div class="stat-label">${escHtml(label)}</div>
+      <div class="stat-value" style="color:${color}">${value}</div>
+      ${sub ? `<div class="stat-sub">${sub}</div>` : ''}
+    </div>`;
+
+  const fixedRows = t.fixed.map(item => `
+    <label class="tp-pay-row" style="cursor:pointer">
+      <input type="checkbox" ${m.fixedPaid?.[item.id] ? 'checked' : ''} onchange="mbToggleFixed('${escAttr(item.id)}', this.checked)">
+      <span style="flex:1;font-weight:600">${escHtml(item.name)}</span>
+      <span style="font-variant-numeric:tabular-nums;color:var(--text-muted)">${fmt(Number(item.amount) || 0)}</span>
+    </label>`).join('');
+
+  const templateIncomeRows = t.income.map(item => mbTemplateRow('income', item)).join('');
+  const templateFixedRows = t.fixed.map(item => mbTemplateRow('fixed', item)).join('');
+
+  document.getElementById('app').innerHTML = `
+    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="switchView('current-year')" style="flex-shrink:0;background:linear-gradient(135deg,#f59e0b,#d97706);color:white;border:none">← Back to Properties</button>
+      <div style="font-size:1.2rem;font-weight:700">Mom Budget</div>
+      <div style="margin-left:auto;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+        <input type="month" class="form-input" style="width:145px" value="${escAttr(_mbMonth)}" onchange="mbSetMonth(this.value)">
+        <select class="form-input" style="width:145px" onchange="mbSetMonth(this.value)">
+          ${monthOptions || `<option value="${escAttr(_mbMonth)}">${escHtml(_mbMonth)}</option>`}
+        </select>
+      </div>
+    </div>
+
+    <div class="stats-row" style="grid-template-columns:repeat(4,1fr)">
+      ${stat('Monthly Income', fmt(c.income), 'var(--success)', `${fmt(c.unallocated)} unallocated`)}
+      ${stat('Fixed Paid', `${Math.round(pctPaid)}%`, pctPaid === 100 ? 'var(--success)' : 'var(--warning)', `${fmt(c.fixedPaid)} of ${fmt(c.fixed)}`)}
+      ${stat('Groceries Left', `${c.groceryRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.groceryRemaining))}`, c.groceryRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.groceriesSpent)} spent`)}
+      ${stat('Discretionary Left', `${c.discretionaryRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.discretionaryRemaining))}`, c.discretionaryRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.discretionaryAdjusted)} adjusted budget`)}
+    </div>
+
+    <div class="stats-row" style="grid-template-columns:repeat(4,1fr)">
+      ${stat(`${year} Months`, String(y.months), 'var(--text-muted)', 'tracked')}
+      ${stat(`${year} Planned`, fmt(y.planned), 'var(--text)', 'budget envelope')}
+      ${stat(`${year} Actual`, fmt(y.actual), 'var(--danger)', 'recorded spending')}
+      ${stat(`${year} Over / Under`, `${y.variance < 0 ? '−' : '+'}${fmt(Math.abs(y.variance))}`, y.variance >= 0 ? 'var(--success)' : 'var(--danger)', y.variance >= 0 ? 'under plan' : 'over plan')}
+    </div>
+
+    <div class="tp-layout">
+      <div>
+        <div class="card tp-card">
+          <div class="card-header"><div class="card-title">Fixed Bills — ${escHtml(_mbMonth)}</div></div>
+          <div class="card-body">${fixedRows}</div>
+        </div>
+
+        ${mbLedgerCard('Groceries', 'groceries', m.groceries || [], 'Order #', 'orderNumber')}
+        ${mbLedgerCard('Discretionary', 'discretionary', m.discretionary || [], 'Description', 'name')}
+        ${mbLedgerCard('Other Expense Overages', 'otherExpenses', m.otherExpenses || [], 'Description', 'name')}
+      </div>
+
+      <div class="tp-sticky">
+        <div class="card tp-card">
+          <div class="card-header"><div class="card-title">Monthly Template</div></div>
+          <div class="card-body">
+            <div class="tp-group">Income</div>
+            ${templateIncomeRows}
+            ${mbTemplateAddRow('income', 'Add Income')}
+
+            <div class="tp-group">Fixed Expenses</div>
+            ${templateFixedRows}
+            ${mbTemplateAddRow('fixed', 'Add Fixed Expense')}
+
+            <div class="tp-group">Variable Budgets</div>
+            <div class="tp-pay-row">
+              <span style="flex:1;font-weight:600">Groceries</span>
+              <input type="number" class="form-input" style="width:110px;text-align:right" step=".01" min="0" value="${escAttr(String(t.variable.groceries))}" onchange="mbUpdateVariable('groceries', this.value)">
+            </div>
+            <div class="tp-pay-row">
+              <span style="flex:1;font-weight:600">Discretionary</span>
+              <input type="number" class="form-input" style="width:110px;text-align:right" step=".01" min="0" value="${escAttr(String(t.variable.discretionary))}" onchange="mbUpdateVariable('discretionary', this.value)">
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><div class="card-title">Month Math</div></div>
+          <div class="card-body">
+            <div class="tp-row"><span>Income</span><strong style="color:var(--success)">${fmt(c.income)}</strong></div>
+            <div class="tp-row"><span>Planned fixed</span><strong>${fmt(c.fixed)}</strong></div>
+            <div class="tp-row"><span>Groceries budget</span><strong>${fmt(c.groceries)}</strong></div>
+            <div class="tp-row"><span>Discretionary base</span><strong>${fmt(c.discretionary)}</strong></div>
+            <div class="tp-row sub"><span>Unallocated after template</span><strong>${c.unallocated < 0 ? '−' : ''}${fmt(Math.abs(c.unallocated))}</strong></div>
+            <div class="tp-row"><span>Grocery overage</span><strong style="color:${c.groceryOver ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.groceryOver)}</strong></div>
+            <div class="tp-row"><span>Other overages</span><strong style="color:${c.otherSpent ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.otherSpent)}</strong></div>
+            <div class="tp-row sub"><span>Adjusted discretionary</span><strong>${fmt(c.discretionaryAdjusted)}</strong></div>
+            <div class="tp-row ${c.cashLeft >= 0 ? 'refund' : 'owed'}"><span>Cash left by recorded spend</span><span>${c.cashLeft < 0 ? '−' : ''}${fmt(Math.abs(c.cashLeft))}</span></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function mbTemplateRow(section, item) {
+  return `<div class="tp-pay-row">
+    <input type="text" class="form-input" style="flex:1" value="${escAttr(item.name)}" onchange="mbUpdateTemplateItem('${section}','${escAttr(item.id)}','name',this.value)">
+    <input type="number" class="form-input" style="width:105px;text-align:right" step=".01" min="0" value="${escAttr(String(item.amount))}" onchange="mbUpdateTemplateItem('${section}','${escAttr(item.id)}','amount',this.value)">
+    <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="mbDeleteTemplateItem('${section}','${escAttr(item.id)}')">×</button>
+  </div>`;
+}
+
+function mbTemplateAddRow(section, label) {
+  return `<div class="tp-pay-row">
+    <input type="text" id="mb-${section}-new-name" class="form-input" style="flex:1" placeholder="Name">
+    <input type="number" id="mb-${section}-new-amount" class="form-input" style="width:105px;text-align:right" step=".01" min="0" placeholder="0.00">
+    <button class="btn btn-ghost btn-sm" onclick="mbAddTemplateItem('${section}')">${escHtml(label)}</button>
+  </div>`;
+}
+
+function mbLedgerCard(title, section, entries, label, nameKey) {
+  const rows = entries.length ? entries.map(e => `
+    <tr>
+      <td>${escHtml(fmtDate(e.date))}</td>
+      <td>${escHtml(e[nameKey] || '')}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${fmt(Number(e.amount) || 0)}</td>
+      <td>${escHtml(e.notes || '')}</td>
+      <td style="text-align:right"><button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="mbDeleteLedger('${section}','${escAttr(e.id)}')">×</button></td>
+    </tr>`).join('') : `<tr><td colspan="5" style="color:var(--text-muted);padding:.75rem">No entries yet.</td></tr>`;
+
+  return `<div class="card tp-card">
+    <div class="card-header"><div class="card-title">${escHtml(title)}</div></div>
+    <div class="card-body">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>${escHtml(label)}</th><th style="text-align:right">Amount</th><th>Notes</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.4rem;margin-top:.75rem;align-items:center">
+        <input type="date" id="mb-${section}-date" class="form-input" value="${appTodayIso()}">
+        <input type="text" id="mb-${section}-name" class="form-input" placeholder="${escAttr(label)}">
+        <input type="number" id="mb-${section}-amount" class="form-input" step=".01" min="0" placeholder="0.00" style="text-align:right">
+        <input type="text" id="mb-${section}-notes" class="form-input" placeholder="Notes">
+        <button class="btn btn-primary btn-sm" onclick="mbAddLedger('${section}','${nameKey}')">Add</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function mbSetMonth(value) {
+  if (!/^\d{4}-\d{2}$/.test(value || '')) return;
+  _mbMonth = value;
+  if (!state.momBudget.months[_mbMonth]) state.momBudget.months[_mbMonth] = mbBlankMonth();
+  _renderMomBudgetHtml();
+  await _saveMomBudget();
+}
+
+async function mbToggleFixed(id, checked) {
+  const m = state.momBudget.months[_mbMonth] || (state.momBudget.months[_mbMonth] = mbBlankMonth());
+  m.fixedPaid[id] = !!checked;
+  _renderMomBudgetHtml();
+  await _saveMomBudget();
+}
+
+async function mbAddLedger(section, nameKey) {
+  const m = state.momBudget.months[_mbMonth] || (state.momBudget.months[_mbMonth] = mbBlankMonth());
+  const date = document.getElementById(`mb-${section}-date`)?.value || appTodayIso();
+  const name = document.getElementById(`mb-${section}-name`)?.value.trim() || '';
+  const amount = parseFloat(document.getElementById(`mb-${section}-amount`)?.value) || 0;
+  const notes = document.getElementById(`mb-${section}-notes`)?.value.trim() || '';
+  if (!name || amount <= 0) return;
+  if (!Array.isArray(m[section])) m[section] = [];
+  m[section].push({ id: mbUuid(section), date, [nameKey]: name, amount, notes });
+  _renderMomBudgetHtml();
+  await _saveMomBudget();
+}
+
+async function mbDeleteLedger(section, id) {
+  const m = state.momBudget.months[_mbMonth] || (state.momBudget.months[_mbMonth] = mbBlankMonth());
+  m[section] = (m[section] || []).filter(e => e.id !== id);
+  _renderMomBudgetHtml();
+  await _saveMomBudget();
+}
+
+async function mbAddTemplateItem(section) {
+  const name = document.getElementById(`mb-${section}-new-name`)?.value.trim() || '';
+  const amount = parseFloat(document.getElementById(`mb-${section}-new-amount`)?.value) || 0;
+  if (!name) return;
+  state.momBudget.template[section].push({ id: mbUuid(section), name, amount });
+  _renderMomBudgetHtml();
+  await _saveMomBudget();
+}
+
+async function mbUpdateTemplateItem(section, id, field, value) {
+  const item = state.momBudget.template[section].find(i => i.id === id);
+  if (!item) return;
+  item[field] = field === 'amount' ? (parseFloat(value) || 0) : String(value || '').trim();
+  _renderMomBudgetHtml();
+  await _saveMomBudget();
+}
+
+async function mbDeleteTemplateItem(section, id) {
+  state.momBudget.template[section] = state.momBudget.template[section].filter(i => i.id !== id);
+  _renderMomBudgetHtml();
+  await _saveMomBudget();
+}
+
+async function mbUpdateVariable(key, value) {
+  state.momBudget.template.variable[key] = parseFloat(value) || 0;
+  _renderMomBudgetHtml();
+  await _saveMomBudget();
+}
+
+async function _saveMomBudget() {
+  try { await callApi({ action: 'save_mom_budget', data: state.momBudget }); }
+  catch { /* non-critical — data is in memory */ }
+}
+
 // ── Solar ROI ────────────────────────────────────────────────────────────────
 
 let _sEdit     = null;  // { id:'new'|uuid, date, description, code, amount } — entry edit state
@@ -7007,6 +7360,14 @@ window.dedToggleLock           = dedToggleLock;
 window.dedOpenDelete           = dedOpenDelete;
 window.closeDedDeleteModal     = closeDedDeleteModal;
 window.dedExecuteDelete        = dedExecuteDelete;
+window.mbSetMonth              = mbSetMonth;
+window.mbToggleFixed           = mbToggleFixed;
+window.mbAddLedger             = mbAddLedger;
+window.mbDeleteLedger          = mbDeleteLedger;
+window.mbAddTemplateItem       = mbAddTemplateItem;
+window.mbUpdateTemplateItem    = mbUpdateTemplateItem;
+window.mbDeleteTemplateItem    = mbDeleteTemplateItem;
+window.mbUpdateVariable        = mbUpdateVariable;
 
 // Close modals on Escape
 document.addEventListener('keydown', e => {

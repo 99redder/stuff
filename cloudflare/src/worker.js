@@ -87,6 +87,8 @@ async function handleDataApi(request, env) {
   if (action === 'fetch_fmg_tax_summary') return handleFetchFmgTaxSummary(body);
   if (action === 'get_budget') return handleGetBudget(env);
   if (action === 'save_budget') return handleSaveBudget(env, body.data);
+  if (action === 'get_mom_budget') return handleGetMomBudget(env);
+  if (action === 'save_mom_budget') return handleSaveMomBudget(env, body.data);
 
   if (action === 'get_solar_config')     return handleGetSolarConfig(env);
   if (action === 'save_solar_config')    return handleSaveSolarConfig(env, body.config);
@@ -590,6 +592,21 @@ async function handleSaveBudget(env, data) {
     return jsonResponse({ error: 'Missing data object' }, 400);
   }
   await env.RENTALS.put('budget', JSON.stringify(data));
+  return jsonResponse({ success: true });
+}
+
+// ── Mom Budget ───────────────────────────────────────────────────────────────
+
+async function handleGetMomBudget(env) {
+  const data = await env.RENTALS.get('mom_budget', 'json') || {};
+  return jsonResponse({ data });
+}
+
+async function handleSaveMomBudget(env, data) {
+  if (!data || typeof data !== 'object') {
+    return jsonResponse({ error: 'Missing data object' }, 400);
+  }
+  await env.RENTALS.put('mom_budget', JSON.stringify(data));
   return jsonResponse({ success: true });
 }
 
