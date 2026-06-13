@@ -739,7 +739,28 @@
     .tp-pay-row input[type="date"] { width:155px; flex-shrink:0; }
     .tp-pay-row input[type="number"] { flex:1; }
     .mb-template-name { flex:1 1 auto; min-width:0; }
-    .tp-pay-row .mb-template-amount { flex:0 0 88px; width:88px; text-align:right; }
+    .mb-money {
+      position: relative;
+      display: block;
+      min-width: 0;
+    }
+    .mb-money::before {
+      content: '$';
+      position: absolute;
+      left: 0.55rem;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 1;
+      color: var(--text-muted);
+      font-weight: 800;
+      font-size: 0.82rem;
+      pointer-events: none;
+    }
+    .mb-money input { width: 100%; padding-left: 1.35rem !important; }
+    .mb-money input[type="number"] { text-align: right; font-variant-numeric: tabular-nums; }
+    .tp-pay-row .mb-template-money { flex:0 0 88px; width:88px; }
+    .tp-pay-row .mb-variable-money { flex:0 0 110px; width:110px; }
+    .mb-modal-money { width:100%; }
     .mb-lock-btn {
       flex-shrink: 0;
       min-width: 4.7rem;
@@ -793,7 +814,7 @@
     }
     .mb-fixed-schedule select,
     .mb-fixed-schedule input { min-width:0; }
-    .mb-fixed-schedule .mb-template-amount { width:88px; text-align:right; }
+    .mb-fixed-schedule .mb-template-money { width:88px; }
     .tp-note { font-size:0.75rem; color:var(--text-muted); font-style:italic; margin-top:0.35rem; }
     .mb-fixed-list {
       display: grid;
@@ -884,10 +905,8 @@
     .mb-fixed-paid input {
       width: 100%;
       min-width: 0;
-      text-align: right;
       font-size: 0.88rem;
       font-weight: 700;
-      font-variant-numeric: tabular-nums;
     }
     .mb-fixed-over {
       white-space: nowrap;
@@ -1044,7 +1063,7 @@
         </div>
         <div class="form-group full">
           <label for="mom-template-amount" id="mom-template-amount-label">Monthly Amount ($)</label>
-          <input type="number" id="mom-template-amount" step="0.01" min="0" placeholder="0.00" onkeydown="if(event.key==='Enter') mbSaveTemplateAdd()">
+          <span class="mb-money mb-modal-money"><input type="number" id="mom-template-amount" step="0.01" min="0" placeholder="0.00" onkeydown="if(event.key==='Enter') mbSaveTemplateAdd()"></span>
         </div>
       </div>
       <div id="mom-template-error" class="error-msg hidden" style="margin-top:0.75rem"></div>
@@ -5123,7 +5142,7 @@ function _renderMomBudgetHtml() {
         </span>
         <span class="mb-fixed-paid">
           <span class="mb-fixed-paid-label">Paid amount</span>
-          <input class="form-input" type="number" step=".01" min="0" ${paid ? '' : 'disabled'} value="${escAttr(paid ? String(paidAmount) : '')}" placeholder="${escAttr((expected || planned).toFixed(2))}" onchange="mbUpdateFixedActual('${escAttr(item.id)}', this.value)">
+          <span class="mb-money"><input class="form-input" type="number" step=".01" min="0" ${paid ? '' : 'disabled'} value="${escAttr(paid ? String(paidAmount) : '')}" placeholder="${escAttr((expected || planned).toFixed(2))}" onchange="mbUpdateFixedActual('${escAttr(item.id)}', this.value)"></span>
           ${over ? `<span class="mb-fixed-over">+${fmt(over)} over</span>` : ''}
         </span>
       </div>`;
@@ -5217,12 +5236,12 @@ function _renderMomBudgetHtml() {
             <div class="tp-pay-row">
               <span style="flex:1;font-weight:600">Groceries</span>
               ${mbLockButton(t.variableLocks.groceries, `mbToggleVariableLock('groceries')`, t.variableLocks.groceries ? 'Unlock groceries budget' : 'Lock groceries budget')}
-              <input type="number" class="form-input" style="width:110px;text-align:right" step=".01" min="0" value="${escAttr(String(t.variable.groceries))}" ${t.variableLocks.groceries ? 'disabled' : ''} onchange="mbUpdateVariable('groceries', this.value)">
+              <span class="mb-money mb-variable-money"><input type="number" class="form-input" step=".01" min="0" value="${escAttr(String(t.variable.groceries))}" ${t.variableLocks.groceries ? 'disabled' : ''} onchange="mbUpdateVariable('groceries', this.value)"></span>
             </div>
             <div class="tp-pay-row">
               <span style="flex:1;font-weight:600">Discretionary</span>
               ${mbLockButton(t.variableLocks.discretionary, `mbToggleVariableLock('discretionary')`, t.variableLocks.discretionary ? 'Unlock discretionary budget' : 'Lock discretionary budget')}
-              <input type="number" class="form-input" style="width:110px;text-align:right" step=".01" min="0" value="${escAttr(String(t.variable.discretionary))}" ${t.variableLocks.discretionary ? 'disabled' : ''} onchange="mbUpdateVariable('discretionary', this.value)">
+              <span class="mb-money mb-variable-money"><input type="number" class="form-input" step=".01" min="0" value="${escAttr(String(t.variable.discretionary))}" ${t.variableLocks.discretionary ? 'disabled' : ''} onchange="mbUpdateVariable('discretionary', this.value)"></span>
             </div>
           </div>
         </div>
@@ -5239,7 +5258,7 @@ function mbTemplateRow(section, item) {
   return `<div class="tp-pay-row">
     <input type="text" class="form-input mb-template-name" value="${escAttr(item.name)}" onchange="mbUpdateTemplateItem('${section}','${escAttr(item.id)}','name',this.value)">
     ${mbLockButton(locked, `mbToggleTemplateLock('${section}','${escAttr(item.id)}')`, locked ? 'Unlock amount' : 'Lock amount')}
-    <input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(String(item.amount))}" ${locked ? 'disabled' : ''} onchange="mbUpdateTemplateItem('${section}','${escAttr(item.id)}','amount',this.value)">
+    <span class="mb-money mb-template-money"><input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(String(item.amount))}" ${locked ? 'disabled' : ''} onchange="mbUpdateTemplateItem('${section}','${escAttr(item.id)}','amount',this.value)"></span>
     <button class="btn btn-ghost btn-sm" style="color:var(--danger)" title="Delete ${escAttr(item.name)}" onclick="mbDeleteTemplateItem('${section}','${escAttr(item.id)}')">×</button>
   </div>`;
 }
@@ -5250,7 +5269,7 @@ function mbFixedTemplateRow(item, index = 0) {
   return `<div class="mb-fixed-template-row${index % 2 ? ' is-alt' : ''}">
     <input type="text" class="form-input mb-template-name" value="${escAttr(item.name)}" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','name',this.value)">
     ${mbLockButton(locked, `mbToggleTemplateLock('fixed','${escAttr(item.id)}')`, locked ? 'Unlock monthly reserve' : 'Lock monthly reserve')}
-    <input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(String(item.amount))}" ${locked ? 'disabled' : ''} title="Monthly reserve" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','amount',this.value)">
+    <span class="mb-money mb-template-money"><input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(String(item.amount))}" ${locked ? 'disabled' : ''} title="Monthly reserve" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','amount',this.value)"></span>
     <button class="btn btn-ghost btn-sm" style="color:var(--danger)" title="Delete ${escAttr(item.name)}" onclick="mbDeleteTemplateItem('fixed','${escAttr(item.id)}')">×</button>
     <div class="mb-fixed-schedule">
       <select class="form-input" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','frequency',this.value)">
@@ -5259,7 +5278,7 @@ function mbFixedTemplateRow(item, index = 0) {
         <option value="semiannual"${item.frequency === 'semiannual' ? ' selected' : ''}>Every 6 months</option>
         <option value="yearly"${item.frequency === 'yearly' ? ' selected' : ''}>Yearly</option>
       </select>
-      <input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(String(mbFixedPaymentAmount(item)))}" ${item.frequency === 'reserve' ? 'disabled' : ''} title="Payment amount when due" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','paymentAmount',this.value)">
+      <span class="mb-money mb-template-money"><input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(String(mbFixedPaymentAmount(item)))}" ${item.frequency === 'reserve' ? 'disabled' : ''} title="Payment amount when due" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','paymentAmount',this.value)"></span>
       <select class="form-input" ${item.frequency === 'monthly' || item.frequency === 'reserve' ? 'disabled' : ''} title="First due month" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','dueMonth',this.value)">
         ${dueOptions}
       </select>
@@ -5336,7 +5355,7 @@ function mbLedgerCard(title, section, entries, label, nameKey) {
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.4rem;margin-top:.75rem;align-items:center">
         <input type="date" id="mb-${section}-date" class="form-input" value="${appTodayIso()}">
         <input type="text" id="mb-${section}-name" class="form-input" placeholder="${escAttr(label)}">
-        <input type="number" id="mb-${section}-amount" class="form-input" step=".01" min="0" placeholder="0.00" style="text-align:right">
+        <span class="mb-money"><input type="number" id="mb-${section}-amount" class="form-input" step=".01" min="0" placeholder="0.00"></span>
         <input type="text" id="mb-${section}-notes" class="form-input" placeholder="Notes">
         <button class="btn btn-primary btn-sm" onclick="mbAddLedger('${section}','${nameKey}')">Add</button>
       </div>
