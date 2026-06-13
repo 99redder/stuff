@@ -5023,6 +5023,22 @@ function _renderMomBudgetHtml() {
       </div>
 
       <div class="tp-sticky">
+        <div class="card">
+          <div class="card-header"><div class="card-title">Month Math</div></div>
+          <div class="card-body">
+            <div class="tp-row"><span>Income</span><strong style="color:var(--success)">${fmt(c.income)}</strong></div>
+            <div class="tp-row"><span>Planned fixed</span><strong>${fmt(c.fixed)}</strong></div>
+            <div class="tp-row"><span>Groceries budget</span><strong>${fmt(c.groceries)}</strong></div>
+            <div class="tp-row"><span>Discretionary base</span><strong>${fmt(c.discretionary)}</strong></div>
+            <div class="tp-row sub"><span>Unallocated after template</span><strong>${c.unallocated < 0 ? '−' : ''}${fmt(Math.abs(c.unallocated))}</strong></div>
+            <div class="tp-row"><span>Grocery overage</span><strong style="color:${c.groceryOver ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.groceryOver)}</strong></div>
+            <div class="tp-row"><span>Fixed bill overage</span><strong style="color:${c.fixedOver ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.fixedOver)}</strong></div>
+            <div class="tp-row"><span>Other overages</span><strong style="color:${c.otherOverages ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.otherOverages)}</strong></div>
+            <div class="tp-row sub"><span>Adjusted discretionary</span><strong>${fmt(c.discretionaryAdjusted)}</strong></div>
+            <div class="tp-row ${c.cashLeft >= 0 ? 'refund' : 'owed'}"><span>Cash left by recorded spend</span><span>${c.cashLeft < 0 ? '−' : ''}${fmt(Math.abs(c.cashLeft))}</span></div>
+          </div>
+        </div>
+
         <div class="card tp-card">
           <div class="card-header"><div class="card-title">Monthly Template</div></div>
           <div class="card-body">
@@ -5045,22 +5061,6 @@ function _renderMomBudgetHtml() {
               <button class="btn btn-ghost btn-sm" title="${t.variableLocks.discretionary ? 'Unlock discretionary budget' : 'Lock discretionary budget'}" onclick="mbToggleVariableLock('discretionary')">${t.variableLocks.discretionary ? '🔒' : '🔓'}</button>
               <input type="number" class="form-input" style="width:110px;text-align:right" step=".01" min="0" value="${escAttr(String(t.variable.discretionary))}" ${t.variableLocks.discretionary ? 'disabled' : ''} onchange="mbUpdateVariable('discretionary', this.value)">
             </div>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-header"><div class="card-title">Month Math</div></div>
-          <div class="card-body">
-            <div class="tp-row"><span>Income</span><strong style="color:var(--success)">${fmt(c.income)}</strong></div>
-            <div class="tp-row"><span>Planned fixed</span><strong>${fmt(c.fixed)}</strong></div>
-            <div class="tp-row"><span>Groceries budget</span><strong>${fmt(c.groceries)}</strong></div>
-            <div class="tp-row"><span>Discretionary base</span><strong>${fmt(c.discretionary)}</strong></div>
-            <div class="tp-row sub"><span>Unallocated after template</span><strong>${c.unallocated < 0 ? '−' : ''}${fmt(Math.abs(c.unallocated))}</strong></div>
-            <div class="tp-row"><span>Grocery overage</span><strong style="color:${c.groceryOver ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.groceryOver)}</strong></div>
-            <div class="tp-row"><span>Fixed bill overage</span><strong style="color:${c.fixedOver ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.fixedOver)}</strong></div>
-            <div class="tp-row"><span>Other overages</span><strong style="color:${c.otherOverages ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.otherOverages)}</strong></div>
-            <div class="tp-row sub"><span>Adjusted discretionary</span><strong>${fmt(c.discretionaryAdjusted)}</strong></div>
-            <div class="tp-row ${c.cashLeft >= 0 ? 'refund' : 'owed'}"><span>Cash left by recorded spend</span><span>${c.cashLeft < 0 ? '−' : ''}${fmt(Math.abs(c.cashLeft))}</span></div>
           </div>
         </div>
       </div>
