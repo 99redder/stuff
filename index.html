@@ -740,15 +740,14 @@
     }
     .mb-fixed-row {
       display: grid;
-      grid-template-columns: 1.15rem 2.15rem minmax(0, 1fr) auto;
+      grid-template-columns: 1.15rem 2.15rem minmax(0, 1fr) minmax(7.5rem, auto);
       align-items: center;
       gap: 0.75rem;
-      min-height: 4.05rem;
+      min-height: 4.5rem;
       padding: 0.75rem 0.85rem;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       background: var(--surface2);
-      cursor: pointer;
       text-align: left;
       text-transform: none;
       letter-spacing: 0;
@@ -784,18 +783,45 @@
       line-height: 1.2;
       color: var(--text);
     }
-    .mb-fixed-amount {
+    .mb-fixed-sub {
+      display: block;
+      margin-top: 0.2rem;
+      font-size: 0.74rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .mb-fixed-paid {
       justify-self: end;
-      white-space: nowrap;
-      font-size: 0.92rem;
-      font-weight: 800;
+      display: grid;
+      gap: 0.2rem;
+      min-width: 7.5rem;
+    }
+    .mb-fixed-paid-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+    }
+    .mb-fixed-paid input {
+      width: 100%;
+      min-width: 0;
+      text-align: right;
+      font-size: 0.88rem;
+      font-weight: 700;
       font-variant-numeric: tabular-nums;
-      color: var(--text);
+    }
+    .mb-fixed-over {
+      white-space: nowrap;
+      font-size: 0.72rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--danger);
     }
     @media (max-width: 520px) {
       .mb-fixed-list { grid-template-columns: 1fr; }
       .mb-fixed-row { grid-template-columns: 1.15rem 2rem minmax(0, 1fr); }
-      .mb-fixed-amount { grid-column: 3; justify-self: start; color: var(--text-muted); }
+      .mb-fixed-paid { grid-column: 3; justify-self: stretch; }
     }
     @media (max-width:960px) { .tp-layout { grid-template-columns:1fr; } .tp-sticky { position:static; } }
     @media (max-width:768px) { .tp-grid-3 { grid-template-columns:1fr 1fr; } .tp-grid-2 { grid-template-columns:1fr; } }
@@ -4756,7 +4782,7 @@ function mbUuid(prefix = 'mb') {
 }
 
 function mbBlankMonth() {
-  return { fixedPaid: {}, groceries: [], discretionary: [], otherExpenses: [] };
+  return { fixedPaid: {}, fixedActual: {}, groceries: [], discretionary: [], otherExpenses: [] };
 }
 
 function mbNormalize(raw) {
@@ -4772,6 +4798,13 @@ function mbNormalize(raw) {
   data.template.variable.discretionary = Number(data.template.variable.discretionary ?? defaults.template.variable.discretionary);
   data.template.variableLocks = data.template.variableLocks || {};
   data.months = data.months || {};
+  Object.values(data.months).forEach(month => {
+    month.fixedPaid = month.fixedPaid || {};
+    month.fixedActual = month.fixedActual || {};
+    month.groceries = Array.isArray(month.groceries) ? month.groceries : [];
+    month.discretionary = Array.isArray(month.discretionary) ? month.discretionary : [];
+    month.otherExpenses = Array.isArray(month.otherExpenses) ? month.otherExpenses : [];
+  });
   return data;
 }
 
@@ -4797,19 +4830,34 @@ function mbCalcMonth(monthKey) {
   const t = state.momBudget.template;
   const m = state.momBudget.months[monthKey] || mbBlankMonth();
   const base = mbTemplateTotals();
-  const fixedPaid = t.fixed.reduce((s, item) => s + (m.fixedPaid?.[item.id] ? (Number(item.amount) || 0) : 0), 0);
+  const fixedPaid = t.fixed.reduce((s, item) => {
+    if (!m.fixedPaid?.[item.id]) return s;
+    const planned = Number(item.amount) || 0;
+    const actual = Number(m.fixedActual?.[item.id]);
+    return s + (Number.isFinite(actual) && actual > 0 ? actual : planned);
+  }, 0);
+  const fixedOver = t.fixed.reduce((s, item) => {
+    if (!m.fixedPaid?.[item.id]) return s;
+    const planned = Number(item.amount) || 0;
+    const actual = Number(m.fixedActual?.[item.id]);
+    const paid = Number.isFinite(actual) && actual > 0 ? actual : planned;
+    return s + Math.max(0, paid - planned);
+  }, 0);
   const groceriesSpent = (m.groceries || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const discretionarySpent = (m.discretionary || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const otherSpent = (m.otherExpenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const otherOverages = otherSpent + fixedOver;
   const groceryOver = Math.max(0, groceriesSpent - base.groceries);
-  const discretionaryAdjusted = Math.max(0, base.discretionary - groceryOver - otherSpent);
+  const discretionaryAdjusted = Math.max(0, base.discretionary - groceryOver - otherOverages);
   const actualSpent = fixedPaid + groceriesSpent + discretionarySpent + otherSpent;
   return {
     ...base,
     fixedPaid,
+    fixedOver,
     groceriesSpent,
     discretionarySpent,
     otherSpent,
+    otherOverages,
     groceryRemaining: base.groceries - groceriesSpent,
     groceryOver,
     discretionaryAdjusted,
@@ -4822,6 +4870,7 @@ function mbCalcMonth(monthKey) {
 
 function mbMonthHasActivity(month) {
   return Object.values(month.fixedPaid || {}).some(Boolean)
+    || Object.values(month.fixedActual || {}).some(v => Number(v) > 0)
     || (month.groceries || []).length > 0
     || (month.discretionary || []).length > 0
     || (month.otherExpenses || []).length > 0;
@@ -4879,13 +4928,25 @@ function _renderMomBudgetHtml() {
 
   const fixedRows = t.fixed.map(item => {
     const paid = !!m.fixedPaid?.[item.id];
+    const planned = Number(item.amount) || 0;
+    const actualValue = m.fixedActual?.[item.id];
+    const actual = Number(actualValue);
+    const paidAmount = Number.isFinite(actual) && actual > 0 ? actual : planned;
+    const over = paid ? Math.max(0, paidAmount - planned) : 0;
     return `
-      <label class="mb-fixed-row${paid ? ' is-paid' : ''}">
+      <div class="mb-fixed-row${paid ? ' is-paid' : ''}">
         <input class="mb-fixed-check" type="checkbox" ${paid ? 'checked' : ''} onchange="mbToggleFixed('${escAttr(item.id)}', this.checked)">
         <span class="mb-fixed-icon" aria-hidden="true">${mbBillIcon(item)}</span>
-        <span class="mb-fixed-name">${escHtml(item.name)}</span>
-        <span class="mb-fixed-amount">${fmt(Number(item.amount) || 0)}</span>
-      </label>`;
+        <span class="mb-fixed-name">
+          ${escHtml(item.name)}
+          <span class="mb-fixed-sub">Planned ${fmt(planned)}</span>
+        </span>
+        <span class="mb-fixed-paid">
+          <span class="mb-fixed-paid-label">Paid amount</span>
+          <input class="form-input" type="number" step=".01" min="0" ${paid ? '' : 'disabled'} value="${escAttr(paid ? String(paidAmount) : '')}" placeholder="${escAttr(planned.toFixed(2))}" onchange="mbUpdateFixedActual('${escAttr(item.id)}', this.value)">
+          ${over ? `<span class="mb-fixed-over">+${fmt(over)} over</span>` : ''}
+        </span>
+      </div>`;
   }).join('');
 
   const templateIncomeRows = t.income.map(item => mbTemplateRow('income', item)).join('');
@@ -4964,7 +5025,8 @@ function _renderMomBudgetHtml() {
             <div class="tp-row"><span>Discretionary base</span><strong>${fmt(c.discretionary)}</strong></div>
             <div class="tp-row sub"><span>Unallocated after template</span><strong>${c.unallocated < 0 ? '−' : ''}${fmt(Math.abs(c.unallocated))}</strong></div>
             <div class="tp-row"><span>Grocery overage</span><strong style="color:${c.groceryOver ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.groceryOver)}</strong></div>
-            <div class="tp-row"><span>Other overages</span><strong style="color:${c.otherSpent ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.otherSpent)}</strong></div>
+            <div class="tp-row"><span>Fixed bill overage</span><strong style="color:${c.fixedOver ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.fixedOver)}</strong></div>
+            <div class="tp-row"><span>Other overages</span><strong style="color:${c.otherOverages ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.otherOverages)}</strong></div>
             <div class="tp-row sub"><span>Adjusted discretionary</span><strong>${fmt(c.discretionaryAdjusted)}</strong></div>
             <div class="tp-row ${c.cashLeft >= 0 ? 'refund' : 'owed'}"><span>Cash left by recorded spend</span><span>${c.cashLeft < 0 ? '−' : ''}${fmt(Math.abs(c.cashLeft))}</span></div>
           </div>
@@ -5032,6 +5094,24 @@ async function mbSetMonth(value) {
 async function mbToggleFixed(id, checked) {
   const m = state.momBudget.months[_mbMonth] || (state.momBudget.months[_mbMonth] = mbBlankMonth());
   m.fixedPaid[id] = !!checked;
+  if (!m.fixedActual) m.fixedActual = {};
+  if (checked) {
+    const item = state.momBudget.template.fixed.find(i => i.id === id);
+    if (!m.fixedActual[id] && item) m.fixedActual[id] = Number(item.amount) || 0;
+  } else {
+    delete m.fixedActual[id];
+  }
+  _renderMomBudgetHtml();
+  await _saveMomBudget();
+}
+
+async function mbUpdateFixedActual(id, value) {
+  const m = state.momBudget.months[_mbMonth] || (state.momBudget.months[_mbMonth] = mbBlankMonth());
+  if (!m.fixedPaid?.[id]) return;
+  if (!m.fixedActual) m.fixedActual = {};
+  const amount = parseFloat(value) || 0;
+  const item = state.momBudget.template.fixed.find(i => i.id === id);
+  m.fixedActual[id] = amount > 0 ? amount : (Number(item?.amount) || 0);
   _renderMomBudgetHtml();
   await _saveMomBudget();
 }
