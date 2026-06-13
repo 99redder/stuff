@@ -4843,7 +4843,7 @@ const MOM_BUDGET_DEFAULT = {
       { id: 'water', name: 'Water / Sewer / Trash', amount: 80 },
       { id: 'electric', name: 'Electric', amount: 100 },
       { id: 'gas-heat', name: 'Nat Gas / Heat', amount: 65 },
-      { id: 'car-repairs', name: 'Car Repairs', amount: 50 },
+      { id: 'car-repairs', name: 'Car Repairs', amount: 50, frequency: 'reserve', paymentAmount: 0 },
       { id: 'car-insurance', name: 'Car Insurance', amount: 80, frequency: 'semiannual', dueMonth: 1, paymentAmount: 480 },
       { id: 'gas', name: 'Gas', amount: 120 },
       { id: 'registration', name: 'Car Registration', amount: 10 },
@@ -4886,6 +4886,7 @@ function mbFixedPaymentAmount(item) {
 }
 
 function mbFixedDueMonths(item) {
+  if (item.frequency === 'reserve') return [];
   if (item.frequency === 'monthly') return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
   const start = Math.min(12, Math.max(1, Number(item.dueMonth) || 1));
   if (item.frequency === 'semiannual') return [start, ((start + 5) % 12) + 1].sort((a, b) => a - b);
@@ -4901,6 +4902,7 @@ function mbFixedExpectedPayment(item, monthKey) {
 }
 
 function mbFrequencyLabel(item) {
+  if (item.frequency === 'reserve') return 'Reserve only';
   if (item.frequency === 'yearly') return `Yearly in ${MB_MONTH_NAMES[(Number(item.dueMonth) || 1) - 1]}`;
   if (item.frequency === 'semiannual') return `Every 6 months (${mbFixedDueMonths(item).map(m => MB_MONTH_NAMES[m - 1]).join(' / ')})`;
   return 'Monthly';
@@ -4916,9 +4918,14 @@ function mbNormalize(raw) {
   data.template.fixed.forEach(item => {
     const defaultItem = defaults.template.fixed.find(d => d.id === item.id);
     item.locked = !!item.locked;
-    item.frequency = ['monthly', 'semiannual', 'yearly'].includes(item.frequency) ? item.frequency : (defaultItem?.frequency || 'monthly');
+    item.frequency = ['reserve', 'monthly', 'semiannual', 'yearly'].includes(item.frequency) ? item.frequency : (defaultItem?.frequency || 'monthly');
+    if (item.id === 'car-repairs' && !item.scheduleMigrated) {
+      item.frequency = 'reserve';
+      item.scheduleMigrated = true;
+    }
     item.dueMonth = Math.min(12, Math.max(1, Number(item.dueMonth ?? defaultItem?.dueMonth ?? 1) || 1));
     item.paymentAmount = Number(item.paymentAmount ?? defaultItem?.paymentAmount ?? ((Number(item.amount) || 0) * mbFixedFrequencyMonths(item))) || 0;
+    if (item.frequency === 'reserve') item.paymentAmount = 0;
   });
   data.template.variable = data.template.variable || defaults.template.variable;
   data.template.variable.groceries = Number(data.template.variable.groceries ?? defaults.template.variable.groceries);
@@ -5216,12 +5223,13 @@ function mbFixedTemplateRow(item, index = 0) {
     <button class="btn btn-ghost btn-sm" style="color:var(--danger)" title="Delete ${escAttr(item.name)}" onclick="mbDeleteTemplateItem('fixed','${escAttr(item.id)}')">×</button>
     <div class="mb-fixed-schedule">
       <select class="form-input" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','frequency',this.value)">
+        <option value="reserve"${item.frequency === 'reserve' ? ' selected' : ''}>Reserve only</option>
         <option value="monthly"${item.frequency === 'monthly' ? ' selected' : ''}>Monthly</option>
         <option value="semiannual"${item.frequency === 'semiannual' ? ' selected' : ''}>Every 6 months</option>
         <option value="yearly"${item.frequency === 'yearly' ? ' selected' : ''}>Yearly</option>
       </select>
-      <input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(String(mbFixedPaymentAmount(item)))}" title="Payment amount when due" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','paymentAmount',this.value)">
-      <select class="form-input" ${item.frequency === 'monthly' ? 'disabled' : ''} title="First due month" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','dueMonth',this.value)">
+      <input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(String(mbFixedPaymentAmount(item)))}" ${item.frequency === 'reserve' ? 'disabled' : ''} title="Payment amount when due" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','paymentAmount',this.value)">
+      <select class="form-input" ${item.frequency === 'monthly' || item.frequency === 'reserve' ? 'disabled' : ''} title="First due month" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','dueMonth',this.value)">
         ${dueOptions}
       </select>
     </div>
@@ -5330,9 +5338,9 @@ async function mbAddTemplateItem(section) {
   if (!name) return;
   const item = { id: mbUuid(section), name, amount, locked: false };
   if (section === 'fixed') {
-    item.frequency = 'monthly';
+    item.frequency = 'reserve';
     item.dueMonth = 1;
-    item.paymentAmount = amount;
+    item.paymentAmount = 0;
   }
   state.momBudget.template[section].push(item);
   _renderMomBudgetHtml();
@@ -5349,8 +5357,8 @@ async function mbUpdateTemplateItem(section, id, field, value) {
   } else if (field === 'dueMonth') {
     item.dueMonth = Math.min(12, Math.max(1, Number(value) || 1));
   } else if (field === 'frequency') {
-    item.frequency = ['monthly', 'semiannual', 'yearly'].includes(value) ? value : 'monthly';
-    item.paymentAmount = (Number(item.amount) || 0) * mbFixedFrequencyMonths(item);
+    item.frequency = ['reserve', 'monthly', 'semiannual', 'yearly'].includes(value) ? value : 'monthly';
+    item.paymentAmount = item.frequency === 'reserve' ? 0 : (Number(item.amount) || 0) * mbFixedFrequencyMonths(item);
   } else {
     item[field] = String(value || '').trim();
   }
