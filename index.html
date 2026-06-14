@@ -954,6 +954,37 @@
       text-transform: uppercase;
       letter-spacing: 0.04em;
     }
+    .mb-bill-kind {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: 0.35rem;
+      padding: 0.1rem 0.42rem;
+      min-height: 1.25rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      font-size: 0.62rem;
+      font-weight: 800;
+      line-height: 1;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      vertical-align: 0.08rem;
+    }
+    .mb-bill-kind.is-fixed {
+      border-color: rgba(37, 99, 235, 0.28);
+      background: rgba(37, 99, 235, 0.09);
+      color: #1d4ed8;
+    }
+    .mb-bill-kind.is-variable {
+      border-color: rgba(217, 119, 6, 0.32);
+      background: rgba(217, 119, 6, 0.1);
+      color: #b45309;
+    }
+    button.mb-bill-kind {
+      font-family: inherit;
+      cursor: default;
+      opacity: 1;
+    }
     .mb-stats-row {
       width: 100%;
       max-width: none;
@@ -1047,6 +1078,20 @@
       min-width: 0;
       font-size: 0.88rem;
       font-weight: 700;
+    }
+    .mb-fixed-paid-value {
+      min-height: 2.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 0.55rem 0.65rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 0.92rem;
+      font-weight: 800;
+      line-height: 1;
     }
     .mb-ledger-add-row {
       display: grid;
@@ -5068,6 +5113,7 @@ const MOM_BUDGET_DEFAULT = {
 
 const MB_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MB_YEAR_STATS_OPEN_KEY = 'rentals_mom_budget_year_stats_open';
+const MB_VARIABLE_FIXED_BILL_IDS = new Set(['electric', 'water', 'gas-heat']);
 
 let _mbMonth = appTodayIso().slice(0, 7);
 let _mbFixedSort = 'amount';
@@ -5114,6 +5160,10 @@ function mbFixedExpectedPayment(item, monthKey) {
 
 function mbIsReserveBill(item) {
   return item.frequency && item.frequency !== 'monthly';
+}
+
+function mbFixedBillKind(item) {
+  return MB_VARIABLE_FIXED_BILL_IDS.has(String(item.id || '').toLowerCase()) ? 'variable' : 'fixed';
 }
 
 function mbFrequencyLabel(item) {
@@ -5210,11 +5260,13 @@ function mbCalcMonth(monthKey) {
     if (!m.fixedPaid?.[item.id]) return s;
     const expected = mbFixedExpectedPayment(item, monthKey);
     const fallback = expected || (Number(item.amount) || 0);
+    if (mbFixedBillKind(item) === 'fixed') return s + fallback;
     const actual = Number(m.fixedActual?.[item.id]);
     return s + (Number.isFinite(actual) && actual > 0 ? actual : fallback);
   }, 0);
   const fixedOver = t.fixed.reduce((s, item) => {
     if (!m.fixedPaid?.[item.id]) return s;
+    if (mbFixedBillKind(item) === 'fixed') return s;
     const expected = mbFixedExpectedPayment(item, monthKey);
     const fallback = expected || (Number(item.amount) || 0);
     const actual = Number(m.fixedActual?.[item.id]);
@@ -5262,6 +5314,7 @@ function mbFixedOverageEntries(monthKey) {
   return t.fixed
     .filter(item => !!m.fixedPaid?.[item.id])
     .map(item => {
+      if (mbFixedBillKind(item) === 'fixed') return null;
       const expected = mbFixedExpectedPayment(item, monthKey);
       const budgeted = expected || (Number(item.amount) || 0);
       const actual = Number(m.fixedActual?.[item.id]);
@@ -5275,6 +5328,7 @@ function mbFixedOverageEntries(monthKey) {
         auto: true
       };
     })
+    .filter(Boolean)
     .filter(entry => entry.amount > 0);
 }
 
@@ -5358,8 +5412,11 @@ function _renderMomBudgetHtml() {
     const due = expected > 0;
     const actualValue = m.fixedActual?.[item.id];
     const actual = Number(actualValue);
-    const paidAmount = Number.isFinite(actual) && actual > 0 ? actual : (expected || planned);
-    const canEnterPaidAmount = item.frequency === 'monthly' || paid;
+    const billKind = mbFixedBillKind(item);
+    const isVariableBill = billKind === 'variable';
+    const budgetedAmount = expected || planned;
+    const paidAmount = isVariableBill && Number.isFinite(actual) && actual > 0 ? actual : budgetedAmount;
+    const canEnterPaidAmount = isVariableBill && (item.frequency === 'monthly' || paid);
     const over = paid ? Math.max(0, paidAmount - (expected || planned)) : 0;
     return `
       <div class="mb-fixed-row${paid ? ' is-paid' : ''}">
@@ -5367,12 +5424,15 @@ function _renderMomBudgetHtml() {
         <span class="mb-fixed-icon" aria-hidden="true">${mbBillIcon(item)}</span>
         <span class="mb-fixed-name">
           ${escHtml(item.name)}
+          <button type="button" class="mb-bill-kind is-${billKind}" disabled>${billKind}</button>
           <span class="mb-fixed-sub">Reserve ${fmt(planned)} / mo · ${escHtml(mbFrequencyLabel(item))}</span>
           ${due ? `<span class="mb-fixed-due">Due ${fmt(expected)}</span>` : ''}
         </span>
         <span class="mb-fixed-paid">
-          <span class="mb-fixed-paid-label">Paid amount</span>
-          <span class="mb-money"><input class="form-input" type="number" step=".01" min="0" ${canEnterPaidAmount ? '' : 'disabled'} value="${escAttr(paid ? String(paidAmount) : '')}" placeholder="${escAttr((expected || planned).toFixed(2))}" onchange="mbUpdateFixedActual('${escAttr(item.id)}', this.value)"></span>
+          <span class="mb-fixed-paid-label">${isVariableBill ? 'Paid amount' : 'Amount'}</span>
+          ${isVariableBill
+            ? `<span class="mb-money"><input class="form-input" type="number" step=".01" min="0" ${canEnterPaidAmount ? '' : 'disabled'} value="${escAttr(paid ? String(paidAmount) : '')}" placeholder="${escAttr(budgetedAmount.toFixed(2))}" onchange="mbUpdateFixedActual('${escAttr(item.id)}', this.value)"></span>`
+            : `<span class="mb-fixed-paid-value">${fmt(budgetedAmount)}</span>`}
           ${over ? `<span class="mb-fixed-over">+${fmt(over)} over</span>` : ''}
         </span>
       </div>`;
@@ -5654,7 +5714,7 @@ async function mbToggleFixed(id, checked) {
   if (!m.fixedActual) m.fixedActual = {};
   if (checked) {
     const item = state.momBudget.template.fixed.find(i => i.id === id);
-    if (!m.fixedActual[id] && item) m.fixedActual[id] = mbFixedExpectedPayment(item, _mbMonth) || (Number(item.amount) || 0);
+    if (item) m.fixedActual[id] = mbFixedExpectedPayment(item, _mbMonth) || (Number(item.amount) || 0);
   } else {
     delete m.fixedActual[id];
   }
@@ -5685,6 +5745,7 @@ async function mbUpdateFixedActual(id, value) {
   const amount = parseFloat(value) || 0;
   const item = state.momBudget.template.fixed.find(i => i.id === id);
   if (!item) return;
+  if (mbFixedBillKind(item) === 'fixed') return;
   if (!m.fixedPaid[id] && item.frequency !== 'monthly') return;
   if (amount > 0) {
     m.fixedPaid[id] = true;
