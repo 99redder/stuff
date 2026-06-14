@@ -35,7 +35,7 @@ rentals/
 
 ## Navigating `index.html`
 
-`index.html` is one large self-contained file (~5000+ lines). Use these search anchors:
+`index.html` is one large self-contained file (~8000+ lines). Use these search anchors:
 
 - **CSS sections** — search `/* ──` (e.g. `/* ── Reset & Variables`, `/* ── Print Styles`)
 - **HTML sections** — search `<!-- ──` (e.g. `<!-- ── Delete Confirmation Modal`)
@@ -51,9 +51,9 @@ A full table of contents is in the `NAVIGATION GUIDE` block comment at the very 
 ```
 Property tabs:  [6AL]  [95EB]  [446BB]  [731WO]
 View tabs:      [Current Year]  [Tax Summary]  [Investment Return]  [Historical]  [Maintenance]  [All Properties]
-Header buttons: [Deductions Tracker]  [Monthly Budget]  [☀️ Solar]  [Tax Planning]  [💰 Savings]
+Header buttons: [Deductions Tracker]  [Monthly Budget]  [Mom Budget]  [☀️ Solar]  [Tax Planning]  [💰 Savings]
 ```
-- Property tabs are hidden when **All Properties**, **Deductions Tracker**, **Monthly Budget**, **Solar**, **Tax Planning**, or **Savings** views are active.
+- Property tabs are hidden when **All Properties**, **Deductions Tracker**, **Monthly Budget**, **Mom Budget**, **Solar**, **Tax Planning**, or **Savings** views are active.
 - **731WO** is a primary residence — only shows Investment Return and Maintenance views (`PRIMARY_PROPERTIES` / `PRIMARY_VIEWS` constants).
 - Switching property tabs reloads the current view for the new property.
 
@@ -67,6 +67,7 @@ Header buttons: [Deductions Tracker]  [Monthly Budget]  [☀️ Solar]  [Tax Pla
 | Maintenance | `maintenance` | Per-property maintenance log with improvement tracking |
 | All Properties | `portfolio` | Combined stats + per-property breakdown + multi-year history |
 | Monthly Budget | `budget` | Global monthly income/expense planner with property worksheets |
+| Mom Budget | `mom-budget` | Global monthly assistance tracker with income template, fixed/reserve bills, groceries/gas/discretionary ledgers, and month math |
 | Solar ROI | `solar` | Solar panel ROI tracking + billing cycle calculator |
 | Tax Planning | `tax-planning` | Projected federal/MD/VA tax liability with live inputs |
 | Deductions Tracker | `deductions` | Global itemized deductions log for the current year |
@@ -87,6 +88,7 @@ const state = {
   pendingDefaultPrompt: null,   // { category, amount } — shown after saving a transaction
   pendingMaintPrompt: null,     // { date, amount, description, category } — shown after expense save
   budget: null,                 // loaded once, global — { income, expenses, worksheets }
+  momBudget: null,              // loaded once, global — { template, months }
   solar: { config: null, entries: null, summaries: null },
   savings: null                 // loaded once, global — { accounts, obligations, payments }
 };
@@ -111,6 +113,7 @@ const state = {
 | `renderTaxPlanning()` | Tax planning view |
 | `renderDeductions()` | Deductions tracker view |
 | `renderSavings()` | Savings view — account balances + annual obligations |
+| `renderMomBudget()` | Mom Budget view — global monthly assistance tracker |
 | `showBrandedNotice({title,message,type,confirmLabel,onConfirm})` | Branded confirmation modal used by all delete dialogs (replaces native `confirm()`); pass `type:'danger'` for red ⚠️ styling, `confirmLabel` to customize the button text. |
 | `openBudgetWorksheetModal(id)` | Opens the property income worksheet for a budget income item |
 | `calcDepreciationSchedule(costBasis, placedInService)` | MACRS 27.5-yr straight-line, mid-month convention |
@@ -169,6 +172,130 @@ const NORMAL_MONTH_CONFIG = {
   ]}
 };
 ```
+
+### Mom Budget
+
+Global view (not per-property) for tracking Red's mother's monthly assistance budget. Frontend state is `state.momBudget`; Worker actions are `get_mom_budget` / `save_mom_budget`; KV key is `mom_budget`.
+
+**Primary anchors in `index.html`:**
+- Section starts at `// ── View: Mom Budget`
+- Defaults live in `MOM_BUDGET_DEFAULT`
+- Main render path is `renderMomBudget()` → `_renderMomBudgetHtml()`
+- Main math helper is `mbCalcMonth(monthKey)`
+- Save helper is `_saveMomBudget()`
+
+**Data shape (`state.momBudget`):**
+```javascript
+{
+  template: {
+    income: [
+      { id, name, amount, locked }
+    ],
+    fixed: [
+      {
+        id,
+        name,
+        amount,          // monthly reserve amount
+        locked,
+        frequency,       // 'monthly', 'semiannual', 'yearly', or 'reserve'
+        dueMonth,        // 1-12 for semiannual/yearly; ignored for reserve-only
+        paymentAmount    // cash due when scheduled; 0 for reserve-only
+      }
+    ],
+    variable: {
+      groceries: 870,
+      gas: 120,
+      discretionary: 500
+    },
+    variableLocks: {
+      groceries: false,
+      gas: false,
+      discretionary: false
+    }
+  },
+  months: {
+    'YYYY-MM': {
+      fixedPaid: { [fixedId]: true },
+      fixedActual: { [fixedId]: number },
+      groceries: [{ id, date, amount, orderNumber }],
+      gas: [{ id, date, amount, orderNumber }],
+      discretionary: [{ id, date, amount, name }],
+      otherExpenses: [{ id, date, amount, name }]
+    }
+  }
+}
+```
+
+**Current default template:**
+- Income: Social Security, 401k Distribution
+- Fixed/reserve list: Rent, Internet, Cell Phone, Water / Sewer / Trash, Electric, Nat Gas / Heat, Car Repairs, Car Insurance, Car Registration, CoPays / Prescriptions, Netflix, BritBox
+- Variable budgets: Groceries, Gas, Discretionary
+
+**Fixed bill kinds:**
+- `MB_VARIABLE_FIXED_BILL_IDS = new Set(['electric', 'water', 'gas-heat'])`
+- Variable fixed bills: Electric, Water / Sewer / Trash, Nat Gas / Heat
+- Fixed fixed bills: Rent, Cell Phone, Car Insurance, Internet, Netflix, BritBox, Car Registration, and other non-variable fixed items
+- Fixed rows render the scheduled/budgeted amount as read-only text. Variable rows render an editable paid-amount input.
+- Variable fixed bills can generate automatic overage rows when paid above budget; fixed fixed bills do not.
+
+**Reserve bills:**
+- `mbIsReserveBill(item)` returns true when `item.frequency && item.frequency !== 'monthly'`
+- Reserve bills are exactly the rows affected by the `Mark Reserve Bills Paid` button in the Fixed Bills card.
+- Those rows display a `Reserve Bill` badge, using the same predicate as the button.
+- Frequencies:
+  - `monthly`: due every month
+  - `yearly`: due once in `dueMonth`
+  - `semiannual`: due in `dueMonth` and 6 months later
+  - `reserve`: reserve-only bucket; never scheduled as due
+- Car Repairs and Car Registration migrate to `frequency: 'reserve'`.
+
+**Mom Budget tab layout:**
+- Header row: back button, `Mom Budget` title, month input, existing-month dropdown
+- Top summary row:
+  - `Monthly Income`
+  - prominent `Overall Spending Left`
+- Second summary row:
+  - `Groceries Left`
+  - `Gas Left`
+  - `Discretionary Left`
+- Annual summary: collapsed by default behind an Expand/Minimize button; open state persists in `localStorage` key `rentals_mom_budget_year_stats_open`
+- Main layout:
+  - Left column cards: Fixed Bills, Groceries, Gas, Discretionary, Other Expense Overages
+  - Right sticky column: Month Math and Monthly Template
+
+**Top card formulas:**
+```javascript
+overallSpendingRemaining =
+  base.groceries + base.gas + base.discretionary
+  - groceriesSpent - gasSpent - discretionarySpent - otherOverages;
+
+otherOverages = manualOtherExpenses + fixedBillOverages;
+
+discretionaryAdjusted =
+  Math.max(0, base.discretionary - groceryOver - gasOver - otherOverages);
+```
+
+`Overall Spending Left` shows the selected month in italic text and the note: `Groceries + gas + discretionary, including other overage amounts`.
+
+**Ledger cards:**
+- Groceries: date + amount rows, ordered with `orderNumber`
+- Gas: date + amount rows, ordered with `orderNumber`
+- Discretionary: date + description + amount rows. Note at top says discretionary includes non-grocery purchases, prescription copays, and overages from other budget areas.
+- Other Expense Overages: no manual Add row. It auto-populates fixed bill overages. Legacy/manual rows are still included if already present in saved data.
+
+**Monthly Template card:**
+- Income template rows and fixed template rows are edited here.
+- Add Income/Add Expense use the branded Mom Budget modal, not inline add rows.
+- Template rows have lock/unlock controls.
+- Fixed template rows show compact italic schedule text under the title instead of frequency/month dropdowns.
+- Monthly reserve amount remains editable unless locked.
+
+**Normalization/migrations in `mbNormalize(raw)`:**
+- Ensures all `template`, `months`, arrays, locks, and variable budgets exist.
+- Backfills fixed item `frequency`, `dueMonth`, and `paymentAmount` from defaults.
+- Migrates old fixed Gas into the new monthly `gas` ledger, then removes old fixed Gas paid/actual state.
+- Migrates Car Repairs and Car Registration to reserve-only.
+- Ensures `variableLocks` exists.
 
 ### Savings View
 
@@ -313,6 +440,12 @@ All calls: `POST /api/data` with JSON body `{ action, property, ...payload }`.
 | `get_budget` | — | `{ data: { income: [...], expenses: { [cat]: [...] }, worksheets: { [id]: {...} } } }` |
 | `save_budget` | `data: { income, expenses, worksheets }` | `{ success: true }` |
 
+#### Mom Budget (global — not per-property)
+| Action | Extra payload | Returns |
+|---|---|---|
+| `get_mom_budget` | — | `{ data: { template, months } }` |
+| `save_mom_budget` | `data: { template, months }` | `{ success: true }` — full overwrite of the `mom_budget` KV record |
+
 #### Deductions (global — not per-property)
 | Action | Extra payload | Returns |
 |---|---|---|
@@ -358,6 +491,7 @@ depreciation:{property}    →  { costBasis, placedInService, purchaseDate }
 maintenance:{property}     →  Array of maintenance entry objects
 investment:{property}      →  Investment config object
 budget                     →  { income: [...], expenses: {...}, worksheets: {...} }
+mom_budget                 →  { template: { income, fixed, variable, variableLocks }, months: { [YYYY-MM]: {...} } }
 solar:config               →  Solar system config object
 solar:entries              →  Array of solar entry objects
 solar:summaries            →  { [year]: { ... } }
@@ -426,7 +560,20 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ---
 
-## Recent Updates (2026-05-11)
+## Recent Updates
+
+### 2026-06-14 — Mom Budget
+
+- **Mom Budget top cards** — top row now has `Monthly Income` plus a prominent `Overall Spending Left` card. Overall spending left is groceries + gas + discretionary budget minus groceries/gas/discretionary spending and other/fixed overage amounts. Groceries Left, Gas Left, and Discretionary Left moved to a second three-card row.
+- **Annual status collapsed** — the `YYYY Annual Status` stat row is collapsed by default and controlled by an Expand/Minimize button backed by `localStorage`.
+- **Gas tracker split out** — Gas is now a variable budget + monthly ledger like Groceries. Old fixed Gas paid/actual records migrate into the gas ledger on normalization.
+- **Discretionary behavior** — Discretionary includes non-grocery purchase items, prescription copays, and overages from other areas. Its budget is adjusted down by grocery overages, gas overages, and other/fixed overages.
+- **Other Expense Overages** — manual Add row removed. The card auto-populates when variable fixed bills are marked paid above their budgeted amount; legacy manual rows still render if present in saved data.
+- **Fixed Bills card** — rows show Fixed/Variable badges. Variable rows are Electric, Water / Sewer / Trash, and Nat Gas / Heat and keep editable paid amount inputs. Fixed rows show read-only amount text.
+- **Reserve bills** — rows included by `Mark Reserve Bills Paid` show a `Reserve Bill` badge. The badge and bulk action both use `mbIsReserveBill(item)`.
+- **Fixed template rows** — compact card-style rows show italic schedule text under the title and only expose lock + monthly reserve amount controls.
+
+### 2026-05-11 — Savings
 
 - **Savings view added** (`💰 Savings` header button) — global view with manual account balances (Robinhood Checking, IBKR Individual Brokerage) on the left and the year's annual obligations on the right. Stats bar at top shows total annual, paid so far, outstanding, liquid coverage %, and a YTD progress bar. Each obligation has 1 or 2 paid checkboxes (H1/H2 for twice-a-year items). Payments are keyed by year so Jan 1 auto-resets to all-unpaid; past years stay in KV.
 - **Obligation sorting** — sort buttons in the Savings card header: Default (input order), Amount (largest first), A→Z, Unpaid (highest outstanding first). Sort state is in-memory only (not persisted).
