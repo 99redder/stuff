@@ -781,23 +781,22 @@
     }
     .mb-fixed-template-row {
       position: relative;
-      display: grid;
-      grid-template-columns: 2.35rem 4.7rem 88px auto;
-      gap: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
       align-items: center;
-      padding: 0.75rem 0.75rem 0.75rem 0.95rem;
+      padding: 0.65rem 0.75rem 0.7rem 0.95rem;
       margin: 0.45rem 0;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       background: var(--surface2);
     }
     .mb-fixed-template-row-header {
-      grid-column: 1 / -1;
-      grid-row: 1;
       display: flex;
       align-items: center;
       gap: 0.5rem;
-      margin-bottom: 0.35rem;
+      width: 100%;
+      padding-right: 1.5rem;
     }
     .mb-fixed-template-row-header-icon {
       width: 2rem;
@@ -820,6 +819,20 @@
       color: var(--text);
       letter-spacing: 0.2px;
     }
+    .mb-fixed-template-row-title-wrap {
+      flex: 1;
+      min-width: 0;
+      text-align: center;
+    }
+    .mb-fixed-template-row-subtitle {
+      margin-top: 0.12rem;
+      font-size: 0.72rem;
+      font-style: italic;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .mb-fixed-template-row-delete {
       position: absolute;
       top: 0.5rem;
@@ -837,11 +850,11 @@
     }
     .mb-fixed-template-row-delete:hover { opacity: 1; }
     .mb-fixed-template-row-controls {
-      grid-column: 1 / -1;
-      grid-row: 2;
       display: flex;
       align-items: center;
+      justify-content: center;
       gap: 0.5rem;
+      width: 100%;
     }
     .mb-fixed-template-row.is-alt { background: var(--card-bg); }
     .mb-fixed-template-row::before {
@@ -5491,6 +5504,14 @@ function mbLockButton(locked, onClick, title) {
   return `<button class="btn btn-ghost btn-sm mb-lock-btn ${locked ? 'is-locked' : 'is-unlocked'}" title="${escAttr(title)}" onclick="${escAttr(onClick)}">${locked ? '🔒 Locked' : '🔓 Open'}</button>`;
 }
 
+function mbFixedTemplateSubtitle(item) {
+  if (item.frequency === 'monthly') return 'Monthly';
+  if (item.frequency === 'reserve') return 'Reserve only';
+  const schedule = mbFixedScheduleLabel(item);
+  const amount = mbFixedPaymentAmount(item);
+  return `${schedule} · Due ${fmt(amount)}`;
+}
+
 function mbTemplateRow(section, item) {
   const locked = !!item.locked;
   return `<div class="tp-pay-row">
@@ -5503,32 +5524,20 @@ function mbTemplateRow(section, item) {
 
 function mbFixedTemplateRow(item, index = 0) {
   const locked = !!item.locked;
-  const dueOptions = MB_MONTH_NAMES.map((name, idx) => `<option value="${idx + 1}"${Number(item.dueMonth || 1) === idx + 1 ? ' selected' : ''}>${name}</option>`).join('');
-  const scheduleControls = item.frequency === 'monthly'
-    ? ''
-    : `<div class="mb-fixed-schedule">
-      <select class="form-input" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','frequency',this.value)">
-        <option value="reserve"${item.frequency === 'reserve' ? ' selected' : ''}>Reserve only</option>
-        <option value="monthly"${item.frequency === 'monthly' ? ' selected' : ''}>Monthly</option>
-        <option value="semiannual"${item.frequency === 'semiannual' ? ' selected' : ''}>Every 6 months</option>
-        <option value="yearly"${item.frequency === 'yearly' ? ' selected' : ''}>Yearly</option>
-      </select>
-      <span class="mb-money mb-template-money"><input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(String(mbFixedPaymentAmount(item)))}" ${item.frequency === 'reserve' ? 'disabled' : ''} title="Payment amount when due" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','paymentAmount',this.value)"></span>
-      <select class="form-input" ${item.frequency === 'reserve' ? 'disabled' : ''} title="First due month" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','dueMonth',this.value)">
-        ${dueOptions}
-      </select>
-    </div>`;
+  const subtitle = mbFixedTemplateSubtitle(item);
   return `<div class="mb-fixed-template-row${index % 2 ? ' is-alt' : ''}">
     <button class="mb-fixed-template-row-delete" title="Delete ${escAttr(item.name)}" onclick="mbDeleteTemplateItem('fixed','${escAttr(item.id)}')">×</button>
     <div class="mb-fixed-template-row-header">
       <span class="mb-fixed-template-row-header-icon" aria-hidden="true">${mbBillIcon(item)}</span>
-      <span class="mb-fixed-template-row-header-title">${escHtml(item.name)}</span>
+      <div class="mb-fixed-template-row-title-wrap">
+        <div class="mb-fixed-template-row-header-title">${escHtml(item.name)}</div>
+        <div class="mb-fixed-template-row-subtitle">${escHtml(subtitle)}</div>
+      </div>
     </div>
     <div class="mb-fixed-template-row-controls">
       ${mbLockButton(locked, `mbToggleTemplateLock('fixed','${escAttr(item.id)}')`, locked ? 'Unlock monthly reserve' : 'Lock monthly reserve')}
       <span class="mb-money mb-template-money"><input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(String(item.amount))}" ${locked ? 'disabled' : ''} title="Monthly reserve" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','amount',this.value)"></span>
     </div>
-    ${scheduleControls}
   </div>`;
 }
 
