@@ -7,5 +7,13 @@ compatibility_date = "2024-01-01"
 binding = "RENTALS"
 id = "75372b2a892343c8b45e3d8abafcbce3"
 
+# Per-IP rate limiting for the public Mom Budget phone endpoint
+# (get_mom_budget_public_summary). 60 requests / 60s per IP, counted in-memory
+# at the edge — no KV writes. The handler fails open if this binding is absent.
+[[ratelimits]]
+name = "PUBLIC_RATELIMIT"
+namespace_id = "1001"
+simple = { limit = 60, period = 60 }
+
 # Environment variables (set via: wrangler env.<env>.secret put KEY VALUE)
 # wrangler secret put ADMIN_PASSWORD

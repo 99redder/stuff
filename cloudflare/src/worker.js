@@ -77,7 +77,7 @@ async function handleDataApi(request, env) {
     return jsonResponse({ ok }, ok ? 200 : 401);
   }
   if (action === 'get_mom_budget_public_summary') {
-    return handleGetMomBudgetPublicSummary(env, body.month);
+    return handleGetMomBudgetPublicSummary(request, env, body.month);
   }
 
   if (!(await isAuthenticated(request, env))) {
@@ -641,15 +641,47 @@ async function handleSaveMomBudget(env, data) {
   return jsonResponse({ success: true });
 }
 
-async function handleGetMomBudgetPublicSummary(env, requestedMonth) {
+// Public, unauthenticated endpoint for mom-budget-phone.html. Two cheap guards keep
+// it from being hammered by bots without adding any friction for the phone:
+//   1. Per-IP rate limit (native binding) — caps bursts from a single source.
+//   2. ~45s edge cache — a flood is served from Cloudflare's cache instead of
+//      re-reading KV and recomputing on every hit. Well within the data's existing
+//      eventual-consistency window, and the phone re-fetches on every foreground.
+const PUBLIC_SUMMARY_CACHE_SECONDS = 45;
+
+async function handleGetMomBudgetPublicSummary(request, env, requestedMonth) {
+  // 1. Per-IP rate limit. Fail-open: if the binding is missing or errors, never take
+  //    the endpoint down — the phone must keep working no matter what.
+  if (env.PUBLIC_RATELIMIT) {
+    try {
+      const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+      const { success } = await env.PUBLIC_RATELIMIT.limit({ key: `pub:${ip}` });
+      if (!success) {
+        return jsonResponse({ error: 'Too many requests. Please try again in a minute.' }, 429);
+      }
+    } catch (_) { /* limiter unavailable — fall through and serve normally */ }
+  }
+
   const monthKey = validMonthKey(requestedMonth) ? requestedMonth : currentEasternMonthKey();
+
+  // 2. Edge cache, keyed by month. The real request is a POST (not cacheable), so use
+  //    a synthetic GET URL as the cache key.
+  const cacheUrl = new URL(request.url);
+  cacheUrl.pathname = '/__mom_public_summary';
+  cacheUrl.search = `?m=${monthKey}`;
+  const cacheKey = new Request(cacheUrl.toString(), { method: 'GET' });
+  const cache = caches.default;
+
+  const cached = await cache.match(cacheKey);
+  if (cached) return cached;
+
   const year = monthKey.slice(0, 4);
   const raw = await env.RENTALS.get('mom_budget', 'json') || {};
   const data = normalizeMomBudget(raw);
   const month = calcMomBudgetMonth(data, monthKey);
   const yearSummary = calcMomBudgetYear(data, year);
 
-  return jsonResponse({
+  const response = new Response(JSON.stringify({
     monthKey,
     monthLabel: monthLabel(monthKey),
     updatedAt: new Date().toISOString(),
@@ -665,7 +697,20 @@ async function handleGetMomBudgetPublicSummary(env, requestedMonth) {
       discretionaryAdjusted: month.discretionaryAdjusted
     },
     year: yearSummary
-  }, 200, { 'Cache-Control': 'no-store, no-cache, must-revalidate' });
+  }), {
+    status: 200,
+    headers: {
+      ...CORS_HEADERS,
+      ...SECURITY_HEADERS,
+      'Content-Type': 'application/json',
+      // Shared-cache (edge) only; the phone fetches with cache:'no-store' so it never
+      // serves this from the browser cache. s-maxage drives the 45s edge TTL.
+      'Cache-Control': `public, s-maxage=${PUBLIC_SUMMARY_CACHE_SECONDS}, max-age=0, must-revalidate`,
+    },
+  });
+
+  await cache.put(cacheKey, response.clone());
+  return response;
 }
 
 function cloneJson(obj) {

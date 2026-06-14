@@ -398,6 +398,14 @@ compatibility_date = "2024-01-01"
 [[kv_namespaces]]
 binding = "RENTALS"
 id = "75372b2a892343c8b45e3d8abafcbce3"
+
+# Per-IP rate limiter for the public phone endpoint (must be the
+# first-class [[ratelimits]] key — the [[unsafe.bindings]] form deploys
+# but never enforces the limit, so .limit() always returns success:true).
+[[ratelimits]]
+name = "PUBLIC_RATELIMIT"
+namespace_id = "1001"
+simple = { limit = 60, period = 60 }
 ```
 
 ### CORS
@@ -471,7 +479,7 @@ All calls: `POST /api/data` with JSON body `{ action, property, ...payload }`.
 |---|---|---|
 | `get_mom_budget` | — | `{ data: { template, months } }` |
 | `save_mom_budget` | `data: { template, months }` | `{ success: true }` — full overwrite of the `mom_budget` KV record |
-| `get_mom_budget_public_summary` | optional `month: "YYYY-MM"` | `{ monthKey, monthLabel, updatedAt, month: {...}, year: {...} }` — public unauthenticated read-only summary for `mom-budget-phone.html`; returns calculated numbers only, never raw editable records |
+| `get_mom_budget_public_summary` | optional `month: "YYYY-MM"` | `{ monthKey, monthLabel, updatedAt, month: {...}, year: {...} }` — public unauthenticated read-only summary for `mom-budget-phone.html`; returns calculated numbers only, never raw editable records. Guarded by a per-IP rate limit (`env.PUBLIC_RATELIMIT`, 60 req/60s → `429`, fails open) and a ~45s edge cache (synthetic GET cache key keyed by month, `Cache-Control: public, s-maxage=45`). Both are invisible to the phone and cap bot/flood abuse. |
 
 #### Deductions (global — not per-property)
 | Action | Extra payload | Returns |
@@ -588,6 +596,11 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-06-14 — Mom Budget phone PWA: freshness + abuse guards
+
+- **Always-fresh phone data** — `mom-budget-phone.html` now re-fetches on every foreground (`visibilitychange`/`focus`/`online` + bfcache `pageshow`), not just on first load, since an installed PWA is resumed from memory without reloading. Added an in-flight guard, a wake-event throttle, and a failed-refresh path that keeps the last numbers but flags them as possibly out of date instead of silently showing stale figures. Bumped `mom-budget-sw.js` `CACHE_NAME` to `v2`.
+- **Public endpoint abuse guards** — `get_mom_budget_public_summary` is now protected by a per-IP rate limit (`[[ratelimits]]` binding `PUBLIC_RATELIMIT`, 60 req/60s → `429`, fails open so the phone never breaks) and a ~45s Cloudflare edge cache (synthetic GET cache key per month). Both are invisible to the phone, which fetches only a few times per session. Volumetric/DNS DDoS is already absorbed by Cloudflare's network. **Note:** the rate limiter only works via the first-class `[[ratelimits]]` config key, not `[[unsafe.bindings]]`.
 
 ### 2026-06-14 — Mom Budget
 
