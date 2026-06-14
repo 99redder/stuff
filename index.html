@@ -5295,6 +5295,8 @@ function mbCalcMonth(monthKey) {
   const groceryOver = Math.max(0, groceriesSpent - base.groceries);
   const gasOver = Math.max(0, gasSpent - base.gas);
   const discretionaryAdjusted = Math.max(0, base.discretionary - groceryOver - gasOver - otherOverages);
+  const overallSpendingRemaining = base.groceries + base.gas + base.discretionary
+    - groceriesSpent - gasSpent - discretionarySpent - otherOverages;
   const cashSpent = fixedPaid + groceriesSpent + gasSpent + discretionarySpent + otherSpent;
   const budgetSpent = base.fixed + fixedOver + groceriesSpent + gasSpent + discretionarySpent + otherSpent;
   return {
@@ -5313,6 +5315,7 @@ function mbCalcMonth(monthKey) {
     gasOver,
     discretionaryAdjusted,
     discretionaryRemaining: discretionaryAdjusted - discretionarySpent,
+    overallSpendingRemaining,
     unallocated: base.income - base.planned,
     cashLeft: base.income - cashSpent,
     reserveDelta: base.fixed - fixedPaid,
@@ -5454,7 +5457,7 @@ function _renderMomBudgetHtml() {
 
   const templateIncomeRows = t.income.map(item => mbTemplateRow('income', item)).join('');
   const templateFixedRows = t.fixed.map((item, index) => mbFixedTemplateRow(item, index)).join('');
-  const spendingRemaining = c.groceryRemaining + c.gasRemaining + c.discretionaryRemaining;
+  const spendingRemaining = c.overallSpendingRemaining;
 
   document.getElementById('app').innerHTML = `
     <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
@@ -5470,7 +5473,7 @@ function _renderMomBudgetHtml() {
 
     <div class="stats-row mb-stats-row mb-stats-primary">
       ${stat('Monthly Income', fmt(c.income), 'var(--success)', `${fmt(c.unallocated)} unallocated`)}
-      ${stat('Overall Spending Left', `${spendingRemaining < 0 ? '−' : ''}${fmt(Math.abs(spendingRemaining))}`, spendingRemaining >= 0 ? 'var(--success)' : 'var(--danger)', 'Groceries + gas + discretionary', 'is-prominent')}
+      ${stat('Overall Spending Left', `${spendingRemaining < 0 ? '−' : ''}${fmt(Math.abs(spendingRemaining))}`, spendingRemaining >= 0 ? 'var(--success)' : 'var(--danger)', 'Groceries + gas + discretionary after overages', 'is-prominent')}
     </div>
 
     <div class="stats-row mb-stats-row mb-stats-categories">
