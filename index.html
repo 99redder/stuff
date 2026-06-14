@@ -961,6 +961,29 @@
       font-size: 0.88rem;
       font-weight: 700;
     }
+    .mb-ledger-add-row {
+      display: grid;
+      gap: 0.4rem;
+      margin-top: 0.75rem;
+      align-items: center;
+    }
+    .mb-ledger-add-row.has-description {
+      grid-template-columns: 135px minmax(180px, 1fr) 120px auto;
+    }
+    .mb-ledger-add-row.no-description {
+      grid-template-columns: 135px 120px auto;
+      justify-content: start;
+    }
+    .mb-ledger-add-row .mb-money { width: 120px; }
+    .mb-ledger-amount-col { width: 120px; text-align: right; }
+    @media (max-width: 640px) {
+      .mb-ledger-add-row.has-description,
+      .mb-ledger-add-row.no-description {
+        grid-template-columns: 1fr;
+        justify-content: stretch;
+      }
+      .mb-ledger-add-row .mb-money { width: 100%; }
+    }
     .mb-fixed-over {
       white-space: nowrap;
       font-size: 0.72rem;
@@ -5250,7 +5273,7 @@ function _renderMomBudgetHtml() {
           <div class="card-body"><div class="mb-fixed-list">${fixedRows}</div></div>
         </div>
 
-        ${mbLedgerCard('Groceries', 'groceries', m.groceries || [], 'Order #', 'orderNumber')}
+        ${mbLedgerCard('Groceries', 'groceries', m.groceries || [], '', 'orderNumber')}
         ${mbLedgerCard('Discretionary', 'discretionary', m.discretionary || [], 'Description', 'name')}
         ${mbLedgerCard('Other Expense Overages', 'otherExpenses', m.otherExpenses || [], 'Description', 'name')}
       </div>
@@ -5397,31 +5420,40 @@ async function mbSaveTemplateAdd() {
 }
 
 function mbLedgerCard(title, section, entries, label, nameKey) {
+  const hasDescription = section !== 'groceries';
   const rows = entries.length ? entries.map(e => `
     <tr>
       <td>${escHtml(fmtDate(e.date))}</td>
-      <td>${escHtml(e[nameKey] || '')}</td>
-      <td style="text-align:right;font-variant-numeric:tabular-nums">${fmt(Number(e.amount) || 0)}</td>
-      <td>${escHtml(e.notes || '')}</td>
+      ${hasDescription ? `<td>${escHtml(e[nameKey] || '')}</td>` : ''}
+      <td class="mb-ledger-amount-col" style="font-variant-numeric:tabular-nums">${fmt(Number(e.amount) || 0)}</td>
       <td style="text-align:right"><button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="mbDeleteLedger('${section}','${escAttr(e.id)}')">×</button></td>
-    </tr>`).join('') : `<tr><td colspan="5" style="color:var(--text-muted);padding:.75rem">No entries yet.</td></tr>`;
+    </tr>`).join('') : `<tr><td colspan="${hasDescription ? 4 : 3}" style="color:var(--text-muted);padding:.75rem">No entries yet.</td></tr>`;
+  const header = hasDescription
+    ? `<tr><th style="width:135px">Date</th><th>${escHtml(label)}</th><th class="mb-ledger-amount-col">Amount</th><th></th></tr>`
+    : `<tr><th style="width:135px">Date</th><th class="mb-ledger-amount-col">Amount</th><th></th></tr>`;
+  const addRow = hasDescription
+    ? `<div class="mb-ledger-add-row has-description">
+        <input type="date" id="mb-${section}-date" class="form-input mb-date-input" value="${appTodayIso()}">
+        <input type="text" id="mb-${section}-name" class="form-input" placeholder="${escAttr(label)}">
+        <span class="mb-money"><input type="number" id="mb-${section}-amount" class="form-input" step=".01" min="0" placeholder="0.00"></span>
+        <button class="btn btn-primary btn-sm" onclick="mbAddLedger('${section}','${nameKey}')">Add</button>
+      </div>`
+    : `<div class="mb-ledger-add-row no-description">
+        <input type="date" id="mb-${section}-date" class="form-input mb-date-input" value="${appTodayIso()}">
+        <span class="mb-money"><input type="number" id="mb-${section}-amount" class="form-input" step=".01" min="0" placeholder="0.00"></span>
+        <button class="btn btn-primary btn-sm" onclick="mbAddLedger('${section}','${nameKey}')">Add</button>
+      </div>`;
 
   return `<div class="card tp-card">
     <div class="card-header"><div class="card-title">${escHtml(title)}</div></div>
     <div class="card-body">
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Date</th><th>${escHtml(label)}</th><th style="text-align:right">Amount</th><th>Notes</th><th></th></tr></thead>
+          <thead>${header}</thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.4rem;margin-top:.75rem;align-items:center">
-        <input type="date" id="mb-${section}-date" class="form-input mb-date-input" value="${appTodayIso()}">
-        <input type="text" id="mb-${section}-name" class="form-input" placeholder="${escAttr(label)}">
-        <span class="mb-money" style="min-width:100px"><input type="number" id="mb-${section}-amount" class="form-input" step=".01" min="0" placeholder="0.00"></span>
-        <input type="text" id="mb-${section}-notes" class="form-input" placeholder="Notes">
-        <button class="btn btn-primary btn-sm" onclick="mbAddLedger('${section}','${nameKey}')">Add</button>
-      </div>
+      ${addRow}
     </div>
   </div>`;
 }
@@ -5469,10 +5501,11 @@ async function mbAddLedger(section, nameKey) {
   const date = document.getElementById(`mb-${section}-date`)?.value || appTodayIso();
   const name = document.getElementById(`mb-${section}-name`)?.value.trim() || '';
   const amount = parseFloat(document.getElementById(`mb-${section}-amount`)?.value) || 0;
-  const notes = document.getElementById(`mb-${section}-notes`)?.value.trim() || '';
-  if (!name || amount <= 0) return;
+  if ((section !== 'groceries' && !name) || amount <= 0) return;
   if (!Array.isArray(m[section])) m[section] = [];
-  m[section].push({ id: mbUuid(section), date, [nameKey]: name, amount, notes });
+  const entry = { id: mbUuid(section), date, amount };
+  if (section !== 'groceries') entry[nameKey] = name;
+  m[section].push(entry);
   _renderMomBudgetHtml();
   await _saveMomBudget();
 }
