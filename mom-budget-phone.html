@@ -306,7 +306,7 @@
       <div class="year-row"><span id="year-variance-label">Under allocated</span><strong id="year-variance">$0</strong></div>
     </section>
 
-    <div class="footer" id="updated">Read-only. Updates when opened.</div>
+    <div class="footer" id="updated">Read-only. Updates automatically.</div>
   </main>
 
   <script>
@@ -450,7 +450,34 @@
       lastAutoFetch = now;
       loadSummary();
     }
-    document.addEventListener('visibilitychange', autoRefresh);
+    // Also poll once a minute while the app is actually on screen, so the figures stay
+    // current even if she leaves it open without ever backgrounding or locking the phone.
+    // The timer only runs while visible — it is cleared when hidden, so it never uses
+    // battery or data in the background.
+    const POLL_MS = 60000;
+    let pollTimer = null;
+    function startPolling() {
+      if (pollTimer === null) {
+        pollTimer = setInterval(() => {
+          if (document.visibilityState === 'visible') loadSummary();
+        }, POLL_MS);
+      }
+    }
+    function stopPolling() {
+      if (pollTimer !== null) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        autoRefresh();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    });
     window.addEventListener('focus', autoRefresh);
     window.addEventListener('online', loadSummary);
     window.addEventListener('pageshow', (event) => { if (event.persisted) loadSummary(); });
@@ -466,6 +493,7 @@
 
     lastAutoFetch = Date.now();
     loadSummary();
+    startPolling();
   </script>
 </body>
 </html>
