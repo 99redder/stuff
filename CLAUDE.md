@@ -21,6 +21,10 @@ There is no build step. The entire frontend is one self-contained `index.html` (
 ```
 rentals/
 ├── index.html                  # Entire frontend — all HTML, CSS, and JS
+├── mom-budget-phone.html       # Public read-only phone PWA for Mom Budget balances
+├── mom-budget-manifest.webmanifest
+├── mom-budget-sw.js            # Network-first PWA service worker
+├── mom-budget-icon.svg / .png  # PWA icons
 ├── .gitignore                  # Excludes node_modules, .DS_Store, .wrangler/
 ├── package.json                # Root — only has wrangler as a dev dep
 ├── package-lock.json
@@ -297,6 +301,28 @@ discretionaryAdjusted =
 - Migrates Car Repairs and Car Registration to reserve-only.
 - Ensures `variableLocks` exists.
 
+### Mom Budget Phone PWA
+
+Separate public read-only page for an Android/Samsung Galaxy phone:
+
+- File: `mom-budget-phone.html`
+- Live URL after GitHub Pages deploy: `https://99redder.github.io/rentals/mom-budget-phone.html`
+- Manifest: `mom-budget-manifest.webmanifest`
+- Service worker: `mom-budget-sw.js`
+- Icons: `mom-budget-icon-192.png`, `mom-budget-icon-512.png`, plus source SVG
+
+This page has no password gate and no editing controls. It is meant to be installed to Red's mother's phone as a simple PWA that shows:
+
+- Current month `Overall Spending Left` prominently
+- `Groceries Left`
+- `Gas Left`
+- `Discretionary Left`
+- Optional collapsed year status showing allocated, used, and under/over allocated
+
+The page fetches only `get_mom_budget_public_summary`, a public Worker action that returns precomputed read-only numbers. It must never call `get_mom_budget`, `save_mom_budget`, or any authenticated/editing action.
+
+The service worker is intentionally network-first and calls `registration.update()` on launch so the installed PWA gets the newest page/assets when opened. If changing the phone PWA files, bump `CACHE_NAME` in `mom-budget-sw.js` if cached asset behavior matters.
+
 ### Savings View
 
 Global view (not per-property) for tracking liquid account balances against the year's annual obligations.
@@ -445,6 +471,7 @@ All calls: `POST /api/data` with JSON body `{ action, property, ...payload }`.
 |---|---|---|
 | `get_mom_budget` | — | `{ data: { template, months } }` |
 | `save_mom_budget` | `data: { template, months }` | `{ success: true }` — full overwrite of the `mom_budget` KV record |
+| `get_mom_budget_public_summary` | optional `month: "YYYY-MM"` | `{ monthKey, monthLabel, updatedAt, month: {...}, year: {...} }` — public unauthenticated read-only summary for `mom-budget-phone.html`; returns calculated numbers only, never raw editable records |
 
 #### Deductions (global — not per-property)
 | Action | Extra payload | Returns |

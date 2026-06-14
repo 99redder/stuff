@@ -76,6 +76,9 @@ async function handleDataApi(request, env) {
     const ok = await isAuthenticated(request, env);
     return jsonResponse({ ok }, ok ? 200 : 401);
   }
+  if (action === 'get_mom_budget_public_summary') {
+    return handleGetMomBudgetPublicSummary(env, body.month);
+  }
 
   if (!(await isAuthenticated(request, env))) {
     return jsonResponse({ error: 'Unauthorized' }, 401);
@@ -597,6 +600,34 @@ async function handleSaveBudget(env, data) {
 
 // ── Mom Budget ───────────────────────────────────────────────────────────────
 
+const MOM_BUDGET_DEFAULT = {
+  template: {
+    income: [
+      { id: 'ss', name: 'Social Security', amount: 2092.50 },
+      { id: '401k', name: '401k Distribution', amount: 1000 }
+    ],
+    fixed: [
+      { id: 'rent', name: 'Rent', amount: 800, frequency: 'yearly', dueMonth: 1, paymentAmount: 9600 },
+      { id: 'internet', name: 'Internet', amount: 60 },
+      { id: 'cell', name: 'Cell Phone', amount: 125 },
+      { id: 'water', name: 'Water / Sewer / Trash', amount: 80 },
+      { id: 'electric', name: 'Electric', amount: 100 },
+      { id: 'gas-heat', name: 'Nat Gas / Heat', amount: 65 },
+      { id: 'car-repairs', name: 'Car Repairs', amount: 50, frequency: 'reserve', paymentAmount: 0 },
+      { id: 'car-insurance', name: 'Car Insurance', amount: 80, frequency: 'semiannual', dueMonth: 1, paymentAmount: 480 },
+      { id: 'registration', name: 'Car Registration', amount: 10, frequency: 'reserve', paymentAmount: 0 },
+      { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 },
+      { id: 'netflix', name: 'Netflix', amount: 20 },
+      { id: 'britbox', name: 'BritBox', amount: 10 }
+    ],
+    variable: { groceries: 870, gas: 120, discretionary: 500 },
+    variableLocks: {}
+  },
+  months: {}
+};
+
+const MB_VARIABLE_FIXED_BILL_IDS = new Set(['electric', 'water', 'gas-heat']);
+
 async function handleGetMomBudget(env) {
   const data = await env.RENTALS.get('mom_budget', 'json') || {};
   return jsonResponse({ data });
@@ -608,6 +639,221 @@ async function handleSaveMomBudget(env, data) {
   }
   await env.RENTALS.put('mom_budget', JSON.stringify(data));
   return jsonResponse({ success: true });
+}
+
+async function handleGetMomBudgetPublicSummary(env, requestedMonth) {
+  const monthKey = validMonthKey(requestedMonth) ? requestedMonth : currentEasternMonthKey();
+  const year = monthKey.slice(0, 4);
+  const raw = await env.RENTALS.get('mom_budget', 'json') || {};
+  const data = normalizeMomBudget(raw);
+  const month = calcMomBudgetMonth(data, monthKey);
+  const yearSummary = calcMomBudgetYear(data, year);
+
+  return jsonResponse({
+    monthKey,
+    monthLabel: monthLabel(monthKey),
+    updatedAt: new Date().toISOString(),
+    month: {
+      overallSpendingRemaining: month.overallSpendingRemaining,
+      groceriesRemaining: month.groceryRemaining,
+      gasRemaining: month.gasRemaining,
+      discretionaryRemaining: month.discretionaryRemaining,
+      otherOverages: month.otherOverages,
+      groceriesSpent: month.groceriesSpent,
+      gasSpent: month.gasSpent,
+      discretionarySpent: month.discretionarySpent,
+      discretionaryAdjusted: month.discretionaryAdjusted
+    },
+    year: yearSummary
+  }, 200, { 'Cache-Control': 'no-store, no-cache, must-revalidate' });
+}
+
+function cloneJson(obj) {
+  return JSON.parse(JSON.stringify(obj));
+}
+
+function validMonthKey(value) {
+  return typeof value === 'string' && /^\d{4}-\d{2}$/.test(value);
+}
+
+function currentEasternMonthKey(date = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit'
+  }).formatToParts(date).map(p => [p.type, p.value]));
+  return `${parts.year}-${parts.month}`;
+}
+
+function monthLabel(monthKey) {
+  const [year, month] = monthKey.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-US', {
+    timeZone: 'UTC',
+    month: 'long',
+    year: 'numeric'
+  });
+}
+
+function blankMomBudgetMonth() {
+  return { fixedPaid: {}, fixedActual: {}, groceries: [], gas: [], discretionary: [], otherExpenses: [] };
+}
+
+function momFixedFrequencyMonths(item) {
+  if (item.frequency === 'yearly') return 12;
+  if (item.frequency === 'semiannual') return 6;
+  return 1;
+}
+
+function momFixedPaymentAmount(item) {
+  const payment = Number(item.paymentAmount);
+  if (Number.isFinite(payment) && payment > 0) return payment;
+  return (Number(item.amount) || 0) * momFixedFrequencyMonths(item);
+}
+
+function momFixedDueMonths(item) {
+  if (item.frequency === 'reserve') return [];
+  if (item.frequency === 'monthly') return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  const start = Math.min(12, Math.max(1, Number(item.dueMonth) || 1));
+  if (item.frequency === 'semiannual') return [start, ((start + 5) % 12) + 1].sort((a, b) => a - b);
+  return [start];
+}
+
+function momFixedExpectedPayment(item, monthKey) {
+  return momFixedDueMonths(item).includes(Number(monthKey.slice(5, 7))) ? momFixedPaymentAmount(item) : 0;
+}
+
+function momFixedBillKind(item) {
+  return MB_VARIABLE_FIXED_BILL_IDS.has(String(item.id || '').toLowerCase()) ? 'variable' : 'fixed';
+}
+
+function normalizeMomBudget(raw) {
+  const data = raw && typeof raw === 'object' && Object.keys(raw).length ? cloneJson(raw) : cloneJson(MOM_BUDGET_DEFAULT);
+  const defaults = cloneJson(MOM_BUDGET_DEFAULT);
+  data.template = data.template || defaults.template;
+  data.template.income = Array.isArray(data.template.income) ? data.template.income : defaults.template.income;
+  data.template.fixed = Array.isArray(data.template.fixed) ? data.template.fixed : defaults.template.fixed;
+
+  const gasFixedItem = data.template.fixed.find(item => item.id === 'gas' || String(item.name || '').trim().toLowerCase() === 'gas');
+  data.template.fixed.forEach(item => {
+    const defaultItem = defaults.template.fixed.find(d => d.id === item.id);
+    item.frequency = ['reserve', 'monthly', 'semiannual', 'yearly'].includes(item.frequency) ? item.frequency : (defaultItem?.frequency || 'monthly');
+    if ((item.id === 'car-repairs' || item.id === 'registration') && !item.scheduleMigrated) {
+      item.frequency = 'reserve';
+    }
+    item.dueMonth = Math.min(12, Math.max(1, Number(item.dueMonth ?? defaultItem?.dueMonth ?? 1) || 1));
+    item.paymentAmount = Number(item.paymentAmount ?? defaultItem?.paymentAmount ?? ((Number(item.amount) || 0) * momFixedFrequencyMonths(item))) || 0;
+    if (item.frequency === 'reserve') item.paymentAmount = 0;
+  });
+  data.template.fixed = data.template.fixed.filter(item => item !== gasFixedItem);
+  data.template.variable = data.template.variable || defaults.template.variable;
+  data.template.variable.groceries = Number(data.template.variable.groceries ?? defaults.template.variable.groceries) || 0;
+  data.template.variable.gas = Number(data.template.variable.gas ?? gasFixedItem?.amount ?? defaults.template.variable.gas) || 0;
+  data.template.variable.discretionary = Number(data.template.variable.discretionary ?? defaults.template.variable.discretionary) || 0;
+
+  data.months = data.months && typeof data.months === 'object' ? data.months : {};
+  Object.entries(data.months).forEach(([monthKey, month]) => {
+    month.fixedPaid = month.fixedPaid || {};
+    month.fixedActual = month.fixedActual || {};
+    month.groceries = Array.isArray(month.groceries) ? month.groceries : [];
+    month.gas = Array.isArray(month.gas) ? month.gas : [];
+    if (gasFixedItem && month.fixedPaid?.[gasFixedItem.id] && month.gas.length === 0) {
+      const actual = Number(month.fixedActual?.[gasFixedItem.id]);
+      month.gas.push({
+        id: `gas_${monthKey}`,
+        date: `${monthKey}-01`,
+        amount: Number.isFinite(actual) && actual > 0 ? actual : (Number(gasFixedItem.amount) || data.template.variable.gas || 0)
+      });
+    }
+    if (gasFixedItem) {
+      delete month.fixedPaid[gasFixedItem.id];
+      if (month.fixedActual) delete month.fixedActual[gasFixedItem.id];
+    }
+    month.discretionary = Array.isArray(month.discretionary) ? month.discretionary : [];
+    month.otherExpenses = Array.isArray(month.otherExpenses) ? month.otherExpenses : [];
+  });
+  return data;
+}
+
+function momBudgetTemplateTotals(data) {
+  const t = data.template;
+  const income = t.income.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  const fixed = t.fixed.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  const groceries = Number(t.variable.groceries) || 0;
+  const gas = Number(t.variable.gas) || 0;
+  const discretionary = Number(t.variable.discretionary) || 0;
+  return { income, fixed, groceries, gas, discretionary, planned: fixed + groceries + gas + discretionary };
+}
+
+function calcMomBudgetMonth(data, monthKey) {
+  const t = data.template;
+  const m = data.months[monthKey] || blankMomBudgetMonth();
+  const base = momBudgetTemplateTotals(data);
+  const fixedPaid = t.fixed.reduce((s, item) => {
+    if (!m.fixedPaid?.[item.id]) return s;
+    const expected = momFixedExpectedPayment(item, monthKey);
+    const fallback = expected || (Number(item.amount) || 0);
+    if (momFixedBillKind(item) === 'fixed') return s + fallback;
+    const actual = Number(m.fixedActual?.[item.id]);
+    return s + (Number.isFinite(actual) && actual > 0 ? actual : fallback);
+  }, 0);
+  const fixedOver = t.fixed.reduce((s, item) => {
+    if (!m.fixedPaid?.[item.id]) return s;
+    if (momFixedBillKind(item) === 'fixed') return s;
+    const expected = momFixedExpectedPayment(item, monthKey);
+    const fallback = expected || (Number(item.amount) || 0);
+    const actual = Number(m.fixedActual?.[item.id]);
+    const paid = Number.isFinite(actual) && actual > 0 ? actual : fallback;
+    return s + Math.max(0, paid - fallback);
+  }, 0);
+  const groceriesSpent = (m.groceries || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const gasSpent = (m.gas || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const discretionarySpent = (m.discretionary || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const otherSpent = (m.otherExpenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const otherOverages = otherSpent + fixedOver;
+  const groceryOver = Math.max(0, groceriesSpent - base.groceries);
+  const gasOver = Math.max(0, gasSpent - base.gas);
+  const discretionaryAdjusted = Math.max(0, base.discretionary - groceryOver - gasOver - otherOverages);
+  const budgetSpent = base.fixed + fixedOver + groceriesSpent + gasSpent + discretionarySpent + otherSpent;
+  return {
+    ...base,
+    fixedPaid,
+    fixedOver,
+    groceriesSpent,
+    gasSpent,
+    discretionarySpent,
+    otherOverages,
+    groceryRemaining: base.groceries - groceriesSpent,
+    gasRemaining: base.gas - gasSpent,
+    discretionaryAdjusted,
+    discretionaryRemaining: discretionaryAdjusted - discretionarySpent,
+    overallSpendingRemaining: base.groceries + base.gas + base.discretionary
+      - groceriesSpent - gasSpent - discretionarySpent - otherOverages,
+    budgetSpent,
+    variance: base.planned - budgetSpent
+  };
+}
+
+function momMonthHasActivity(month) {
+  return Object.values(month.fixedPaid || {}).some(Boolean)
+    || Object.values(month.fixedActual || {}).some(v => Number(v) > 0)
+    || (month.groceries || []).length > 0
+    || (month.gas || []).length > 0
+    || (month.discretionary || []).length > 0
+    || (month.otherExpenses || []).length > 0;
+}
+
+function calcMomBudgetYear(data, year) {
+  const months = Object.keys(data.months)
+    .filter(k => k.startsWith(`${year}-`) && momMonthHasActivity(data.months[k] || blankMomBudgetMonth()))
+    .sort();
+  return months.reduce((s, key) => {
+    const c = calcMomBudgetMonth(data, key);
+    s.months += 1;
+    s.planned += c.planned;
+    s.actual += c.budgetSpent;
+    s.variance += c.variance;
+    return s;
+  }, { year, months: 0, planned: 0, actual: 0, variance: 0 });
 }
 
 // ── Investment Return ─────────────────────────────────────────────────────────
