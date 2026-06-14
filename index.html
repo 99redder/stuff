@@ -962,6 +962,29 @@
     .mb-stats-row .stat-sub {
       overflow-wrap: anywhere;
     }
+    .mb-year-summary {
+      margin-bottom: 1.25rem;
+    }
+    .mb-year-summary-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.55rem 0.75rem;
+      margin-bottom: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .mb-year-summary-title {
+      min-width: 0;
+      font-size: 0.82rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+    }
     @media (max-width: 1180px) {
       .mb-stats-row.mb-stats-primary,
       .mb-stats-row.mb-stats-year {
@@ -5013,6 +5036,7 @@ const MOM_BUDGET_DEFAULT = {
 };
 
 const MB_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MB_YEAR_STATS_OPEN_KEY = 'rentals_mom_budget_year_stats_open';
 
 let _mbMonth = appTodayIso().slice(0, 7);
 let _mbFixedSort = 'amount';
@@ -5127,6 +5151,15 @@ async function renderMomBudget() {
   _renderMomBudgetHtml();
 }
 
+function mbYearStatsOpen() {
+  return localStorage.getItem(MB_YEAR_STATS_OPEN_KEY) === '1';
+}
+
+function mbToggleYearStats() {
+  localStorage.setItem(MB_YEAR_STATS_OPEN_KEY, mbYearStatsOpen() ? '0' : '1');
+  _renderMomBudgetHtml();
+}
+
 function mbTemplateTotals() {
   const t = state.momBudget.template;
   const income = t.income.reduce((s, i) => s + (Number(i.amount) || 0), 0);
@@ -5238,6 +5271,7 @@ function _renderMomBudgetHtml() {
   const c = mbCalcMonth(_mbMonth);
   const year = _mbMonth.slice(0, 4);
   const y = mbYearSummary(year);
+  const yearStatsOpen = mbYearStatsOpen();
   const dueFixedItems = t.fixed.filter(item => mbIsFixedDueInMonth(item, _mbMonth));
   const pctPaid = dueFixedItems.length ? (dueFixedItems.filter(item => !!m.fixedPaid?.[item.id]).length / dueFixedItems.length) * 100 : 100;
   const reserveFixedItems = t.fixed.filter(mbIsReserveBill);
@@ -5310,11 +5344,17 @@ function _renderMomBudgetHtml() {
       ${stat('Discretionary Left', `${c.discretionaryRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.discretionaryRemaining))}`, c.discretionaryRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.discretionaryAdjusted)} adjusted budget`)}
     </div>
 
-    <div class="stats-row mb-stats-row mb-stats-year">
-      ${stat(`${year} Months`, String(y.months), 'var(--text-muted)', 'tracked')}
-      ${stat(`${year} Planned`, fmt(y.planned), 'var(--text)', 'budget envelope')}
-      ${stat(`${year} Actual`, fmt(y.actual), 'var(--danger)', 'recorded spending')}
-      ${stat(`${year} Over / Under`, `${y.variance < 0 ? '−' : '+'}${fmt(Math.abs(y.variance))}`, y.variance >= 0 ? 'var(--success)' : 'var(--danger)', y.variance >= 0 ? 'under plan' : 'over plan')}
+    <div class="mb-year-summary">
+      <div class="mb-year-summary-header">
+        <div class="mb-year-summary-title">${escHtml(year)} Annual Status</div>
+        <button class="btn btn-ghost btn-sm" type="button" onclick="mbToggleYearStats()" aria-expanded="${yearStatsOpen ? 'true' : 'false'}">${yearStatsOpen ? 'Minimize' : 'Expand'}</button>
+      </div>
+      <div class="stats-row mb-stats-row mb-stats-year${yearStatsOpen ? '' : ' hidden'}">
+        ${stat(`${year} Months`, String(y.months), 'var(--text-muted)', 'tracked')}
+        ${stat(`${year} Planned`, fmt(y.planned), 'var(--text)', 'budget envelope')}
+        ${stat(`${year} Actual`, fmt(y.actual), 'var(--danger)', 'recorded spending')}
+        ${stat(`${year} Over / Under`, `${y.variance < 0 ? '−' : '+'}${fmt(Math.abs(y.variance))}`, y.variance >= 0 ? 'var(--success)' : 'var(--danger)', y.variance >= 0 ? 'under plan' : 'over plan')}
+      </div>
     </div>
 
     <div class="tp-layout">
@@ -8041,6 +8081,7 @@ window.dedOpenDelete           = dedOpenDelete;
 window.closeDedDeleteModal     = closeDedDeleteModal;
 window.dedExecuteDelete        = dedExecuteDelete;
 window.mbSetMonth              = mbSetMonth;
+window.mbToggleYearStats       = mbToggleYearStats;
 window.mbToggleFixed           = mbToggleFixed;
 window.mbAddLedger             = mbAddLedger;
 window.mbDeleteLedger          = mbDeleteLedger;
