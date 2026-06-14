@@ -949,7 +949,7 @@
       align-items: stretch;
     }
     .mb-stats-row.mb-stats-primary {
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
     .mb-stats-row.mb-stats-year {
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -5272,8 +5272,6 @@ function _renderMomBudgetHtml() {
   const year = _mbMonth.slice(0, 4);
   const y = mbYearSummary(year);
   const yearStatsOpen = mbYearStatsOpen();
-  const dueFixedItems = t.fixed.filter(item => mbIsFixedDueInMonth(item, _mbMonth));
-  const pctPaid = dueFixedItems.length ? (dueFixedItems.filter(item => !!m.fixedPaid?.[item.id]).length / dueFixedItems.length) * 100 : 100;
   const reserveFixedItems = t.fixed.filter(mbIsReserveBill);
   const reserveAllPaid = reserveFixedItems.length > 0 && reserveFixedItems.every(item => !!m.fixedPaid?.[item.id]);
   const monthOptions = Object.keys(state.momBudget.months)
@@ -5338,7 +5336,6 @@ function _renderMomBudgetHtml() {
 
     <div class="stats-row mb-stats-row mb-stats-primary">
       ${stat('Monthly Income', fmt(c.income), 'var(--success)', `${fmt(c.unallocated)} unallocated`)}
-      ${stat('Fixed Due Paid', `${Math.round(pctPaid)}%`, pctPaid === 100 ? 'var(--success)' : 'var(--warning)', `${fmt(c.fixedPaid)} cash paid · ${fmt(c.fixed)} reserved`)}
       ${stat('Groceries Left', `${c.groceryRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.groceryRemaining))}`, c.groceryRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.groceriesSpent)} spent`)}
       ${stat('Gas Left', `${c.gasRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.gasRemaining))}`, c.gasRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.gasSpent)} spent`)}
       ${stat('Discretionary Left', `${c.discretionaryRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.discretionaryRemaining))}`, c.discretionaryRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.discretionaryAdjusted)} adjusted budget`)}
