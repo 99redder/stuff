@@ -942,12 +942,37 @@
       letter-spacing: 0.04em;
     }
     .mb-stats-row {
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 1rem;
+      width: 100%;
       max-width: none;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 1.25rem;
+      align-items: stretch;
+    }
+    .mb-stats-row.mb-stats-primary {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+    .mb-stats-row.mb-stats-year {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
     .mb-stats-row .stat-card {
       min-width: 0;
+      overflow: hidden;
+    }
+    .mb-stats-row .stat-value,
+    .mb-stats-row .stat-sub {
+      overflow-wrap: anywhere;
+    }
+    @media (max-width: 1180px) {
+      .mb-stats-row.mb-stats-primary,
+      .mb-stats-row.mb-stats-year {
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      }
+    }
+    @media (max-width: 520px) {
+      .mb-stats-row.mb-stats-primary,
+      .mb-stats-row.mb-stats-year {
+        grid-template-columns: 1fr;
+      }
     }
     .mb-fixed-paid {
       grid-column: 3;
@@ -5277,7 +5302,7 @@ function _renderMomBudgetHtml() {
       </div>
     </div>
 
-    <div class="stats-row mb-stats-row">
+    <div class="stats-row mb-stats-row mb-stats-primary">
       ${stat('Monthly Income', fmt(c.income), 'var(--success)', `${fmt(c.unallocated)} unallocated`)}
       ${stat('Fixed Due Paid', `${Math.round(pctPaid)}%`, pctPaid === 100 ? 'var(--success)' : 'var(--warning)', `${fmt(c.fixedPaid)} cash paid · ${fmt(c.fixed)} reserved`)}
       ${stat('Groceries Left', `${c.groceryRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.groceryRemaining))}`, c.groceryRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.groceriesSpent)} spent`)}
@@ -5285,7 +5310,7 @@ function _renderMomBudgetHtml() {
       ${stat('Discretionary Left', `${c.discretionaryRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.discretionaryRemaining))}`, c.discretionaryRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.discretionaryAdjusted)} adjusted budget`)}
     </div>
 
-    <div class="stats-row mb-stats-row">
+    <div class="stats-row mb-stats-row mb-stats-year">
       ${stat(`${year} Months`, String(y.months), 'var(--text-muted)', 'tracked')}
       ${stat(`${year} Planned`, fmt(y.planned), 'var(--text)', 'budget envelope')}
       ${stat(`${year} Actual`, fmt(y.actual), 'var(--danger)', 'recorded spending')}
