@@ -4969,13 +4969,12 @@ const MOM_BUDGET_DEFAULT = {
       { id: 'gas-heat', name: 'Nat Gas / Heat', amount: 65 },
       { id: 'car-repairs', name: 'Car Repairs', amount: 50, frequency: 'reserve', paymentAmount: 0 },
       { id: 'car-insurance', name: 'Car Insurance', amount: 80, frequency: 'semiannual', dueMonth: 1, paymentAmount: 480 },
-      { id: 'gas', name: 'Gas', amount: 120 },
       { id: 'registration', name: 'Car Registration', amount: 10, frequency: 'reserve', paymentAmount: 0 },
       { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 },
       { id: 'netflix', name: 'Netflix', amount: 20 },
       { id: 'britbox', name: 'BritBox', amount: 10 }
     ],
-    variable: { groceries: 870, discretionary: 500 }
+    variable: { groceries: 870, gas: 120, discretionary: 500 }
   },
   months: {}
 };
@@ -4994,7 +4993,7 @@ function mbUuid(prefix = 'mb') {
 }
 
 function mbBlankMonth() {
-  return { fixedPaid: {}, fixedActual: {}, groceries: [], discretionary: [], otherExpenses: [] };
+  return { fixedPaid: {}, fixedActual: {}, groceries: [], gas: [], discretionary: [], otherExpenses: [] };
 }
 
 function mbFixedFrequencyMonths(item) {
@@ -5043,6 +5042,7 @@ function mbNormalize(raw) {
   data.template.income = Array.isArray(data.template.income) ? data.template.income : defaults.template.income;
   data.template.fixed = Array.isArray(data.template.fixed) ? data.template.fixed : defaults.template.fixed;
   data.template.income.forEach(item => { item.locked = !!item.locked; });
+  const gasFixedItem = data.template.fixed.find(item => item.id === 'gas' || String(item.name || '').trim().toLowerCase() === 'gas');
   data.template.fixed.forEach(item => {
     const defaultItem = defaults.template.fixed.find(d => d.id === item.id);
     item.locked = !!item.locked;
@@ -5055,15 +5055,30 @@ function mbNormalize(raw) {
     item.paymentAmount = Number(item.paymentAmount ?? defaultItem?.paymentAmount ?? ((Number(item.amount) || 0) * mbFixedFrequencyMonths(item))) || 0;
     if (item.frequency === 'reserve') item.paymentAmount = 0;
   });
+  data.template.fixed = data.template.fixed.filter(item => item !== gasFixedItem);
   data.template.variable = data.template.variable || defaults.template.variable;
   data.template.variable.groceries = Number(data.template.variable.groceries ?? defaults.template.variable.groceries);
+  data.template.variable.gas = Number(data.template.variable.gas ?? gasFixedItem?.amount ?? defaults.template.variable.gas);
   data.template.variable.discretionary = Number(data.template.variable.discretionary ?? defaults.template.variable.discretionary);
   data.template.variableLocks = data.template.variableLocks || {};
   data.months = data.months || {};
-  Object.values(data.months).forEach(month => {
+  Object.entries(data.months).forEach(([monthKey, month]) => {
     month.fixedPaid = month.fixedPaid || {};
     month.fixedActual = month.fixedActual || {};
     month.groceries = Array.isArray(month.groceries) ? month.groceries : [];
+    month.gas = Array.isArray(month.gas) ? month.gas : [];
+    if (gasFixedItem && month.fixedPaid?.[gasFixedItem.id] && month.gas.length === 0) {
+      const actual = Number(month.fixedActual?.[gasFixedItem.id]);
+      month.gas.push({
+        id: mbUuid('gas'),
+        date: `${monthKey}-01`,
+        amount: Number.isFinite(actual) && actual > 0 ? actual : (Number(gasFixedItem.amount) || data.template.variable.gas || 0)
+      });
+    }
+    if (gasFixedItem) {
+      delete month.fixedPaid[gasFixedItem.id];
+      if (month.fixedActual) delete month.fixedActual[gasFixedItem.id];
+    }
     month.discretionary = Array.isArray(month.discretionary) ? month.discretionary : [];
     month.otherExpenses = Array.isArray(month.otherExpenses) ? month.otherExpenses : [];
   });
@@ -5084,8 +5099,9 @@ function mbTemplateTotals() {
   const income = t.income.reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const fixed = t.fixed.reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const groceries = Number(t.variable.groceries) || 0;
+  const gas = Number(t.variable.gas) || 0;
   const discretionary = Number(t.variable.discretionary) || 0;
-  return { income, fixed, groceries, discretionary, planned: fixed + groceries + discretionary };
+  return { income, fixed, groceries, gas, discretionary, planned: fixed + groceries + gas + discretionary };
 }
 
 function mbCalcMonth(monthKey) {
@@ -5109,24 +5125,29 @@ function mbCalcMonth(monthKey) {
     return s + Math.max(0, paid - fallback);
   }, 0);
   const groceriesSpent = (m.groceries || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const gasSpent = (m.gas || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const discretionarySpent = (m.discretionary || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const otherSpent = (m.otherExpenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const otherOverages = otherSpent + fixedOver;
   const groceryOver = Math.max(0, groceriesSpent - base.groceries);
-  const discretionaryAdjusted = Math.max(0, base.discretionary - groceryOver - otherOverages);
-  const cashSpent = fixedPaid + groceriesSpent + discretionarySpent + otherSpent;
-  const budgetSpent = base.fixed + fixedOver + groceriesSpent + discretionarySpent + otherSpent;
+  const gasOver = Math.max(0, gasSpent - base.gas);
+  const discretionaryAdjusted = Math.max(0, base.discretionary - groceryOver - gasOver - otherOverages);
+  const cashSpent = fixedPaid + groceriesSpent + gasSpent + discretionarySpent + otherSpent;
+  const budgetSpent = base.fixed + fixedOver + groceriesSpent + gasSpent + discretionarySpent + otherSpent;
   return {
     ...base,
     fixedDue,
     fixedPaid,
     fixedOver,
     groceriesSpent,
+    gasSpent,
     discretionarySpent,
     otherSpent,
     otherOverages,
     groceryRemaining: base.groceries - groceriesSpent,
     groceryOver,
+    gasRemaining: base.gas - gasSpent,
+    gasOver,
     discretionaryAdjusted,
     discretionaryRemaining: discretionaryAdjusted - discretionarySpent,
     unallocated: base.income - base.planned,
@@ -5142,6 +5163,7 @@ function mbMonthHasActivity(month) {
   return Object.values(month.fixedPaid || {}).some(Boolean)
     || Object.values(month.fixedActual || {}).some(v => Number(v) > 0)
     || (month.groceries || []).length > 0
+    || (month.gas || []).length > 0
     || (month.discretionary || []).length > 0
     || (month.otherExpenses || []).length > 0;
 }
@@ -5247,14 +5269,15 @@ function _renderMomBudgetHtml() {
       </div>
     </div>
 
-    <div class="stats-row" style="grid-template-columns:repeat(4,1fr)">
+    <div class="stats-row" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">
       ${stat('Monthly Income', fmt(c.income), 'var(--success)', `${fmt(c.unallocated)} unallocated`)}
       ${stat('Fixed Due Paid', `${Math.round(pctPaid)}%`, pctPaid === 100 ? 'var(--success)' : 'var(--warning)', `${fmt(c.fixedPaid)} cash paid · ${fmt(c.fixed)} reserved`)}
       ${stat('Groceries Left', `${c.groceryRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.groceryRemaining))}`, c.groceryRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.groceriesSpent)} spent`)}
+      ${stat('Gas Left', `${c.gasRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.gasRemaining))}`, c.gasRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.gasSpent)} spent`)}
       ${stat('Discretionary Left', `${c.discretionaryRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.discretionaryRemaining))}`, c.discretionaryRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.discretionaryAdjusted)} adjusted budget`)}
     </div>
 
-    <div class="stats-row" style="grid-template-columns:repeat(4,1fr)">
+    <div class="stats-row" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">
       ${stat(`${year} Months`, String(y.months), 'var(--text-muted)', 'tracked')}
       ${stat(`${year} Planned`, fmt(y.planned), 'var(--text)', 'budget envelope')}
       ${stat(`${year} Actual`, fmt(y.actual), 'var(--danger)', 'recorded spending')}
@@ -5278,6 +5301,7 @@ function _renderMomBudgetHtml() {
         </div>
 
         ${mbLedgerCard('Groceries', 'groceries', m.groceries || [], '', 'orderNumber')}
+        ${mbLedgerCard('Gas', 'gas', m.gas || [], '', 'orderNumber')}
         ${mbLedgerCard('Discretionary', 'discretionary', m.discretionary || [], 'Description', 'name')}
         ${mbLedgerCard('Other Expense Overages', 'otherExpenses', m.otherExpenses || [], 'Description', 'name')}
       </div>
@@ -5291,10 +5315,12 @@ function _renderMomBudgetHtml() {
             <div class="tp-row"><span>Fixed due this month</span><strong>${fmt(c.fixedDue)}</strong></div>
             <div class="tp-row"><span>Fixed cash paid</span><strong>${fmt(c.fixedPaid)}</strong></div>
             <div class="tp-row"><span>Groceries budget</span><strong>${fmt(c.groceries)}</strong></div>
+            <div class="tp-row"><span>Gas budget</span><strong>${fmt(c.gas)}</strong></div>
             <div class="tp-row"><span>Discretionary base</span><strong>${fmt(c.discretionary)}</strong></div>
             <div class="tp-row sub"><span>Unallocated after template</span><strong>${c.unallocated < 0 ? '−' : ''}${fmt(Math.abs(c.unallocated))}</strong></div>
             <div class="tp-row"><span>Reserve cash delta</span><strong style="color:${c.reserveDelta >= 0 ? 'var(--success)' : 'var(--danger)'}">${c.reserveDelta < 0 ? '−' : '+'}${fmt(Math.abs(c.reserveDelta))}</strong></div>
             <div class="tp-row"><span>Grocery overage</span><strong style="color:${c.groceryOver ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.groceryOver)}</strong></div>
+            <div class="tp-row"><span>Gas overage</span><strong style="color:${c.gasOver ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.gasOver)}</strong></div>
             <div class="tp-row"><span>Fixed bill overage</span><strong style="color:${c.fixedOver ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.fixedOver)}</strong></div>
             <div class="tp-row"><span>Other overages</span><strong style="color:${c.otherOverages ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.otherOverages)}</strong></div>
             <div class="tp-row sub"><span>Adjusted discretionary</span><strong>${fmt(c.discretionaryAdjusted)}</strong></div>
@@ -5322,6 +5348,11 @@ function _renderMomBudgetHtml() {
               <span style="flex:1;font-weight:600">Groceries</span>
               ${mbLockButton(t.variableLocks.groceries, `mbToggleVariableLock('groceries')`, t.variableLocks.groceries ? 'Unlock groceries budget' : 'Lock groceries budget')}
               <span class="mb-money mb-variable-money"><input type="number" class="form-input" step=".01" min="0" value="${escAttr(String(t.variable.groceries))}" ${t.variableLocks.groceries ? 'disabled' : ''} onchange="mbUpdateVariable('groceries', this.value)"></span>
+            </div>
+            <div class="tp-pay-row">
+              <span style="flex:1;font-weight:600">Gas</span>
+              ${mbLockButton(t.variableLocks.gas, `mbToggleVariableLock('gas')`, t.variableLocks.gas ? 'Unlock gas budget' : 'Lock gas budget')}
+              <span class="mb-money mb-variable-money"><input type="number" class="form-input" step=".01" min="0" value="${escAttr(String(t.variable.gas))}" ${t.variableLocks.gas ? 'disabled' : ''} onchange="mbUpdateVariable('gas', this.value)"></span>
             </div>
             <div class="tp-pay-row">
               <span style="flex:1;font-weight:600">Discretionary</span>
@@ -5427,7 +5458,7 @@ async function mbSaveTemplateAdd() {
 }
 
 function mbLedgerCard(title, section, entries, label, nameKey) {
-  const hasDescription = section !== 'groceries';
+  const hasDescription = !['groceries', 'gas'].includes(section);
   const rows = entries.length ? entries.map(e => `
     <tr>
       <td>${escHtml(fmtDate(e.date))}</td>
@@ -5531,10 +5562,11 @@ async function mbAddLedger(section, nameKey) {
   const date = document.getElementById(`mb-${section}-date`)?.value || appTodayIso();
   const name = document.getElementById(`mb-${section}-name`)?.value.trim() || '';
   const amount = parseFloat(document.getElementById(`mb-${section}-amount`)?.value) || 0;
-  if ((section !== 'groceries' && !name) || amount <= 0) return;
+  const hasDescription = !['groceries', 'gas'].includes(section);
+  if ((hasDescription && !name) || amount <= 0) return;
   if (!Array.isArray(m[section])) m[section] = [];
   const entry = { id: mbUuid(section), date, amount };
-  if (section !== 'groceries') entry[nameKey] = name;
+  if (hasDescription) entry[nameKey] = name;
   m[section].push(entry);
   _renderMomBudgetHtml();
   await _saveMomBudget();
