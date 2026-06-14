@@ -985,6 +985,16 @@
       letter-spacing: 0.04em;
       color: var(--text-muted);
     }
+    .mb-card-note {
+      margin-bottom: 0.85rem;
+      padding: 0.65rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface2);
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      line-height: 1.4;
+    }
     @media (max-width: 1180px) {
       .mb-stats-row.mb-stats-primary,
       .mb-stats-row.mb-stats-year {
@@ -5225,6 +5235,28 @@ function mbCalcMonth(monthKey) {
   };
 }
 
+function mbFixedOverageEntries(monthKey) {
+  const t = state.momBudget.template;
+  const m = state.momBudget.months[monthKey] || mbBlankMonth();
+  return t.fixed
+    .filter(item => !!m.fixedPaid?.[item.id])
+    .map(item => {
+      const expected = mbFixedExpectedPayment(item, monthKey);
+      const budgeted = expected || (Number(item.amount) || 0);
+      const actual = Number(m.fixedActual?.[item.id]);
+      const paid = Number.isFinite(actual) && actual > 0 ? actual : budgeted;
+      const amount = Math.max(0, paid - budgeted);
+      return {
+        id: `fixed-over-${item.id}`,
+        date: `${monthKey}-01`,
+        name: `${item.name} over budget`,
+        amount,
+        auto: true
+      };
+    })
+    .filter(entry => entry.amount > 0);
+}
+
 function mbMonthHasActivity(month) {
   return Object.values(month.fixedPaid || {}).some(Boolean)
     || Object.values(month.fixedActual || {}).some(v => Number(v) > 0)
@@ -5272,6 +5304,11 @@ function _renderMomBudgetHtml() {
   const year = _mbMonth.slice(0, 4);
   const y = mbYearSummary(year);
   const yearStatsOpen = mbYearStatsOpen();
+  const fixedOverageRows = mbFixedOverageEntries(_mbMonth);
+  const otherOverageRows = [
+    ...fixedOverageRows,
+    ...(m.otherExpenses || []).map(entry => ({ ...entry, legacy: true }))
+  ];
   const reserveFixedItems = t.fixed.filter(mbIsReserveBill);
   const reserveAllPaid = reserveFixedItems.length > 0 && reserveFixedItems.every(item => !!m.fixedPaid?.[item.id]);
   const monthOptions = Object.keys(state.momBudget.months)
@@ -5301,6 +5338,7 @@ function _renderMomBudgetHtml() {
     const actualValue = m.fixedActual?.[item.id];
     const actual = Number(actualValue);
     const paidAmount = Number.isFinite(actual) && actual > 0 ? actual : (expected || planned);
+    const canEnterPaidAmount = item.frequency === 'monthly' || paid;
     const over = paid ? Math.max(0, paidAmount - (expected || planned)) : 0;
     return `
       <div class="mb-fixed-row${paid ? ' is-paid' : ''}">
@@ -5313,7 +5351,7 @@ function _renderMomBudgetHtml() {
         </span>
         <span class="mb-fixed-paid">
           <span class="mb-fixed-paid-label">Paid amount</span>
-          <span class="mb-money"><input class="form-input" type="number" step=".01" min="0" ${paid ? '' : 'disabled'} value="${escAttr(paid ? String(paidAmount) : '')}" placeholder="${escAttr((expected || planned).toFixed(2))}" onchange="mbUpdateFixedActual('${escAttr(item.id)}', this.value)"></span>
+          <span class="mb-money"><input class="form-input" type="number" step=".01" min="0" ${canEnterPaidAmount ? '' : 'disabled'} value="${escAttr(paid ? String(paidAmount) : '')}" placeholder="${escAttr((expected || planned).toFixed(2))}" onchange="mbUpdateFixedActual('${escAttr(item.id)}', this.value)"></span>
           ${over ? `<span class="mb-fixed-over">+${fmt(over)} over</span>` : ''}
         </span>
       </div>`;
@@ -5372,8 +5410,14 @@ function _renderMomBudgetHtml() {
 
         ${mbLedgerCard('Groceries', 'groceries', m.groceries || [], '', 'orderNumber')}
         ${mbLedgerCard('Gas', 'gas', m.gas || [], '', 'orderNumber')}
-        ${mbLedgerCard('Discretionary', 'discretionary', m.discretionary || [], 'Description', 'name')}
-        ${mbLedgerCard('Other Expense Overages', 'otherExpenses', m.otherExpenses || [], 'Description', 'name')}
+        ${mbLedgerCard('Discretionary', 'discretionary', m.discretionary || [], 'Description', 'name', {
+          note: 'Discretionary includes non-grocery purchase items, prescription copays, and overages from other budget areas.'
+        })}
+        ${mbLedgerCard('Other Expense Overages', 'otherExpenses', otherOverageRows, 'Description', 'name', {
+          disableAdd: true,
+          emptyText: 'No fixed bill overages recorded for this month.',
+          note: 'This fills automatically when a fixed bill is marked paid above its budgeted amount.'
+        })}
       </div>
 
       <div class="tp-sticky">
@@ -5527,15 +5571,15 @@ async function mbSaveTemplateAdd() {
   await _saveMomBudget();
 }
 
-function mbLedgerCard(title, section, entries, label, nameKey) {
+function mbLedgerCard(title, section, entries, label, nameKey, options = {}) {
   const hasDescription = !['groceries', 'gas'].includes(section);
   const rows = entries.length ? entries.map(e => `
     <tr>
       <td>${escHtml(fmtDate(e.date))}</td>
       <td>${hasDescription ? escHtml(e[nameKey] || '') : ''}</td>
       <td class="mb-ledger-amount-col" style="font-variant-numeric:tabular-nums">${fmt(Number(e.amount) || 0)}</td>
-      <td style="text-align:right"><button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="mbDeleteLedger('${section}','${escAttr(e.id)}')">×</button></td>
-    </tr>`).join('') : `<tr><td colspan="4" style="color:var(--text-muted);padding:.75rem">No entries yet.</td></tr>`;
+      <td style="text-align:right">${e.auto ? '<span style="font-size:.75rem;color:var(--text-muted);font-weight:700">Auto</span>' : `<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="mbDeleteLedger('${section}','${escAttr(e.id)}')">×</button>`}</td>
+    </tr>`).join('') : `<tr><td colspan="4" style="color:var(--text-muted);padding:.75rem">${escHtml(options.emptyText || 'No entries yet.')}</td></tr>`;
   const colgroup = `
     <col class="mb-ledger-date-col">
     <col>
@@ -5544,7 +5588,7 @@ function mbLedgerCard(title, section, entries, label, nameKey) {
   const header = hasDescription
     ? `<tr><th>Date</th><th>${escHtml(label)}</th><th class="mb-ledger-amount-col">Amount</th><th></th></tr>`
     : `<tr><th>Date</th><th></th><th class="mb-ledger-amount-col">Amount</th><th></th></tr>`;
-  const addRow = hasDescription
+  const addRow = options.disableAdd ? '' : (hasDescription
     ? `<div class="mb-ledger-add-row has-description">
         <input type="date" id="mb-${section}-date" class="form-input mb-date-input" value="${appTodayIso()}">
         <input type="text" id="mb-${section}-name" class="form-input" placeholder="${escAttr(label)}">
@@ -5556,11 +5600,12 @@ function mbLedgerCard(title, section, entries, label, nameKey) {
         <span class="mb-ledger-spacer" aria-hidden="true"></span>
         <span class="mb-money"><input type="number" id="mb-${section}-amount" class="form-input" step=".01" min="0" placeholder="0.00"></span>
         <button class="btn btn-primary btn-sm" onclick="mbAddLedger('${section}','${nameKey}')">Add</button>
-      </div>`;
+      </div>`);
 
   return `<div class="card tp-card">
     <div class="card-header"><div class="card-title">${escHtml(title)}</div></div>
     <div class="card-body">
+      ${options.note ? `<div class="mb-card-note">${escHtml(options.note)}</div>` : ''}
       <div class="table-wrap">
         <table>
           <colgroup>${colgroup}</colgroup>
@@ -5618,16 +5663,27 @@ async function mbMarkReserveBillsPaid() {
 
 async function mbUpdateFixedActual(id, value) {
   const m = state.momBudget.months[_mbMonth] || (state.momBudget.months[_mbMonth] = mbBlankMonth());
-  if (!m.fixedPaid?.[id]) return;
   if (!m.fixedActual) m.fixedActual = {};
+  if (!m.fixedPaid) m.fixedPaid = {};
   const amount = parseFloat(value) || 0;
   const item = state.momBudget.template.fixed.find(i => i.id === id);
-  m.fixedActual[id] = amount > 0 ? amount : (item ? (mbFixedExpectedPayment(item, _mbMonth) || (Number(item.amount) || 0)) : 0);
+  if (!item) return;
+  if (!m.fixedPaid[id] && item.frequency !== 'monthly') return;
+  if (amount > 0) {
+    m.fixedPaid[id] = true;
+    m.fixedActual[id] = amount;
+  } else if (item.frequency === 'monthly') {
+    m.fixedPaid[id] = false;
+    delete m.fixedActual[id];
+  } else {
+    m.fixedActual[id] = mbFixedExpectedPayment(item, _mbMonth) || (Number(item.amount) || 0);
+  }
   _renderMomBudgetHtml();
   await _saveMomBudget();
 }
 
 async function mbAddLedger(section, nameKey) {
+  if (section === 'otherExpenses') return;
   const m = state.momBudget.months[_mbMonth] || (state.momBudget.months[_mbMonth] = mbBlankMonth());
   const date = document.getElementById(`mb-${section}-date`)?.value || appTodayIso();
   const name = document.getElementById(`mb-${section}-name`)?.value.trim() || '';
