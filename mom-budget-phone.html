@@ -345,7 +345,30 @@
       el.classList.toggle('is-negative', Number(value) < 0);
     }
 
+    let isLoading = false;
+    let hasData = false;
+    let lastUpdatedIso = '';
+
+    function showError(message) {
+      let card = document.getElementById('error-card');
+      if (!card) {
+        card = document.createElement('div');
+        card.id = 'error-card';
+        card.className = 'card error';
+        document.querySelector('.app').appendChild(card);
+      }
+      card.textContent = message;
+    }
+
+    function clearError() {
+      const card = document.getElementById('error-card');
+      if (card) card.remove();
+    }
+
     async function loadSummary() {
+      if (isLoading) return;
+      isLoading = true;
+      els.refresh.disabled = true;
       els.status.textContent = 'Updating...';
       try {
         const response = await fetch(API, {
@@ -357,10 +380,22 @@
         if (!response.ok) throw new Error('Could not load the budget.');
         const data = await response.json();
         render(data);
+        hasData = true;
+        lastUpdatedIso = data.updatedAt || new Date().toISOString();
+        clearError();
       } catch (error) {
-        els.status.textContent = '';
-        document.querySelector('.app').insertAdjacentHTML('beforeend',
-          '<div class="card error">Could not update right now. Check the connection and try Refresh.</div>');
+        if (hasData) {
+          // Keep the last known numbers on screen, but make it unmistakable they may be
+          // old so a stale "money left" figure is never trusted as current.
+          els.status.textContent = `⚠ Couldn't update — figures below are from ${shortTime(lastUpdatedIso)} and may be out of date.`;
+          showError('Could not refresh just now. Reopen the app or tap ↻ once you have a connection.');
+        } else {
+          els.status.textContent = '';
+          showError('Could not load right now. Check the connection and tap ↻ to try again.');
+        }
+      } finally {
+        isLoading = false;
+        els.refresh.disabled = false;
       }
     }
 
@@ -395,6 +430,22 @@
       els.yearToggle.textContent = open ? 'Hide Year Status' : 'Show Year Status';
     });
 
+    // Re-fetch whenever the app returns to the foreground. An installed PWA is normally
+    // resumed from memory (the page is NOT reloaded), so without this she could keep
+    // seeing this morning's figures and think more money is left than really is.
+    let lastAutoFetch = 0;
+    function autoRefresh() {
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (now - lastAutoFetch < 4000) return; // collapse duplicate wake events (focus + visibilitychange)
+      lastAutoFetch = now;
+      loadSummary();
+    }
+    document.addEventListener('visibilitychange', autoRefresh);
+    window.addEventListener('focus', autoRefresh);
+    window.addEventListener('online', loadSummary);
+    window.addEventListener('pageshow', (event) => { if (event.persisted) loadSummary(); });
+
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', async () => {
         try {
@@ -404,6 +455,7 @@
       });
     }
 
+    lastAutoFetch = Date.now();
     loadSummary();
   </script>
 </body>
