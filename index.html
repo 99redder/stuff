@@ -994,7 +994,10 @@
       align-items: stretch;
     }
     .mb-stats-row.mb-stats-primary {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.45fr);
+    }
+    .mb-stats-row.mb-stats-categories {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
     }
     .mb-stats-row.mb-stats-year {
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1006,6 +1009,14 @@
     .mb-stats-row .stat-value,
     .mb-stats-row .stat-sub {
       overflow-wrap: anywhere;
+    }
+    .mb-stats-row .stat-card.is-prominent {
+      padding: 0.75rem 0.9rem;
+      border-color: rgba(22, 163, 74, 0.35);
+      background: linear-gradient(135deg, var(--surface), var(--success-light));
+    }
+    .mb-stats-row .stat-card.is-prominent .stat-value {
+      font-size: 2rem;
     }
     .mb-year-summary {
       margin-bottom: 1.25rem;
@@ -1046,12 +1057,14 @@
     }
     @media (max-width: 1180px) {
       .mb-stats-row.mb-stats-primary,
+      .mb-stats-row.mb-stats-categories,
       .mb-stats-row.mb-stats-year {
         grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
       }
     }
     @media (max-width: 520px) {
       .mb-stats-row.mb-stats-primary,
+      .mb-stats-row.mb-stats-categories,
       .mb-stats-row.mb-stats-year {
         grid-template-columns: 1fr;
       }
@@ -5392,8 +5405,8 @@ function _renderMomBudgetHtml() {
     .map(k => `<option value="${escAttr(k)}"${k === _mbMonth ? ' selected' : ''}>${escHtml(k)}</option>`)
     .join('');
 
-  const stat = (label, value, color = 'var(--text)', sub = '') => `
-    <div class="stat-card">
+  const stat = (label, value, color = 'var(--text)', sub = '', className = '') => `
+    <div class="stat-card${className ? ` ${escAttr(className)}` : ''}">
       <div class="stat-label">${escHtml(label)}</div>
       <div class="stat-value" style="color:${color}">${value}</div>
       ${sub ? `<div class="stat-sub">${sub}</div>` : ''}
@@ -5441,6 +5454,7 @@ function _renderMomBudgetHtml() {
 
   const templateIncomeRows = t.income.map(item => mbTemplateRow('income', item)).join('');
   const templateFixedRows = t.fixed.map((item, index) => mbFixedTemplateRow(item, index)).join('');
+  const spendingRemaining = c.groceryRemaining + c.gasRemaining + c.discretionaryRemaining;
 
   document.getElementById('app').innerHTML = `
     <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
@@ -5456,6 +5470,10 @@ function _renderMomBudgetHtml() {
 
     <div class="stats-row mb-stats-row mb-stats-primary">
       ${stat('Monthly Income', fmt(c.income), 'var(--success)', `${fmt(c.unallocated)} unallocated`)}
+      ${stat('Overall Spending Left', `${spendingRemaining < 0 ? '−' : ''}${fmt(Math.abs(spendingRemaining))}`, spendingRemaining >= 0 ? 'var(--success)' : 'var(--danger)', 'Groceries + gas + discretionary', 'is-prominent')}
+    </div>
+
+    <div class="stats-row mb-stats-row mb-stats-categories">
       ${stat('Groceries Left', `${c.groceryRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.groceryRemaining))}`, c.groceryRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.groceriesSpent)} spent`)}
       ${stat('Gas Left', `${c.gasRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.gasRemaining))}`, c.gasRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.gasSpent)} spent`)}
       ${stat('Discretionary Left', `${c.discretionaryRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.discretionaryRemaining))}`, c.discretionaryRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.discretionaryAdjusted)} adjusted budget`)}
