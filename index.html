@@ -5504,6 +5504,12 @@ function mbLockButton(locked, onClick, title) {
   return `<button class="btn btn-ghost btn-sm mb-lock-btn ${locked ? 'is-locked' : 'is-unlocked'}" title="${escAttr(title)}" onclick="${escAttr(onClick)}">${locked ? '🔒 Locked' : '🔓 Open'}</button>`;
 }
 
+function mbFixedScheduleLabel(item) {
+  if (item.frequency === 'yearly') return `Yearly in ${MB_MONTH_NAMES[(Number(item.dueMonth) || 1) - 1]}`;
+  if (item.frequency === 'semiannual') return `Every 6 months (${mbFixedDueMonths(item).map(m => MB_MONTH_NAMES[m - 1]).join(' / ')})`;
+  return mbFrequencyLabel(item);
+}
+
 function mbFixedTemplateSubtitle(item) {
   if (item.frequency === 'monthly') return 'Monthly';
   if (item.frequency === 'reserve') return 'Reserve only';
