@@ -966,23 +966,20 @@
       gap: 0.4rem;
       margin-top: 0.75rem;
       align-items: center;
+      grid-template-columns: 280px minmax(0, 1fr) 240px 84px;
     }
-    .mb-ledger-add-row.has-description {
-      grid-template-columns: 135px minmax(180px, 1fr) 120px auto;
-    }
-    .mb-ledger-add-row.no-description {
-      grid-template-columns: 135px 120px auto;
-      justify-content: start;
-    }
-    .mb-ledger-add-row .mb-money { width: 120px; }
-    .mb-ledger-amount-col { width: 120px; text-align: right; }
+    .mb-ledger-add-row .mb-money,
+    .mb-ledger-add-row input { width: 100%; }
+    .mb-ledger-add-row .btn { width: 100%; }
+    .mb-ledger-amount-col { width: 240px; text-align: right; }
+    .mb-ledger-date-col { width: 280px; }
+    .mb-ledger-action-col { width: 84px; }
     @media (max-width: 640px) {
       .mb-ledger-add-row.has-description,
       .mb-ledger-add-row.no-description {
         grid-template-columns: 1fr;
-        justify-content: stretch;
       }
-      .mb-ledger-add-row .mb-money { width: 100%; }
+      .mb-ledger-add-row .mb-ledger-spacer { display: none; }
     }
     .mb-fixed-over {
       white-space: nowrap;
@@ -5424,13 +5421,18 @@ function mbLedgerCard(title, section, entries, label, nameKey) {
   const rows = entries.length ? entries.map(e => `
     <tr>
       <td>${escHtml(fmtDate(e.date))}</td>
-      ${hasDescription ? `<td>${escHtml(e[nameKey] || '')}</td>` : ''}
+      <td>${hasDescription ? escHtml(e[nameKey] || '') : ''}</td>
       <td class="mb-ledger-amount-col" style="font-variant-numeric:tabular-nums">${fmt(Number(e.amount) || 0)}</td>
       <td style="text-align:right"><button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="mbDeleteLedger('${section}','${escAttr(e.id)}')">×</button></td>
-    </tr>`).join('') : `<tr><td colspan="${hasDescription ? 4 : 3}" style="color:var(--text-muted);padding:.75rem">No entries yet.</td></tr>`;
+    </tr>`).join('') : `<tr><td colspan="4" style="color:var(--text-muted);padding:.75rem">No entries yet.</td></tr>`;
+  const colgroup = `
+    <col class="mb-ledger-date-col">
+    <col>
+    <col class="mb-ledger-amount-col">
+    <col class="mb-ledger-action-col">`;
   const header = hasDescription
-    ? `<tr><th style="width:135px">Date</th><th>${escHtml(label)}</th><th class="mb-ledger-amount-col">Amount</th><th></th></tr>`
-    : `<tr><th style="width:135px">Date</th><th class="mb-ledger-amount-col">Amount</th><th></th></tr>`;
+    ? `<tr><th>Date</th><th>${escHtml(label)}</th><th class="mb-ledger-amount-col">Amount</th><th></th></tr>`
+    : `<tr><th>Date</th><th></th><th class="mb-ledger-amount-col">Amount</th><th></th></tr>`;
   const addRow = hasDescription
     ? `<div class="mb-ledger-add-row has-description">
         <input type="date" id="mb-${section}-date" class="form-input mb-date-input" value="${appTodayIso()}">
@@ -5440,6 +5442,7 @@ function mbLedgerCard(title, section, entries, label, nameKey) {
       </div>`
     : `<div class="mb-ledger-add-row no-description">
         <input type="date" id="mb-${section}-date" class="form-input mb-date-input" value="${appTodayIso()}">
+        <span class="mb-ledger-spacer" aria-hidden="true"></span>
         <span class="mb-money"><input type="number" id="mb-${section}-amount" class="form-input" step=".01" min="0" placeholder="0.00"></span>
         <button class="btn btn-primary btn-sm" onclick="mbAddLedger('${section}','${nameKey}')">Add</button>
       </div>`;
@@ -5449,6 +5452,7 @@ function mbLedgerCard(title, section, entries, label, nameKey) {
     <div class="card-body">
       <div class="table-wrap">
         <table>
+          <colgroup>${colgroup}</colgroup>
           <thead>${header}</thead>
           <tbody>${rows}</tbody>
         </table>
