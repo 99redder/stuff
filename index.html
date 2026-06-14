@@ -868,6 +868,18 @@
     .mb-fixed-schedule select,
     .mb-fixed-schedule input { min-width:0; }
     .mb-fixed-schedule .mb-template-money { width:88px; }
+    .mb-fixed-frequency-static {
+      display:flex;
+      align-items:center;
+      min-height:2.35rem;
+      padding:0.45rem 0.65rem;
+      border:1px solid var(--border);
+      border-radius:6px;
+      background:var(--bg);
+      color:var(--text-muted);
+      font-size:0.82rem;
+      font-weight:700;
+    }
     .tp-note { font-size:0.75rem; color:var(--text-muted); font-style:italic; margin-top:0.35rem; }
     .mb-fixed-list {
       display: grid;
@@ -5344,6 +5356,19 @@ function mbTemplateRow(section, item) {
 function mbFixedTemplateRow(item, index = 0) {
   const locked = !!item.locked;
   const dueOptions = MB_MONTH_NAMES.map((name, idx) => `<option value="${idx + 1}"${Number(item.dueMonth || 1) === idx + 1 ? ' selected' : ''}>${name}</option>`).join('');
+  const frequencyControl = item.frequency === 'monthly'
+    ? '<span class="mb-fixed-frequency-static">Paid monthly</span>'
+    : `<select class="form-input" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','frequency',this.value)">
+        <option value="reserve"${item.frequency === 'reserve' ? ' selected' : ''}>Reserve only</option>
+        <option value="monthly"${item.frequency === 'monthly' ? ' selected' : ''}>Monthly</option>
+        <option value="semiannual"${item.frequency === 'semiannual' ? ' selected' : ''}>Every 6 months</option>
+        <option value="yearly"${item.frequency === 'yearly' ? ' selected' : ''}>Yearly</option>
+      </select>`;
+  const dueMonthControl = item.frequency === 'monthly'
+    ? '<span class="mb-fixed-frequency-static">Every month</span>'
+    : `<select class="form-input" ${item.frequency === 'reserve' ? 'disabled' : ''} title="First due month" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','dueMonth',this.value)">
+        ${dueOptions}
+      </select>`;
   return `<div class="mb-fixed-template-row${index % 2 ? ' is-alt' : ''}">
     <button class="mb-fixed-template-row-delete" title="Delete ${escAttr(item.name)}" onclick="mbDeleteTemplateItem('fixed','${escAttr(item.id)}')">×</button>
     <div class="mb-fixed-template-row-header">
@@ -5355,16 +5380,9 @@ function mbFixedTemplateRow(item, index = 0) {
       <span class="mb-money mb-template-money"><input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(String(item.amount))}" ${locked ? 'disabled' : ''} title="Monthly reserve" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','amount',this.value)"></span>
     </div>
     <div class="mb-fixed-schedule">
-      <select class="form-input" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','frequency',this.value)">
-        <option value="reserve"${item.frequency === 'reserve' ? ' selected' : ''}>Reserve only</option>
-        <option value="monthly"${item.frequency === 'monthly' ? ' selected' : ''}>Monthly</option>
-        <option value="semiannual"${item.frequency === 'semiannual' ? ' selected' : ''}>Every 6 months</option>
-        <option value="yearly"${item.frequency === 'yearly' ? ' selected' : ''}>Yearly</option>
-      </select>
+      ${frequencyControl}
       <span class="mb-money mb-template-money"><input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(String(mbFixedPaymentAmount(item)))}" ${item.frequency === 'reserve' ? 'disabled' : ''} title="Payment amount when due" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','paymentAmount',this.value)"></span>
-      <select class="form-input" ${item.frequency === 'monthly' || item.frequency === 'reserve' ? 'disabled' : ''} title="First due month" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','dueMonth',this.value)">
-        ${dueOptions}
-      </select>
+      ${dueMonthControl}
     </div>
   </div>`;
 }
