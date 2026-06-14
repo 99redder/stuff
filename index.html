@@ -988,6 +988,16 @@
       background: rgba(217, 119, 6, 0.1);
       color: #b45309;
     }
+    .mb-bill-kind.is-reserve {
+      border-color: rgba(20, 184, 166, 0.35);
+      background: rgba(20, 184, 166, 0.14);
+      color: #0f766e;
+    }
+    html[data-theme="dark"] .mb-bill-kind.is-reserve {
+      border-color: rgba(45, 212, 191, 0.55);
+      background: rgba(20, 184, 166, 0.24);
+      color: #5eead4;
+    }
     button.mb-bill-kind {
       font-family: inherit;
       cursor: default;
@@ -5439,6 +5449,7 @@ function _renderMomBudgetHtml() {
     const actual = Number(actualValue);
     const billKind = mbFixedBillKind(item);
     const isVariableBill = billKind === 'variable';
+    const isReserveBill = mbIsReserveBill(item);
     const budgetedAmount = expected || planned;
     const paidAmount = isVariableBill && Number.isFinite(actual) && actual > 0 ? actual : budgetedAmount;
     const canEnterPaidAmount = isVariableBill && (item.frequency === 'monthly' || paid);
@@ -5450,6 +5461,7 @@ function _renderMomBudgetHtml() {
         <span class="mb-fixed-name">
           ${escHtml(item.name)}
           <button type="button" class="mb-bill-kind is-${billKind}" disabled>${billKind}</button>
+          ${isReserveBill ? '<button type="button" class="mb-bill-kind is-reserve" disabled>Reserve Bill</button>' : ''}
           <span class="mb-fixed-sub">Reserve ${fmt(planned)} / mo · ${escHtml(mbFrequencyLabel(item))}</span>
           ${due ? `<span class="mb-fixed-due">Due ${fmt(expected)}</span>` : ''}
         </span>
