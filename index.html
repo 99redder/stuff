@@ -995,6 +995,10 @@
       font-size: 0.82rem;
       line-height: 1.4;
     }
+    .mb-fixed-sort {
+      width: 215px;
+      flex: 0 0 215px;
+    }
     @media (max-width: 1180px) {
       .mb-stats-row.mb-stats-primary,
       .mb-stats-row.mb-stats-year {
@@ -1005,6 +1009,10 @@
       .mb-stats-row.mb-stats-primary,
       .mb-stats-row.mb-stats-year {
         grid-template-columns: 1fr;
+      }
+      .mb-fixed-sort {
+        width: 100%;
+        flex-basis: 100%;
       }
     }
     .mb-fixed-paid {
@@ -5398,7 +5406,7 @@ function _renderMomBudgetHtml() {
           <div class="card-header" style="gap:.75rem;flex-wrap:wrap">
             <div class="card-title">Fixed Bills — ${escHtml(_mbMonth)}</div>
             <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="mbMarkReserveBillsPaid()" ${reserveFixedItems.length ? '' : 'disabled'}>${reserveAllPaid ? 'Reserve Bills Paid' : 'Mark Reserve Bills Paid'}</button>
-            <select class="form-input" style="width:155px" onchange="mbSetFixedSort(this.value)">
+            <select class="form-input mb-fixed-sort" onchange="mbSetFixedSort(this.value)">
               <option value="template"${_mbFixedSort === 'template' ? ' selected' : ''}>Template order</option>
               <option value="amount"${_mbFixedSort === 'amount' ? ' selected' : ''}>Amount high to low</option>
               <option value="az"${_mbFixedSort === 'az' ? ' selected' : ''}>A to Z</option>
