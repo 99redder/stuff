@@ -2086,7 +2086,8 @@ function getSaleClosingBreakdownFromForm() {
     const lockBtn = document.getElementById(`sale-cost-${def.code}-lock`);
     const value = parseFloat(input?.value || '0') || 0;
     const locked = lockBtn?.dataset.locked === '1';
-    items[def.code] = { label: def.name, value, locked };
+    const manual = input?.dataset.manual === '1';
+    items[def.code] = { label: def.name, value, locked, manual };
     total += value;
   }
   return { saleState, items, total };
@@ -2106,8 +2107,14 @@ function syncSaleClosingCosts() {
     input.style.background = locked ? 'var(--bg)' : '';
     input.style.cursor = locked ? 'not-allowed' : '';
     lockBtn.textContent = locked ? '🔒' : '🔓';
-    lockBtn.title = locked ? 'Unlock to override this cost' : 'Lock to use the default calculation';
-    if (locked) input.value = saleClosingDefault(def, salePrice, stateCode).toFixed(2);
+    lockBtn.title = locked ? 'Unlock to edit this amount' : 'Lock this amount';
+    // Auto-fill the computed estimate only for lines still in "auto" mode.
+    // Once the user has typed an amount (data-manual="1") it is preserved even
+    // when the line is re-locked, so locking freezes a manual figure rather
+    // than wiping it back to the estimate.
+    if (locked && input.dataset.manual !== '1') {
+      input.value = saleClosingDefault(def, salePrice, stateCode).toFixed(2);
+    }
     total += parseFloat(input.value || '0') || 0;
   }
   const totalEl = document.getElementById('sale-closeout-costs-total');
@@ -2120,6 +2127,15 @@ function toggleSaleClosingCostLock(code) {
   const lockBtn = document.getElementById(`sale-cost-${code}-lock`);
   if (!lockBtn) return;
   lockBtn.dataset.locked = lockBtn.dataset.locked === '1' ? '0' : '1';
+  syncSaleClosingCosts();
+}
+
+// Fired when the user types into a closing-cost line. Flags the line as a
+// manual override so re-locking it keeps the entered amount instead of
+// reverting to the auto-calculated estimate.
+function onSaleClosingCostInput(code) {
+  const input = document.getElementById(`sale-cost-${code}`);
+  if (input) input.dataset.manual = '1';
   syncSaleClosingCosts();
 }
 
@@ -3478,6 +3494,9 @@ async function renderInvestmentReturn() {
   const closeoutCostRows = activeSaleCostDefs.map(def => {
     const prior = saleCloseout?.saleClosingBreakdown?.items?.[def.code];
     const locked = prior?.locked !== false;
+    // Treat any previously saved line as a manual override so a later sale-price
+    // change can't silently overwrite a figure the user already entered.
+    const manual = prior ? (prior.manual !== false) : false;
     const value = prior ? prior.value : saleClosingDefault(def, zillowEstimate || 0, defaultSaleState);
     return `
       <div style="display:grid;grid-template-columns:1fr 150px 2.4rem;gap:.5rem;align-items:end;margin-bottom:.55rem">
@@ -3485,8 +3504,8 @@ async function renderInvestmentReturn() {
           <label for="sale-cost-${def.code}">${escHtml(def.name)}</label>
           <div style="font-size:.75rem;color:var(--text-muted);margin-top:.12rem">${escHtml(def.hint)}</div>
         </div>
-        <input type="number" id="sale-cost-${def.code}" step="0.01" min="0" value="${escAttr(String(value))}" ${locked ? 'disabled style="background:var(--bg);cursor:not-allowed"' : ''} oninput="syncSaleClosingCosts()">
-        <button class="btn btn-ghost btn-sm" type="button" id="sale-cost-${def.code}-lock" data-locked="${locked ? '1' : '0'}" onclick="toggleSaleClosingCostLock('${def.code}')" title="${locked ? 'Unlock to override this cost' : 'Lock to use the default calculation'}">${locked ? '🔒' : '🔓'}</button>
+        <input type="number" id="sale-cost-${def.code}" step="0.01" min="0" value="${escAttr(String(value))}" data-manual="${manual ? '1' : '0'}" ${locked ? 'disabled style="background:var(--bg);cursor:not-allowed"' : ''} oninput="onSaleClosingCostInput('${def.code}')">
+        <button class="btn btn-ghost btn-sm" type="button" id="sale-cost-${def.code}-lock" data-locked="${locked ? '1' : '0'}" onclick="toggleSaleClosingCostLock('${def.code}')" title="${locked ? 'Unlock to edit this amount' : 'Lock this amount'}">${locked ? '🔒' : '🔓'}</button>
       </div>`;
   }).join('');
   const finalBreakdownRows = saleCloseout?.saleClosingBreakdown?.items
@@ -3549,7 +3568,7 @@ async function renderInvestmentReturn() {
                 </div>
               </div>
               <input type="hidden" id="sale-closeout-costs" value="${escAttr(String(saleClosingAmt ? Math.round(saleClosingAmt) : ''))}">
-              <div style="font-size:.78rem;color:var(--text-muted);margin-top:.25rem">Locked values auto-calculate from sale price/state. Unlock any line to enter the settlement-statement amount manually.</div>
+              <div style="font-size:.78rem;color:var(--text-muted);margin-top:.25rem">Locked lines auto-calculate from the sale price. Unlock a line to type the actual settlement-statement amount — re-locking keeps the amount you entered (it won't revert to the estimate).</div>
             </div>
             <div class="form-group" style="grid-column:1/-1">
               <label>Closeout Notes</label>
@@ -8225,6 +8244,7 @@ window.toggleMaintImprovement  = toggleMaintImprovement;
 window.saveInvestmentConfig    = saveInvestmentConfig;
 window.closeOutInvestmentSale  = closeOutInvestmentSale;
 window.syncSaleClosingCosts    = syncSaleClosingCosts;
+window.onSaleClosingCostInput  = onSaleClosingCostInput;
 window.toggleSaleClosingCostLock = toggleSaleClosingCostLock;
 window.refreshZillowEstimate   = refreshZillowEstimate;
 window.toggleInvestmentConfig  = toggleInvestmentConfig;
