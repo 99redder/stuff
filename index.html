@@ -5165,7 +5165,6 @@ const MOM_BUDGET_DEFAULT = {
       // Auto-synced from the Monthly Budget Fair Share section — her household
       // contribution (rent/utilities/internet/food) now lives in this one line.
       { id: 'fair-share', name: 'Fair Share (household)', amount: 0, frequency: 'monthly', auto: true, locked: true },
-      { id: 'cell', name: 'Cell Phone', amount: 125 },
       { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 }
     ],
     variable: { discretionary: 500 }
@@ -5259,6 +5258,11 @@ function mbNormalize(raw) {
     const DROP_IDS = new Set(['car-insurance', 'car-repairs', 'registration', 'netflix', 'britbox']);
     data.template.fixed = data.template.fixed.filter(item => !DROP_IDS.has(String(item.id || '').toLowerCase()));
     data.template.carStreamingTrimmed = true;
+  }
+  // One-time migration: she's now on the family cell plan — drop her Cell Phone bill.
+  if (!data.template.cellTrimmed) {
+    data.template.fixed = data.template.fixed.filter(item => String(item.id || '').toLowerCase() !== 'cell');
+    data.template.cellTrimmed = true;
   }
   const gasFixedItem = data.template.fixed.find(item => item.id === 'gas' || String(item.name || '').trim().toLowerCase() === 'gas');
   data.template.fixed.forEach(item => {

@@ -611,7 +611,6 @@ const MOM_BUDGET_DEFAULT = {
     fixed: [
       // Household bills wrapped into one auto-synced Fair Share line (she lives with family).
       { id: 'fair-share', name: 'Fair Share (household)', amount: 0, frequency: 'monthly', auto: true, locked: true },
-      { id: 'cell', name: 'Cell Phone', amount: 125 },
       { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 }
     ],
     variable: { discretionary: 500 },

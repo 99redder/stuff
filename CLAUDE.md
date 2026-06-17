@@ -233,8 +233,8 @@ Now that the mother lives with the family, her household bills are wrapped into 
 
 **Current default template:**
 - Income: Social Security, 401k Distribution
-- Fixed/reserve list: **Fair Share (household)** (auto-synced), Cell Phone, CoPays / Prescriptions
-- Variable budgets: Discretionary (Gas removed — she has no car)
+- Fixed/reserve list: **Fair Share (household)** (auto-synced), CoPays / Prescriptions
+- Variable budgets: Discretionary (Gas removed — she has no car; Cell Phone removed — she's on the family plan)
 - The wrapped-away household bills (Rent, Internet, Water / Sewer / Trash, Electric, Nat Gas / Heat) and the Groceries budget were removed when she moved in with the family — their cost is represented by the single Fair Share line. Car Insurance / Car Repairs / Car Registration / Netflix / BritBox were also dropped (no longer tracked).
 
 **Fixed bill kinds:**
@@ -294,7 +294,8 @@ discretionaryAdjusted =
 **Normalization/migrations in `mbNormalize(raw)`:**
 - Ensures all `template`, `months`, arrays, locks, and variable budgets exist.
 - **One-time `fairShareMigrated` migration:** removes the wrapped household bills (`rent`, `internet`, `water`, `electric`, `gas-heat`) from `template.fixed`, then ensures the auto-synced `fair-share` line exists (prepended). Also `delete`s `template.variable.groceries` (groceries folded into Fair Share).
-- **One-time `carStreamingTrimmed` migration:** removes `car-insurance`, `car-repairs`, `registration`, `netflix`, `britbox` from `template.fixed` (no longer tracked). Default fixed list is now just `fair-share`, `cell`, `medical`.
+- **One-time `carStreamingTrimmed` migration:** removes `car-insurance`, `car-repairs`, `registration`, `netflix`, `britbox` from `template.fixed` (no longer tracked).
+- **One-time `cellTrimmed` migration:** removes `cell` (she's on the family cell plan). Default fixed list is now just `fair-share`, `medical`.
 - **Gas removed entirely:** `delete`s `template.variable.gas`; `mbCalcMonth`/`mbTemplateTotals` drop gas from all formulas; Gas Left stat, Gas ledger card, and Gas template row are gone. Old month `gas[]` ledger entries are left in storage but unused.
 - Backfills fixed item `frequency`, `dueMonth`, and `paymentAmount` from defaults.
 - Migrates old fixed Gas into the new monthly `gas` ledger, then removes old fixed Gas paid/actual state.
@@ -639,7 +640,8 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ### 2026-06-17 — Mom Budget: removed Gas + car/streaming bills
 
 - **Gas budget and ledger removed** (she has no car). `mbNormalize` `delete`s `template.variable.gas`; `mbCalcMonth`/`mbTemplateTotals` and the worker's parallel math drop gas from every formula; the Gas Left stat, Gas ledger card, Gas budget/overage Month-Math rows, and Gas variable-template row are gone. Phone PWA drops the Gas Left card (`mom-budget-sw.js` → `v6`). She now tracks just **Fair Share, Discretionary, and overages**.
-- **Car Insurance / Car Repairs / Car Registration / Netflix / BritBox removed** from Fixed Bills via the one-time `carStreamingTrimmed` migration (runs even on records already past `fairShareMigrated`). Default fixed list: `fair-share`, `cell`, `medical`.
+- **Car Insurance / Car Repairs / Car Registration / Netflix / BritBox removed** from Fixed Bills via the one-time `carStreamingTrimmed` migration (runs even on records already past `fairShareMigrated`).
+- **Cell Phone removed** (she's on the family cell plan) via the one-time `cellTrimmed` migration. Default fixed list is now just `fair-share`, `medical`.
 
 ### 2026-06-17 — Mom Budget: bills wrapped into Fair Share (she now lives with family)
 
