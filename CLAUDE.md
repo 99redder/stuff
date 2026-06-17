@@ -55,9 +55,9 @@ A full table of contents is in the `NAVIGATION GUIDE` block comment at the very 
 ```
 Property tabs:  [6AL]  [95EB]  [446BB]  [731WO]
 View tabs:      [Current Year]  [Tax Summary]  [Investment Return]  [Historical]  [Maintenance]  [All Properties]
-Header buttons: [Deductions Tracker]  [Monthly Budget]  [Mom Budget]  [☀️ Solar]  [Tax Planning]  [💰 Savings]
+Header buttons: [Deductions Tracker]  [Monthly Budget]  [Mom Budget]  [☀️ Solar]  [Tax Planning]  [💰 Savings]  [⚖️ Fair Share]
 ```
-- Property tabs are hidden when **All Properties**, **Deductions Tracker**, **Monthly Budget**, **Mom Budget**, **Solar**, **Tax Planning**, or **Savings** views are active.
+- Property tabs are hidden when **All Properties**, **Deductions Tracker**, **Monthly Budget**, **Mom Budget**, **Solar**, **Tax Planning**, **Savings**, or **Fair Share** views are active.
 - **731WO** is a primary residence — only shows Investment Return and Maintenance views (`PRIMARY_PROPERTIES` / `PRIMARY_VIEWS` constants).
 - Switching property tabs reloads the current view for the new property.
 
@@ -76,6 +76,7 @@ Header buttons: [Deductions Tracker]  [Monthly Budget]  [Mom Budget]  [☀️ So
 | Tax Planning | `tax-planning` | Projected federal/MD/VA tax liability with live inputs |
 | Deductions Tracker | `deductions` | Global itemized deductions log for the current year |
 | Savings | `savings` | Account balances + annual obligations tracker with paid/unpaid checkboxes per year |
+| Fair Share | `fair-share` | Household-expense calculator for the SSI "fair share" Red's mother must pay to avoid an In-Kind Support & Maintenance benefit reduction |
 
 ### State Model
 ```javascript
@@ -94,7 +95,8 @@ const state = {
   budget: null,                 // loaded once, global — { income, expenses, worksheets }
   momBudget: null,              // loaded once, global — { template, months }
   solar: { config: null, entries: null, summaries: null },
-  savings: null                 // loaded once, global — { accounts, obligations, payments }
+  savings: null,                // loaded once, global — { accounts, obligations, payments }
+  fairShare: null               // loaded once, global — { householdSize, buffer, roundUp, fbr, bills }
 };
 ```
 `null` means not yet fetched. `ensureLoaded(property, key)` fetches on demand and caches in `state.data`.
@@ -118,6 +120,7 @@ const state = {
 | `renderDeductions()` | Deductions tracker view |
 | `renderSavings()` | Savings view — account balances + annual obligations |
 | `renderMomBudget()` | Mom Budget view — global monthly assistance tracker |
+| `renderFairShare()` | Fair Share view — SSI household-cost fair-share calculator (`fsCalc()` does the math) |
 | `showBrandedNotice({title,message,type,confirmLabel,onConfirm})` | Branded confirmation modal used by all delete dialogs (replaces native `confirm()`); pass `type:'danger'` for red ⚠️ styling, `confirmLabel` to customize the button text. |
 | `openBudgetWorksheetModal(id)` | Opens the property income worksheet for a budget income item |
 | `calcDepreciationSchedule(costBasis, placedInService)` | MACRS 27.5-yr straight-line, mid-month convention |
@@ -362,6 +365,41 @@ On load, if no obligation has a `kind` field, a one-time migration backfills `ki
 
 ---
 
+### Fair Share View
+
+Global view (not per-property) that calculates the monthly amount Red's mother must contribute toward household expenses once she lives with the family, so her **SSI** stays unreduced.
+
+**Primary anchors in `index.html`:**
+- Section starts at `// ── View: Fair Share`
+- Defaults: `DEFAULT_FAIR_SHARE_BILLS`, `FAIR_SHARE_DEFAULT_FBR`
+- Render path: `renderFairShare()` → `_renderFairShareHtml()`; inline editor `_fsEditRow()`
+- Math helper: `fsCalc()` · save helper: `saveFairShare()`
+
+**SSA rule (POMS SI 00835.480 / SI 00835.200):** an SSI recipient living in another person's household avoids any **In-Kind Support & Maintenance (ISM)** benefit reduction by paying her **pro-rata share** of the household's *countable food + shelter operating costs*. Countable: food, rent/mortgage, property taxes, home insurance required by the mortgage, heating fuel, gas, electricity, water, sewer, garbage. **Not** countable: phone, internet, cable/streaming, auto, etc. Bills flagged `countsSSA:true` form the SSA floor; un-flagged bills are still tracked and split but don't raise the legal minimum.
+
+**Data shape (`state.fairShare`):**
+```javascript
+{
+  householdSize,   // divisor — everyone living in the home (incl. mother & children)
+  buffer,          // $/mo added on top of the computed share
+  roundUp,         // round the share up to a whole dollar before adding buffer
+  fbr,             // Federal Benefit Rate (individual); used only for the VTR/PMV info display
+  bills: [ { id, name, amount /* monthly $ */, countsSSA, note } ]
+}
+```
+
+**`fsCalc()` math:**
+```
+totalAll  = Σ bill.amount
+totalSSA  = Σ bill.amount where countsSSA
+allShare  = totalAll / householdSize        // her share of ALL expenses (the required figure)
+ssaFloor  = totalSSA / householdSize        // legal minimum to keep SSI intact
+required  = (roundUp ? ceil(allShare) : allShare) + buffer
+```
+The hero card shows `required` as her monthly payment, flags green when `required ≥ ssaFloor`, and displays the VTR (`fbr/3`) and PMV cap (`fbr/3 + 20`) as the reductions she'd face if she underpaid. Per the user's choice, the headline number is her share of **all** tracked bills (a fair contribution to everything); `ssaFloor` is the bare food+shelter minimum shown for reference. This is a planning estimate, not SSA advice.
+
+---
+
 ## Categories
 
 ```javascript
@@ -499,6 +537,12 @@ All calls: `POST /api/data` with JSON body `{ action, property, ...payload }`.
 | `get_savings` | — | `{ data: { accounts, obligations, payments } }` |
 | `save_savings` | `data: { accounts, obligations, payments }` | `{ success: true, data }` — full overwrite of the `savings` KV record. The worker sanitizes: clamps `accounts.{robinhood,ibkr}` to numbers, coerces `paymentsPerYear` to `1` or `2`, drops any year key that isn't a 4-digit string. |
 
+#### Fair Share (global — not per-property)
+| Action | Extra payload | Returns |
+|---|---|---|
+| `get_fair_share` | — | `{ data: { householdSize, buffer, roundUp, fbr, bills } }` |
+| `save_fair_share` | `data: { householdSize, buffer, roundUp, fbr, bills } }` | `{ success: true, data }` — full overwrite of the `fair_share` KV record. The worker sanitizes: `householdSize ≥ 1` (default 5), `buffer ≥ 0`, `roundUp` boolean, `fbr > 0` (default 967), and each bill to `{ id, name, amount≥0, countsSSA:bool, note }`. |
+
 #### Solar ROI (global — not per-property)
 | Action | Extra payload | Returns |
 |---|---|---|
@@ -533,6 +577,7 @@ solar:summaries            →  { [year]: { ... } }
 deductions                 →  Array of deduction entry objects
 tax_planning:{year}        →  Tax planning inputs for that year
 savings                    →  { accounts: {robinhood, ibkr}, obligations: [...], payments: { [year]: { [oid]: [bool, ...] } } }
+fair_share                 →  { householdSize, buffer, roundUp, fbr, bills: [ { id, name, amount, countsSSA, note } ] }
 ```
 Valid properties: `6AL`, `95EB`, `446BB`, `731WO`
 
@@ -596,6 +641,11 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-06-17 — Fair Share view
+
+- **New `⚖️ Fair Share` header button / view** (`fair-share`) — global calculator for the monthly amount Red's mother must pay toward household expenses, once she moves in with the family, to keep her SSI unreduced under the SSA In-Kind Support & Maintenance rules. Editable household-bill list (name / monthly amount / "Food/Shelter" SSA-countable toggle / note), plus settings for household size, safety buffer, round-up, and the Federal Benefit Rate. Hero card shows her required monthly payment (her even share of *all* tracked bills, optionally rounded + buffered), flags green when it clears the bare food+shelter SSA floor, and shows the VTR / PMV reductions she'd face if she underpaid. Math in `fsCalc()`; render in `renderFairShare()` / `_renderFairShareHtml()`.
+- **Worker API additions** — `get_fair_share` / `save_fair_share` (KV key `fair_share`). The save handler sanitizes household size (≥1, default 5), buffer (≥0), `roundUp` boolean, FBR (>0, default 967), and each bill to `{ id, name, amount≥0, countsSSA, note }`.
 
 ### 2026-06-14 — Mom Budget phone PWA: freshness + abuse guards
 

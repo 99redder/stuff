@@ -111,6 +111,10 @@ async function handleDataApi(request, env) {
   if (action === 'get_savings')  return handleGetSavings(env);
   if (action === 'save_savings') return handleSaveSavings(env, body.data);
 
+  // Fair Share — global
+  if (action === 'get_fair_share')  return handleGetFairShare(env);
+  if (action === 'save_fair_share') return handleSaveFairShare(env, body.data);
+
   const { property } = body;
 
   if (!property || !VALID_PROPERTIES.includes(property)) {
@@ -1299,6 +1303,40 @@ async function handleSaveSavings(env, data) {
   };
 
   await env.RENTALS.put('savings', JSON.stringify(saved));
+  return jsonResponse({ success: true, data: saved });
+}
+
+// ── Fair Share ────────────────────────────────────────────────────────────────
+
+async function handleGetFairShare(env) {
+  const data = await env.RENTALS.get('fair_share', 'json') || {};
+  return jsonResponse({ data });
+}
+
+async function handleSaveFairShare(env, data) {
+  if (!data || typeof data !== 'object') {
+    return jsonResponse({ error: 'Missing data object' }, 400);
+  }
+
+  const bills = Array.isArray(data.bills) ? data.bills.map(b => ({
+    id: b.id || crypto.randomUUID(),
+    name: String(b.name || '').trim().slice(0, 200),
+    amount: (typeof b.amount === 'number' && isFinite(b.amount) && b.amount >= 0) ? b.amount : 0,
+    countsSSA: b.countsSSA !== false,
+    note: String(b.note || '').trim().slice(0, 400),
+  })) : [];
+
+  const num = (v, def, min) => (typeof v === 'number' && isFinite(v) && v >= min) ? v : def;
+
+  const saved = {
+    householdSize: num(data.householdSize, 5, 1),
+    buffer:        num(data.buffer, 0, 0),
+    roundUp:       data.roundUp !== false,
+    fbr:           num(data.fbr, 967, 0),
+    bills,
+  };
+
+  await env.RENTALS.put('fair_share', JSON.stringify(saved));
   return jsonResponse({ success: true, data: saved });
 }
 
