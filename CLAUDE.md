@@ -55,9 +55,9 @@ A full table of contents is in the `NAVIGATION GUIDE` block comment at the very 
 ```
 Property tabs:  [6AL]  [95EB]  [446BB]  [731WO]
 View tabs:      [Current Year]  [Tax Summary]  [Investment Return]  [Historical]  [Maintenance]  [All Properties]
-Header buttons: [Deductions Tracker]  [Monthly Budget]  [Mom Budget]  [☀️ Solar]  [Tax Planning]  [💰 Savings]  [⚖️ Fair Share]
+Header buttons: [Deductions Tracker]  [Monthly Budget]  [Mom Budget]  [☀️ Solar]  [Tax Planning]  [💰 Savings]
 ```
-- Property tabs are hidden when **All Properties**, **Deductions Tracker**, **Monthly Budget**, **Mom Budget**, **Solar**, **Tax Planning**, **Savings**, or **Fair Share** views are active.
+- Property tabs are hidden when **All Properties**, **Deductions Tracker**, **Monthly Budget**, **Mom Budget**, **Solar**, **Tax Planning**, or **Savings** views are active.
 - **731WO** is a primary residence — only shows Investment Return and Maintenance views (`PRIMARY_PROPERTIES` / `PRIMARY_VIEWS` constants).
 - Switching property tabs reloads the current view for the new property.
 
@@ -70,13 +70,12 @@ Header buttons: [Deductions Tracker]  [Monthly Budget]  [Mom Budget]  [☀️ So
 | Historical | `historical` | Annual summary table + Depreciation Schedule card |
 | Maintenance | `maintenance` | Per-property maintenance log with improvement tracking |
 | All Properties | `portfolio` | Combined stats + per-property breakdown + multi-year history |
-| Monthly Budget | `budget` | Global monthly income/expense planner with property worksheets |
+| Monthly Budget | `budget` | Global monthly income/expense planner with property worksheets; includes the collapsible **Fair Share** section (Mom's cost-sharing contribution, derived from the budget's own expenses) |
 | Mom Budget | `mom-budget` | Global monthly assistance tracker with income template, fixed/reserve bills, groceries/gas/discretionary ledgers, and month math |
 | Solar ROI | `solar` | Solar panel ROI tracking + billing cycle calculator |
 | Tax Planning | `tax-planning` | Projected federal/MD/VA tax liability with live inputs |
 | Deductions Tracker | `deductions` | Global itemized deductions log for the current year |
 | Savings | `savings` | Account balances + annual obligations tracker with paid/unpaid checkboxes per year |
-| Fair Share | `fair-share` | Household-cost splitter: divides shared monthly bills per person to show Red's mother's fair contribution (cost-sharing, kept out of taxable-income territory) |
 
 ### State Model
 ```javascript
@@ -95,9 +94,10 @@ const state = {
   budget: null,                 // loaded once, global — { income, expenses, worksheets }
   momBudget: null,              // loaded once, global — { template, months }
   solar: { config: null, entries: null, summaries: null },
-  savings: null,                // loaded once, global — { accounts, obligations, payments }
-  fairShare: null               // loaded once, global — { householdSize, roundDollar, bills }
+  savings: null                 // loaded once, global — { accounts, obligations, payments }
 };
+// Note: budget also carries a `fairShare` sub-object — { householdSize, roundDollar, shared:{[itemId]:bool} } —
+// for the Fair Share section embedded in the Monthly Budget view (saved inside the `budget` record).
 ```
 `null` means not yet fetched. `ensureLoaded(property, key)` fetches on demand and caches in `state.data`.
 
@@ -120,7 +120,7 @@ const state = {
 | `renderDeductions()` | Deductions tracker view |
 | `renderSavings()` | Savings view — account balances + annual obligations |
 | `renderMomBudget()` | Mom Budget view — global monthly assistance tracker |
-| `renderFairShare()` | Fair Share view — household-cost splitter for Red's mother's fair share (`fsCalc()` does the math) |
+| `fsRenderCard()` | Fair Share section embedded in the budget view — Mom's cost-sharing contribution, derived from budget expenses (`fsCalc()` does the math) |
 | `showBrandedNotice({title,message,type,confirmLabel,onConfirm})` | Branded confirmation modal used by all delete dialogs (replaces native `confirm()`); pass `type:'danger'` for red ⚠️ styling, `confirmLabel` to customize the button text. |
 | `openBudgetWorksheetModal(id)` | Opens the property income worksheet for a budget income item |
 | `calcDepreciationSchedule(costBasis, placedInService)` | MACRS 27.5-yr straight-line, mid-month convention |
@@ -365,37 +365,40 @@ On load, if no obligation has a `kind` field, a one-time migration backfills `ki
 
 ---
 
-### Fair Share View
+### Fair Share (section inside Monthly Budget)
 
-Global view (not per-property) — a plain **household-cost splitter**. It totals the family's actual monthly bills, divides the **shared** ones by the number of people, and shows the fair per-person amount Red's mother contributes once she lives with the family.
+A collapsible **section inside the Monthly Budget view** — not a standalone tab. It **reuses the budget's own expense items** (no double entry): it totals the expenses marked **shared**, divides by household size, and shows the fair per-person amount Red's mother contributes once she lives with the family.
 
-**Context / why it's *not* the SSI version:** the mother receives regular **Title II Social Security** (~$2,092.50/mo net; ~$2,989.90 gross), confirmed by her COLA notice and the "SSA TREAS 310 XXSOC SE" bank descriptor — **not SSI** (SSI caps ~$967 and her benefit income would zero it out). Title II is *not* needs-based, so household contributions don't change her check, and there is no SSA floor to hit. The goal of this tab is instead to keep her contribution at her **share of actual shared costs (no markup)** so it reads as **cost-sharing / expense reimbursement** among household members — generally not taxable income to the family. (Charging *above* her actual share is what could look like rental income.) Not tax advice; confirm specifics with a CPA.
+**Context / why it's *not* an SSI tool:** the mother receives regular **Title II Social Security** (~$2,092.50/mo net; ~$2,989.90 gross), confirmed by her COLA notice and the "SSA TREAS 310 XXSOC SE" bank descriptor — **not SSI** (SSI caps ~$967 and her benefit income would zero it out). Title II is *not* needs-based, so household contributions don't change her check, and there is no SSA floor. The goal is to keep her contribution at her **share of actual shared costs (no markup)** so it reads as **cost-sharing / expense reimbursement** — generally not taxable income to the family. (Charging *above* her actual share is what could look like rental income.) Not tax advice; confirm with a CPA.
 
-**Primary anchors in `index.html`:**
-- Section starts at `// ── View: Fair Share`
-- Defaults: `DEFAULT_FAIR_SHARE_BILLS` (seed bills with `shared` flags; amounts seeded at 0)
-- Render path: `renderFairShare()` → `_renderFairShareHtml()`; inline editor `_fsEditRow()`
-- Math helper: `fsCalc()` · save helper: `saveFairShare()` · per-bill toggle: `fsToggleShared()`
+**Primary anchors in `index.html`** (just after `_saveBudget()`):
+- Section starts at `// ── Monthly Budget: Fair Share section`
+- Category defaults: `FS_SHARED_CAT_DEFAULTS` (which budget expense categories count as shared by default)
+- Card builder: `fsRenderCard()` — injected into `_renderBudgetHtml()` right after the summary bar
+- Math: `fsCalc()` · per-item check: `fsItemShared(item, cat, fs)` · normalizer: `fsNormalize(raw)`
+- Collapse: `fsToggleSection()` (open state in `localStorage` key `rentals_budget_fairshare_open`)
+- Mutators: `fsToggleShared(itemId)`, `fsUpdateSetting(key, value)` — both persist via `_saveBudget()`
 
-**Data shape (`state.fairShare`):**
+**Data shape (`state.budget.fairShare`):**
 ```javascript
 {
   householdSize,   // divisor — everyone living in the home (incl. mother & children)
   roundDollar,     // round her share to the NEAREST whole dollar (Math.round, neutral)
-  bills: [ { id, name, amount /* monthly $ */, shared /* include in the split? */, note } ]
+  shared: { [budgetExpenseItemId]: bool }   // per-item OVERRIDES of the category default
 }
 ```
+There is **no separate bills list** — the bills are the budget's expense items. An item counts as shared if `fairShare.shared[item.id]` is set (explicit override), else it falls back to `FS_SHARED_CAT_DEFAULTS[category]`. Toggling the Shared/Personal pill writes an explicit override.
 
-**`fsCalc()` math:**
+**`fsCalc()` math** (iterating all budget expense items across `BUDGET_EXPENSE_CATS`):
 ```
-totalAll    = Σ bill.amount
-totalShared = Σ bill.amount where shared
+totalAll    = Σ item.amount
+totalShared = Σ item.amount where fsItemShared(item, cat)
 perPerson   = totalShared / householdSize
 herShare    = roundDollar ? round(perPerson) : perPerson
 ```
-The hero card shows `herShare` as her monthly contribution and a green "Cost-sharing, not income" note. `shared:false` bills (e.g. an individual's phone) are excluded from the split — the row dims and the "Split?" pill reads **Personal** instead of **Shared**. No SSI/SSA/FBR/buffer logic remains.
+The card header shows `herShare` (always visible, even collapsed) and a green "Cost-sharing, not income" note when open. Personal items dim and their pill reads **Personal**. No SSI/SSA/FBR/buffer logic.
 
-**Migration:** `loadFairShare()` (and `handleSaveFairShare` in the worker) backfill from the original SSI version of this tab — legacy bills' `countsSSA` maps to `shared`, and the old `roundUp` setting maps to `roundDollar`.
+**Persistence:** `fairShare` rides inside the `budget` KV record. The budget loader (`renderBudget`) reads it back via `fsNormalize(raw.fairShare)` — like `worksheets`, it must be pulled from `raw` or it's lost on the next save. `fsNormalize` also migrates the original standalone version's `roundUp` → `roundDollar`.
 
 ---
 
@@ -536,11 +539,7 @@ All calls: `POST /api/data` with JSON body `{ action, property, ...payload }`.
 | `get_savings` | — | `{ data: { accounts, obligations, payments } }` |
 | `save_savings` | `data: { accounts, obligations, payments }` | `{ success: true, data }` — full overwrite of the `savings` KV record. The worker sanitizes: clamps `accounts.{robinhood,ibkr}` to numbers, coerces `paymentsPerYear` to `1` or `2`, drops any year key that isn't a 4-digit string. |
 
-#### Fair Share (global — not per-property)
-| Action | Extra payload | Returns |
-|---|---|---|
-| `get_fair_share` | — | `{ data: { householdSize, roundDollar, bills } }` |
-| `save_fair_share` | `data: { householdSize, roundDollar, bills } }` | `{ success: true, data }` — full overwrite of the `fair_share` KV record. The worker sanitizes: `householdSize ≥ 1` (rounded, default 5), `roundDollar` boolean, and each bill to `{ id, name, amount≥0, shared:bool, note }`. Legacy records using `roundUp` / `countsSSA` are migrated to `roundDollar` / `shared`. |
+> **Fair Share** has no dedicated action/KV key — its settings (`householdSize`, `roundDollar`, per-item `shared` overrides) live inside the `budget` record under `data.fairShare` and are saved via `save_budget`.
 
 #### Solar ROI (global — not per-property)
 | Action | Extra payload | Returns |
@@ -568,7 +567,7 @@ defaults:{property}        →  { rent: X, management: Y, ... }
 depreciation:{property}    →  { costBasis, placedInService, purchaseDate }
 maintenance:{property}     →  Array of maintenance entry objects
 investment:{property}      →  Investment config object
-budget                     →  { income: [...], expenses: {...}, worksheets: {...} }
+budget                     →  { income: [...], expenses: {...}, worksheets: {...}, fairShare: { householdSize, roundDollar, shared: { [itemId]: bool } } }
 mom_budget                 →  { template: { income, fixed, variable, variableLocks }, months: { [YYYY-MM]: {...} } }
 solar:config               →  Solar system config object
 solar:entries              →  Array of solar entry objects
@@ -576,7 +575,6 @@ solar:summaries            →  { [year]: { ... } }
 deductions                 →  Array of deduction entry objects
 tax_planning:{year}        →  Tax planning inputs for that year
 savings                    →  { accounts: {robinhood, ibkr}, obligations: [...], payments: { [year]: { [oid]: [bool, ...] } } }
-fair_share                 →  { householdSize, roundDollar, bills: [ { id, name, amount, shared, note } ] }
 ```
 Valid properties: `6AL`, `95EB`, `446BB`, `731WO`
 
@@ -640,6 +638,11 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-06-17 — Fair Share moved into Monthly Budget
+
+- **Removed the standalone `⚖️ Fair Share` tab** and re-embedded it as a collapsible **section inside the Monthly Budget view** so it reuses the bills already entered as budget expenses — no double entry. Header button, `fair-share` view case, `state.fairShare`, and the `get_fair_share`/`save_fair_share` worker actions + `fair_share` KV key were all removed.
+- **Now derives from budget expenses.** `fsCalc()` iterates `state.budget.expenses`, summing items marked shared (per-item override in `fairShare.shared[itemId]`, else the `FS_SHARED_CAT_DEFAULTS[category]` default), ÷ household size. Settings + overrides live in `state.budget.fairShare` and save inside the `budget` record via `_saveBudget()` (read back through `fsNormalize(raw.fairShare)` in `renderBudget`). Card built by `fsRenderCard()`, collapse state in `localStorage` `rentals_budget_fairshare_open`.
 
 ### 2026-06-17 — Fair Share view
 

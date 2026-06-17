@@ -110,10 +110,8 @@ async function handleDataApi(request, env) {
   // Savings — global
   if (action === 'get_savings')  return handleGetSavings(env);
   if (action === 'save_savings') return handleSaveSavings(env, body.data);
-
-  // Fair Share — global
-  if (action === 'get_fair_share')  return handleGetFairShare(env);
-  if (action === 'save_fair_share') return handleSaveFairShare(env, body.data);
+  // Note: Fair Share settings live inside the `budget` KV record
+  // (data.fairShare), saved via save_budget — no dedicated action/key.
 
   const { property } = body;
 
@@ -1303,41 +1301,6 @@ async function handleSaveSavings(env, data) {
   };
 
   await env.RENTALS.put('savings', JSON.stringify(saved));
-  return jsonResponse({ success: true, data: saved });
-}
-
-// ── Fair Share ────────────────────────────────────────────────────────────────
-
-async function handleGetFairShare(env) {
-  const data = await env.RENTALS.get('fair_share', 'json') || {};
-  return jsonResponse({ data });
-}
-
-async function handleSaveFairShare(env, data) {
-  if (!data || typeof data !== 'object') {
-    return jsonResponse({ error: 'Missing data object' }, 400);
-  }
-
-  const bills = Array.isArray(data.bills) ? data.bills.map(b => ({
-    id: b.id || crypto.randomUUID(),
-    name: String(b.name || '').trim().slice(0, 200),
-    amount: (typeof b.amount === 'number' && isFinite(b.amount) && b.amount >= 0) ? b.amount : 0,
-    // `shared` = include in the per-person split; falls back to the legacy
-    // `countsSSA` flag for records saved by the original SSI version of this tab.
-    shared: (b.shared !== undefined) ? (b.shared !== false) : (b.countsSSA !== false),
-    note: String(b.note || '').trim().slice(0, 400),
-  })) : [];
-
-  const householdSize = (typeof data.householdSize === 'number' && isFinite(data.householdSize) && data.householdSize >= 1)
-    ? Math.round(data.householdSize) : 5;
-
-  const saved = {
-    householdSize,
-    roundDollar: (data.roundDollar !== undefined) ? (data.roundDollar !== false) : (data.roundUp !== false),
-    bills,
-  };
-
-  await env.RENTALS.put('fair_share', JSON.stringify(saved));
   return jsonResponse({ success: true, data: saved });
 }
 

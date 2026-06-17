@@ -1198,7 +1198,6 @@
       <button class="tp-header-btn" id="solar-btn" onclick="switchView('solar')">☀️ Solar</button>
       <button class="tp-header-btn" id="tax-planning-btn" onclick="switchView('tax-planning')">Tax Planning</button>
       <button class="tp-header-btn" id="savings-btn" onclick="switchView('savings')">💰 Savings</button>
-      <button class="tp-header-btn" id="fair-share-btn" onclick="switchView('fair-share')">⚖️ Fair Share</button>
       <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
       <button class="btn-signout" id="signout-btn" onclick="signOut()" title="Sign out">Sign Out</button>
     </div>
@@ -1989,8 +1988,7 @@ const state = {
   budget: null,                // loaded once, global (not per-property)
   momBudget: null,             // loaded once, global (not per-property)
   solar: { config: null, entries: null, summaries: null },
-  savings: null,               // loaded once, global (not per-property)
-  fairShare: null              // loaded once, global (not per-property)
+  savings: null                // loaded once, global (not per-property)
 };
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -2176,8 +2174,7 @@ function switchView(view) {
   const isSolar = view === 'solar';
   const isDeductions = view === 'deductions';
   const isSavings = view === 'savings';
-  const isFairShare = view === 'fair-share';
-  const isFullscreen = isTaxPlanning || isBudget || isMomBudget || isSolar || isDeductions || isSavings || isFairShare;
+  const isFullscreen = isTaxPlanning || isBudget || isMomBudget || isSolar || isDeductions || isSavings;
   // Hide property tabs for portfolio, tax planning, budget, solar, deductions, savings
   document.getElementById('property-tabs').style.display =
     (view === 'portfolio' || isFullscreen) ? 'none' : '';
@@ -2196,8 +2193,6 @@ function switchView(view) {
   if (dedBtn) dedBtn.classList.toggle('active', isDeductions);
   const savingsBtn = document.getElementById('savings-btn');
   if (savingsBtn) savingsBtn.classList.toggle('active', isSavings);
-  const fairShareBtn = document.getElementById('fair-share-btn');
-  if (fairShareBtn) fairShareBtn.classList.toggle('active', isFairShare);
   renderView();
 }
 
@@ -2220,7 +2215,6 @@ async function renderView() {
       case 'solar':         await renderSolar();         break;
       case 'deductions':    await renderDeductions();    break;
       case 'savings':       await renderSavings();       break;
-      case 'fair-share':    await renderFairShare();     break;
     }
   } catch (e) {
     app.innerHTML = `<div class="error-msg">Failed to load: ${escHtml(e.message)}</div>`;
@@ -4629,7 +4623,8 @@ async function renderBudget() {
     state.budget = {
       income: raw.income || [],
       expenses: {},
-      worksheets: raw.worksheets || {}
+      worksheets: raw.worksheets || {},
+      fairShare: fsNormalize(raw.fairShare)
     };
     for (const cat of BUDGET_EXPENSE_CATS) {
       state.budget.expenses[cat] = raw.expenses?.[cat] || [];
@@ -4885,6 +4880,7 @@ function _renderBudgetHtml() {
       <div style="font-size:1.2rem;font-weight:700">Monthly Budget</div>
     </div>
     ${summaryBar}
+    ${fsRenderCard()}
     ${hasBudgetExpenses ? `
     <div style="margin-bottom:1rem">
       <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem">
@@ -7739,312 +7735,186 @@ async function savDelete(id) {
   });
 }
 
-// ── View: Fair Share ──────────────────────────────────────────────────────────
+// ── Monthly Budget: Fair Share section ────────────────────────────────────────
 //
-// Plain household-cost splitter. Totals the family's actual monthly household
-// expenses, divides the SHARED ones by the number of people, and shows the fair
-// per-person amount Red's mother contributes once she lives with the family.
+// Embedded in the Monthly Budget view (not a separate tab) so it reuses the bills
+// already entered as budget expenses — no double entry. It totals the budget's
+// SHARED expense items, divides by household size, and shows the fair per-person
+// amount Red's mother contributes once she lives with the family.
 //
-// Goal: keep her contribution at her *share of actual shared costs* (no markup),
-// so it reads as cost-sharing / expense reimbursement among household members —
-// not taxable rental income to the family. Her Social Security (Title II) benefit
-// is NOT needs-based, so household contributions don't affect it; there is no SSA
-// floor to hit. This tab carries no SSI logic.
+// Goal: keep her contribution at her share of ACTUAL shared costs (no markup), so
+// it reads as cost-sharing / expense reimbursement — not taxable income to the
+// family. Her Social Security (Title II) benefit is not needs-based, so household
+// contributions don't change it; there is no SSI/SSA floor. No SSI logic here.
 //
-// Each bill has a `shared` flag: shared household costs everyone benefits from
-// (mortgage, utilities, food, internet) are split per-person; `shared:false`
-// bills are personal (e.g. an individual's phone) and excluded from her share.
+// Settings + per-item shared flags live inside the budget record
+// (state.budget.fairShare), so they save with the budget — no extra KV key.
 
-const DEFAULT_FAIR_SHARE_BILLS = [
-  { name: 'Mortgage / Rent',          amount: 0, shared: true,  note: 'Shared housing cost' },
-  { name: 'Property Taxes',           amount: 0, shared: true,  note: 'Shared housing cost' },
-  { name: 'Home / Property Insurance',amount: 0, shared: true,  note: 'Shared housing cost' },
-  { name: 'Electricity',              amount: 0, shared: true,  note: 'Shared utility' },
-  { name: 'Natural Gas / Heating',    amount: 0, shared: true,  note: 'Shared utility' },
-  { name: 'Water / Sewer',            amount: 0, shared: true,  note: 'Shared utility' },
-  { name: 'Trash / Garbage',          amount: 0, shared: true,  note: 'Shared utility' },
-  { name: 'Groceries / Food',         amount: 0, shared: true,  note: 'Shared household food' },
-  { name: 'Internet',                 amount: 0, shared: true,  note: 'Shared household service' },
-  { name: 'Streaming / Cable',        amount: 0, shared: true,  note: 'Shared household service' },
-  { name: 'Cell Phones',              amount: 0, shared: false, note: 'Personal — excluded from her share' },
-];
+// Default shared/personal classification by budget expense category. Each expense
+// item can override its category default via fairShare.shared[itemId].
+const FS_SHARED_CAT_DEFAULTS = {
+  'Weekly Spending':    true,   // groceries / household spending — shared
+  'Utilities':          true,
+  'Services':           true,
+  'Mortgage':           true,
+  'Insurance':          true,   // home/property insurance shared (toggle off auto/life)
+  'Travel':             false,
+  'Cars':               false,
+  'Retirement Savings': false,
+  'School Savings':     false,
+  'Investments':        false,
+  'Misc Savings':       false,
+};
 
-let _fsEdit = null;  // { id, name, amount, shared, note } when editing/adding
+let _fsOpen = (localStorage.getItem('rentals_budget_fairshare_open') === '1');
 
-async function loadFairShare() {
-  if (state.fairShare) return;
-  const result = await callApi({ action: 'get_fair_share' });
-  const raw = result.data || {};
-  let bills = Array.isArray(raw.bills) ? raw.bills : null;
-  const justSeeded = !bills;
-  if (justSeeded) {
-    bills = DEFAULT_FAIR_SHARE_BILLS.map(b => ({
-      id: (crypto.randomUUID ? crypto.randomUUID() : 'b_' + Math.random().toString(36).slice(2)),
-      ...b
-    }));
-  } else {
-    // Migrate older records: legacy bills used `countsSSA` and lacked `shared`.
-    bills = bills.map(b => ({
-      id: b.id || (crypto.randomUUID ? crypto.randomUUID() : 'b_' + Math.random().toString(36).slice(2)),
-      name: b.name || '',
-      amount: (typeof b.amount === 'number' && isFinite(b.amount)) ? b.amount : 0,
-      shared: (b.shared !== undefined) ? (b.shared !== false) : (b.countsSSA !== false),
-      note: b.note || '',
-    }));
-  }
-  state.fairShare = {
+function fsNormalize(raw) {
+  raw = (raw && typeof raw === 'object') ? raw : {};
+  return {
     householdSize: (typeof raw.householdSize === 'number' && raw.householdSize >= 1) ? Math.round(raw.householdSize) : 5,
     roundDollar:   (raw.roundDollar !== undefined) ? !!raw.roundDollar : (raw.roundUp !== false),
-    bills,
+    shared:        (raw.shared && typeof raw.shared === 'object') ? { ...raw.shared } : {},
   };
-  if (justSeeded) await saveFairShare();
 }
 
-async function saveFairShare() {
-  await callApi({ action: 'save_fair_share', data: state.fairShare });
+// Is a given budget expense item counted in Mom's shared split?
+function fsItemShared(item, cat, fs) {
+  if (fs.shared && Object.prototype.hasOwnProperty.call(fs.shared, item.id)) return !!fs.shared[item.id];
+  return !!FS_SHARED_CAT_DEFAULTS[cat];
 }
 
 function fsCalc() {
-  const f = state.fairShare;
-  const size = Math.max(1, f.householdSize || 1);
+  const b = state.budget;
+  const fs = b.fairShare;
+  const size = Math.max(1, fs.householdSize || 1);
   let totalAll = 0, totalShared = 0;
-  for (const b of f.bills) {
-    const amt = (typeof b.amount === 'number' && isFinite(b.amount)) ? b.amount : 0;
-    totalAll += amt;
-    if (b.shared) totalShared += amt;
+  for (const cat of BUDGET_EXPENSE_CATS) {
+    for (const item of (b.expenses[cat] || [])) {
+      const amt = item.amount || 0;
+      totalAll += amt;
+      if (fsItemShared(item, cat, fs)) totalShared += amt;
+    }
   }
-  const perPerson = totalShared / size;   // each person's share of shared costs
-  const herShare = f.roundDollar ? Math.round(perPerson) : perPerson;
+  const perPerson = totalShared / size;
+  const herShare = fs.roundDollar ? Math.round(perPerson) : perPerson;
   return { size, totalAll, totalShared, perPerson, herShare };
 }
 
-async function renderFairShare() {
-  await loadFairShare();
-  _renderFairShareHtml();
-}
-
-function _renderFairShareHtml() {
-  const f = state.fairShare;
+// Returns the collapsible Fair Share card injected into the budget layout.
+function fsRenderCard() {
+  const b = state.budget;
+  const fs = b.fairShare;
   const c = fsCalc();
 
-  // ── Result hero
-  const heroCard = `
-    <div class="card" style="margin-bottom:1rem;border:2px solid var(--primary);background:linear-gradient(135deg,rgba(37,99,235,.06),rgba(16,185,129,.05))">
-      <div style="padding:1.25rem 1.5rem">
-        <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Mom's Fair Monthly Share</div>
-        <div style="font-size:2.6rem;font-weight:800;line-height:1.1;margin:.2rem 0;color:var(--primary)">${fmt(c.herShare)}<span style="font-size:1rem;font-weight:600;color:var(--text-muted)"> / month</span></div>
-        <div style="font-size:.82rem;color:var(--text-muted)">
-          Her ${(100 / c.size).toFixed(1)}% share of <strong>${fmt(c.totalShared)}</strong> in shared monthly household costs
-          (split ${c.size} ways = ${fmt(c.perPerson)})${f.roundDollar ? ', rounded to a whole dollar' : ''}.
+  // Per-item Shared/Personal toggles grouped by category (only cats with items)
+  let itemSections = '';
+  for (const cat of BUDGET_EXPENSE_CATS) {
+    const items = (b.expenses[cat] || []);
+    if (!items.length) continue;
+    const rows = items.map(item => {
+      const isShared = fsItemShared(item, cat, fs);
+      return `<div style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;border-bottom:1px solid var(--border)">
+        <span style="flex:1;min-width:0;${isShared ? '' : 'opacity:.55'}">${escHtml(item.name)}</span>
+        <span style="font-variant-numeric:tabular-nums;color:var(--text-muted);font-size:.85rem;${isShared ? '' : 'opacity:.55'}">${fmt(item.amount || 0)}/mo</span>
+        <button type="button" onclick="fsToggleShared('${escAttr(item.id)}')" title="Toggle shared (split across the household) vs personal (excluded from her share)"
+                style="min-width:74px;padding:.16rem .5rem;border-radius:999px;font-size:.68rem;font-weight:750;cursor:pointer;border:1px solid ${isShared ? 'rgba(16,185,129,.4)' : 'var(--border)'};background:${isShared ? 'rgba(16,185,129,.12)' : 'var(--surface)'};color:${isShared ? 'var(--success)' : 'var(--text-muted)'}">
+          ${isShared ? 'Shared' : 'Personal'}
+        </button>
+      </div>`;
+    }).join('');
+    itemSections += `<div style="margin-bottom:.6rem">
+      <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.1rem">${escHtml(cat)}</div>
+      ${rows}
+    </div>`;
+  }
+
+  const body = !_fsOpen ? '' : `
+    <div style="padding:1rem;border-top:1px solid var(--border)">
+      <div style="display:grid;grid-template-columns:1fr minmax(250px,320px);gap:1.25rem;align-items:start">
+        <div>
+          <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:.85rem">
+            <div style="flex:1;min-width:150px">
+              <label style="display:block;font-size:.72rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">People in Household</label>
+              <input type="number" class="form-input" min="1" step="1" value="${escAttr(String(fs.householdSize))}"
+                     onchange="fsUpdateSetting('householdSize', this.value)" style="width:100%;font-size:1.05rem;font-weight:600">
+              <div style="font-size:.66rem;color:var(--text-muted);margin-top:.2rem">Everyone living there, incl. your mother &amp; children</div>
+            </div>
+            <div style="flex:1;min-width:150px">
+              <label style="display:block;font-size:.72rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Round to Whole Dollar</label>
+              <button type="button" onclick="fsUpdateSetting('roundDollar', ${fs.roundDollar ? 'false' : 'true'})"
+                      style="width:100%;padding:.5rem;border-radius:var(--radius);border:1px solid var(--border);cursor:pointer;font-weight:700;font-size:.85rem;background:${fs.roundDollar ? 'rgba(16,185,129,.14)' : 'var(--surface)'};color:${fs.roundDollar ? 'var(--success)' : 'var(--text-muted)'}">
+                ${fs.roundDollar ? '✓ Nearest $1' : 'Off — exact cents'}
+              </button>
+            </div>
+          </div>
+          <div style="font-size:.74rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.3rem">Which bills are shared?</div>
+          <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.6rem">These are your Monthly Budget expenses below. Mark each <strong>Shared</strong> (split across the household) or <strong>Personal</strong> (excluded from her share). Edit the amounts in the budget itself — no double entry.</div>
+          ${itemSections || `<div style="color:var(--text-muted);font-size:.85rem;padding:1rem 0">No budget expenses yet — add bills in the budget below and they'll appear here.</div>`}
+          <div style="display:flex;justify-content:space-between;border-top:2px solid var(--border);padding-top:.5rem;margin-top:.3rem;font-weight:700;font-size:.85rem">
+            <span>Shared costs / mo</span><span>${fmt(c.totalShared)}</span>
+          </div>
         </div>
-        <div style="margin-top:.85rem;padding:.7rem .9rem;border-radius:var(--radius);background:rgba(16,185,129,.10);border:1px solid rgba(16,185,129,.35)">
-          <div style="font-size:.82rem;font-weight:700;color:var(--success)">✓ Cost-sharing, not income</div>
-          <div style="font-size:.78rem;color:var(--text-muted);margin-top:.2rem">
-            This is her share of the household's <strong>actual</strong> costs — reimbursing real expenses, not paying marked-up rent. Keeping her contribution at or below this figure keeps it as shared living expenses, not taxable income to your family. Her Social Security benefit is unaffected either way.
+        <div>
+          <div style="padding:.7rem .9rem;border-radius:var(--radius);background:rgba(16,185,129,.10);border:1px solid rgba(16,185,129,.35);margin-bottom:.7rem">
+            <div style="font-size:.8rem;font-weight:700;color:var(--success)">✓ Cost-sharing, not income</div>
+            <div style="font-size:.75rem;color:var(--text-muted);margin-top:.2rem">
+              Her share of the household's <strong>actual</strong> costs — reimbursing real expenses, not marked-up rent. Keeping her contribution at or below this keeps it as shared living expenses, not taxable income to your family. Her Social Security benefit is unaffected either way.
+            </div>
+          </div>
+          <div style="font-size:.74rem;color:var(--text-muted);line-height:1.5">
+            <p style="margin:0 0 .5rem"><strong>Fair share</strong> = shared costs ÷ ${c.size} people = ${fmt(c.perPerson)}${fs.roundDollar ? ` → ${fmt(c.herShare)}` : ''}.</p>
+            <p style="margin:0;font-size:.72rem">General info, not tax advice. Since you file rental schedules, confirm your specific setup with your CPA.</p>
           </div>
         </div>
       </div>
     </div>`;
 
-  // ── Settings card
-  const settingsCard = `
-    <div class="card" style="margin-bottom:1rem">
-      <div class="card-header" style="padding:.6rem 1rem"><div class="card-title">Settings</div></div>
-      <div style="padding:1rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1rem">
-        <div>
-          <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">People in Household</label>
-          <input type="number" class="form-input" min="1" step="1" value="${escAttr(String(f.householdSize))}"
-                 onchange="fsUpdateSetting('householdSize', this.value)" style="width:100%;font-size:1.05rem;font-weight:600">
-          <div style="font-size:.68rem;color:var(--text-muted);margin-top:.2rem">Everyone living there, incl. your mother &amp; children</div>
+  return `
+    <div class="card" style="margin-bottom:1rem;border:1px solid var(--primary)">
+      <div class="card-header" style="padding:.6rem 1rem;display:flex;justify-content:space-between;align-items:center;gap:.75rem;flex-wrap:wrap;cursor:pointer" onclick="fsToggleSection()">
+        <div style="display:flex;align-items:center;gap:.5rem">
+          <span style="font-size:.8rem">${_fsOpen ? '▼' : '▶'}</span>
+          <div class="card-title">⚖️ Fair Share — Mom's Contribution</div>
         </div>
-        <div>
-          <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Round to Whole Dollar</label>
-          <button type="button" onclick="fsUpdateSetting('roundDollar', ${f.roundDollar ? 'false' : 'true'})"
-                  style="width:100%;padding:.5rem;border-radius:var(--radius);border:1px solid var(--border);cursor:pointer;font-weight:700;font-size:.9rem;background:${f.roundDollar ? 'rgba(16,185,129,.14)' : 'var(--surface)'};color:${f.roundDollar ? 'var(--success)' : 'var(--text-muted)'}">
-            ${f.roundDollar ? '✓ Rounding to nearest $1' : 'Off — exact cents'}
-          </button>
-          <div style="font-size:.68rem;color:var(--text-muted);margin-top:.2rem">Rounds her share to the nearest dollar for a clean payment</div>
+        <div style="display:flex;align-items:baseline;gap:.4rem">
+          <span style="font-size:1.4rem;font-weight:800;color:var(--primary)">${fmt(c.herShare)}</span>
+          <span style="font-size:.78rem;color:var(--text-muted)">/ mo</span>
         </div>
       </div>
+      ${body}
     </div>`;
-
-  // ── Bills table
-  const billRows = f.bills.map(b => {
-    if (_fsEdit && _fsEdit.id === b.id) return _fsEditRow(b);
-    const amt = (typeof b.amount === 'number' && isFinite(b.amount)) ? b.amount : 0;
-    return `<tr style="${b.shared ? '' : 'opacity:.6'}">
-      <td style="padding:.5rem .6rem;border-bottom:1px solid var(--border)">
-        <div style="font-weight:600">${escHtml(b.name)}</div>
-        ${b.note ? `<div style="font-size:.7rem;color:var(--text-muted)">${escHtml(b.note)}</div>` : ''}
-      </td>
-      <td style="padding:.5rem .6rem;border-bottom:1px solid var(--border);text-align:right;font-weight:600;white-space:nowrap">${fmt(amt)}</td>
-      <td style="padding:.5rem .6rem;border-bottom:1px solid var(--border);text-align:center;white-space:nowrap">
-        <button type="button" onclick="fsToggleShared('${escAttr(b.id)}')" title="Toggle whether this is a shared household cost (split per person) or a personal one (excluded from her share)"
-                style="padding:.18rem .55rem;border-radius:999px;font-size:.7rem;font-weight:750;cursor:pointer;border:1px solid ${b.shared ? 'rgba(16,185,129,.4)' : 'var(--border)'};background:${b.shared ? 'rgba(16,185,129,.12)' : 'var(--surface)'};color:${b.shared ? 'var(--success)' : 'var(--text-muted)'}">
-          ${b.shared ? 'Shared' : 'Personal'}
-        </button>
-      </td>
-      <td style="padding:.5rem .4rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap">
-        <button class="btn btn-ghost btn-sm" style="padding:.15rem .35rem;font-size:.75rem" onclick="fsEdit('${escAttr(b.id)}')">Edit</button>
-        <button class="btn btn-ghost btn-sm" style="padding:.15rem .35rem;font-size:.75rem;color:var(--danger)" onclick="fsDelete('${escAttr(b.id)}')">×</button>
-      </td>
-    </tr>`;
-  }).join('');
-  const newRow = (_fsEdit && _fsEdit.id === 'new') ? _fsEditRow(_fsEdit) : '';
-
-  const billsCard = `
-    <div class="card">
-      <div class="card-header" style="padding:.6rem 1rem;display:flex;justify-content:space-between;align-items:center;gap:.75rem;flex-wrap:wrap">
-        <div class="card-title">Household Bills</div>
-        <button class="btn btn-primary btn-sm" style="padding:.35rem .75rem" onclick="fsAddNew()">+ Add Bill</button>
-      </div>
-      <div style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse;font-size:.875rem">
-          <thead>
-            <tr style="border-bottom:2px solid var(--border);text-align:left">
-              <th style="padding:.45rem .6rem;font-weight:600;color:var(--text-muted);font-size:.72rem;text-transform:uppercase">Bill</th>
-              <th style="padding:.45rem .6rem;font-weight:600;color:var(--text-muted);font-size:.72rem;text-transform:uppercase;text-align:right">Monthly</th>
-              <th style="padding:.45rem .6rem;font-weight:600;color:var(--text-muted);font-size:.72rem;text-transform:uppercase;text-align:center">Split?</th>
-              <th style="padding:.45rem .6rem"></th>
-            </tr>
-          </thead>
-          <tbody>${newRow}${billRows || (newRow ? '' : `<tr><td colspan="4" style="padding:2rem;text-align:center;color:var(--text-muted)">No bills yet. Add your household expenses.</td></tr>`)}</tbody>
-          <tfoot>
-            <tr style="border-top:2px solid var(--border);font-weight:700">
-              <td style="padding:.55rem .6rem">Shared costs / mo</td>
-              <td style="padding:.55rem .6rem;text-align:right">${fmt(c.totalShared)}</td>
-              <td style="padding:.55rem .6rem;text-align:center;font-size:.72rem;color:var(--text-muted)">${fmt(c.totalAll)} all bills</td>
-              <td></td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    </div>`;
-
-  // ── Explainer
-  const infoCard = `
-    <div class="card" style="margin-bottom:1rem">
-      <div class="card-header" style="padding:.6rem 1rem"><div class="card-title">How this works</div></div>
-      <div style="padding:1rem;font-size:.82rem;color:var(--text-secondary,inherit);line-height:1.5">
-        <p style="margin:0 0 .6rem">This splits your <strong>actual</strong> household costs so your mother pays a fair per-person share — the same idea as roommates splitting the bills.</p>
-        <p style="margin:0 0 .6rem"><strong>Shared</strong> bills (mortgage, utilities, food, internet — anything the whole household uses) are divided by the number of people. <strong>Personal</strong> bills (like an individual's phone) are excluded from her share. Tap the pill in each row to switch a bill between Shared and Personal.</p>
-        <p style="margin:0 0 .6rem"><strong>Fair share</strong> = shared costs ÷ ${c.size} people = ${fmt(c.perPerson)}.</p>
-        <p style="margin:0 0 .6rem"><strong>Why it stays cost-sharing, not income:</strong> because she's only reimbursing her share of real costs (no profit/markup), it's treated as sharing living expenses — generally not taxable income to your family. If you ever charged her <em>more</em> than her actual share, that extra could look like rental income.</p>
-        <p style="margin:0;font-size:.76rem;color:var(--text-muted)">General info, not tax advice. Since you already file rental schedules, it's worth a quick confirmation with your CPA on your specific setup.</p>
-      </div>
-    </div>`;
-
-  document.getElementById('app').innerHTML = `
-    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
-      <button class="btn btn-ghost btn-sm" onclick="switchView('current-year')" style="flex-shrink:0;background:linear-gradient(135deg,#f59e0b,#d97706);color:white;border:none;box-shadow:0 2px 8px rgba(245,158,11,0.35)">← Back to Properties</button>
-      <div style="flex:1;min-width:200px">
-        <div style="font-size:1.2rem;font-weight:700">⚖️ Fair Share</div>
-        <div style="font-size:.8rem;color:var(--text-muted)">Your mother's fair share of shared household costs — cost-sharing that stays out of taxable-income territory.</div>
-      </div>
-    </div>
-    ${heroCard}
-    ${settingsCard}
-    <div style="display:grid;grid-template-columns:1fr minmax(280px,360px);gap:1rem;align-items:start">
-      <div>${billsCard}</div>
-      <div>${infoCard}</div>
-    </div>
-  `;
 }
 
-function _fsEditRow(b) {
-  const id = b.id || 'new';
-  const shared = (b.shared !== false);
-  return `<tr style="background:var(--bg)">
-    <td style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">
-      <input type="text" id="fs-edit-name" class="form-input" placeholder="Bill name" value="${escAttr(b.name || '')}" style="width:100%;font-size:.85rem;margin-bottom:.25rem">
-      <input type="text" id="fs-edit-note" class="form-input" placeholder="Note (optional)" value="${escAttr(b.note || '')}" style="width:100%;font-size:.75rem">
-    </td>
-    <td style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">
-      <input type="number" id="fs-edit-amount" class="form-input" step="0.01" min="0" placeholder="0" value="${escAttr(String(b.amount ?? ''))}" style="width:100%;font-size:.85rem;text-align:right">
-    </td>
-    <td style="padding:.4rem .6rem;border-bottom:1px solid var(--border);text-align:center">
-      <select id="fs-edit-shared" class="form-input" style="font-size:.8rem;padding:.25rem">
-        <option value="1" ${shared ? 'selected' : ''}>Shared</option>
-        <option value="0" ${shared ? '' : 'selected'}>Personal</option>
-      </select>
-    </td>
-    <td style="padding:.4rem .6rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap">
-      <button class="btn btn-primary btn-sm" style="padding:.3rem .6rem" onclick="fsSave('${escAttr(id)}')">Save</button>
-      <button class="btn btn-ghost btn-sm" style="padding:.3rem .6rem" onclick="fsCancelEdit()">Cancel</button>
-    </td>
-  </tr>`;
+function fsToggleSection() {
+  _fsOpen = !_fsOpen;
+  localStorage.setItem('rentals_budget_fairshare_open', _fsOpen ? '1' : '0');
+  _renderBudgetHtml();
+}
+
+async function fsToggleShared(itemId) {
+  const fs = state.budget.fairShare;
+  // Look up the item's current effective shared state, then store the flipped value as an explicit override.
+  let cur = null;
+  for (const cat of BUDGET_EXPENSE_CATS) {
+    const it = (state.budget.expenses[cat] || []).find(x => x.id === itemId);
+    if (it) { cur = fsItemShared(it, cat, fs); break; }
+  }
+  if (cur === null) return;
+  fs.shared[itemId] = !cur;
+  await _saveBudget();
+  _renderBudgetHtml();
 }
 
 async function fsUpdateSetting(key, value) {
+  const fs = state.budget.fairShare;
   if (key === 'roundDollar') {
-    state.fairShare.roundDollar = (value === true || value === 'true');
+    fs.roundDollar = (value === true || value === 'true');
   } else if (key === 'householdSize') {
     const v = parseFloat(value);
-    state.fairShare.householdSize = (isFinite(v) && v >= 1) ? Math.round(v) : 1;
+    fs.householdSize = (isFinite(v) && v >= 1) ? Math.round(v) : 1;
   }
-  await saveFairShare();
-  _renderFairShareHtml();
-}
-
-async function fsToggleShared(id) {
-  const b = state.fairShare.bills.find(x => x.id === id);
-  if (!b) return;
-  b.shared = !b.shared;
-  await saveFairShare();
-  _renderFairShareHtml();
-}
-
-function fsAddNew() {
-  _fsEdit = { id: 'new', name: '', amount: '', shared: true, note: '' };
-  _renderFairShareHtml();
-}
-
-function fsEdit(id) {
-  const b = state.fairShare.bills.find(x => x.id === id);
-  if (!b) return;
-  _fsEdit = { ...b };
-  _renderFairShareHtml();
-}
-
-function fsCancelEdit() {
-  _fsEdit = null;
-  _renderFairShareHtml();
-}
-
-async function fsSave(id) {
-  const name = (document.getElementById('fs-edit-name')?.value || '').trim();
-  const note = (document.getElementById('fs-edit-note')?.value || '').trim();
-  const amount = parseFloat(document.getElementById('fs-edit-amount')?.value || '0') || 0;
-  const shared = (document.getElementById('fs-edit-shared')?.value || '1') === '1';
-  if (!name) { showBrandedNotice({ title: 'Name required', message: 'Please enter a bill name.' }); return; }
-  if (id === 'new') {
-    state.fairShare.bills.push({
-      id: (crypto.randomUUID ? crypto.randomUUID() : 'b_' + Math.random().toString(36).slice(2)),
-      name, amount, shared, note
-    });
-  } else {
-    const b = state.fairShare.bills.find(x => x.id === id);
-    if (b) { b.name = name; b.amount = amount; b.shared = shared; b.note = note; }
-  }
-  _fsEdit = null;
-  await saveFairShare();
-  _renderFairShareHtml();
-}
-
-async function fsDelete(id) {
-  const b = state.fairShare.bills.find(x => x.id === id);
-  if (!b) return;
-  showBrandedNotice({
-    title: 'Delete Bill',
-    type: 'danger',
-    message: `"${b.name}" (${fmt(b.amount)} / mo) will be permanently removed from the Fair Share calculation.`,
-    confirmLabel: 'Yes, Delete',
-    onConfirm: async () => {
-      state.fairShare.bills = state.fairShare.bills.filter(x => x.id !== id);
-      await saveFairShare();
-      _renderFairShareHtml();
-    }
-  });
+  await _saveBudget();
+  _renderBudgetHtml();
 }
 
 function tpReadForm() {
