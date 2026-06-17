@@ -4638,6 +4638,7 @@ async function renderBudget() {
 
 function _renderBudgetHtml() {
   const b = state.budget;
+  fsSyncBudgetIncome();   // keep the auto "Mom's Fair Share" income line in sync with the Fair Share calc
   const totalIncome = b.income.reduce((s, i) => s + (i.amount || 0), 0);
   const catTotals = {};
   let totalExpenses = 0;
@@ -4733,6 +4734,17 @@ function _renderBudgetHtml() {
     </div>`;
 
   const incomeRows = sortedIncome.map(item => {
+    // Auto-synced "Mom's Fair Share" income line — read-only, value comes from the Fair Share calc.
+    if (item.auto) {
+      const incomeRowPct = totalIncome > 0 ? ((item.amount / totalIncome) * 100).toFixed(1) : '0.0';
+      return `<div class="budget-item">
+        <span class="budget-item-pct">${incomeRowPct}%</span>
+        <span class="budget-item-name">${escHtml(item.name)} <span style="font-size:.7rem;color:var(--text-muted)">⚖️ from Fair Share</span></span>
+        <span class="budget-item-lock"><span style="display:inline-block;width:1.5rem"></span></span>
+        <span class="budget-item-amt">${fmt(item.amount)}/mo</span>
+        <span class="budget-item-actions"></span>
+      </div>`;
+    }
     if (_bEdit?.section === 'income' && _bEdit?.id === item.id) {
       return _budgetEditRow('income', item);
     }
@@ -4937,6 +4949,7 @@ function budgetAdd(section) {
 }
 
 async function budgetToggleLock(section, id) {
+  if (section === 'income' && id === FS_INCOME_ID) return;  // auto Fair Share line is read-only
   const b = state.budget;
   const list = section === 'income' ? b.income : (b.expenses[section] || []);
   const item = list.find(i => i.id === id);
@@ -5119,6 +5132,7 @@ async function budgetSave(section, id) {
 }
 
 async function budgetDelete(section, id) {
+  if (section === 'income' && id === FS_INCOME_ID) return;  // auto Fair Share line can't be deleted here
   showBrandedNotice({
     title: 'Remove Item',
     message: 'Are you sure you want to remove this item?',
@@ -7833,6 +7847,28 @@ function fsCalc() {
   return { size, totalAll, totalShared, perPerson, herShare };
 }
 
+// Keep an auto-synced "Mom's Fair Share" line in the budget's Income section,
+// valued at her computed contribution. Read-only — managed entirely from the
+// Fair Share section. Persists in the budget record like any income item.
+const FS_INCOME_ID = 'mom-fair-share';
+function fsSyncBudgetIncome() {
+  const b = state.budget;
+  if (!b) return;
+  if (!Array.isArray(b.income)) b.income = [];
+  let herShare = 0;
+  try { if (b.fairShare) herShare = fsCalc().herShare || 0; } catch { herShare = 0; }
+  let item = b.income.find(i => i.id === FS_INCOME_ID);
+  if (!item) {
+    item = { id: FS_INCOME_ID, name: "Mom's Fair Share", amount: herShare, auto: true, locked: true };
+    b.income.push(item);
+  } else {
+    item.name = "Mom's Fair Share";
+    item.amount = herShare;
+    item.auto = true;
+    item.locked = true;
+  }
+}
+
 // Returns the collapsible Fair Share card injected into the budget layout.
 function fsRenderCard() {
   const b = state.budget;
@@ -7896,6 +7932,7 @@ function fsRenderCard() {
           </div>
           <div style="font-size:.74rem;color:var(--text-muted);line-height:1.5">
             <p style="margin:0 0 .5rem"><strong>Fair share</strong> = shared costs ÷ ${c.size} people = ${fmt(c.perPerson)}${fs.roundDollar ? ` → ${fmt(c.herShare)}` : ''}.</p>
+            <p style="margin:0 0 .5rem">This amount is added automatically as a read-only <strong>“Mom's Fair Share”</strong> line in the Income section above.</p>
             <p style="margin:0;font-size:.72rem">General info, not tax advice. Since you file rental schedules, confirm your specific setup with your CPA.</p>
           </div>
         </div>

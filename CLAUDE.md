@@ -377,6 +377,7 @@ A collapsible **section inside the Monthly Budget view** — not a standalone ta
 - Math: `fsCalc()` · per-item check: `fsItemShared(item, cat, fs)` · normalizer: `fsNormalize(raw)`
 - Collapse: `fsToggleSection()` (open state in `localStorage` key `rentals_budget_fairshare_open`)
 - Mutators: `fsToggleShared(itemId)`, `fsUpdateSetting(key, value)` — both persist via `_saveBudget()`
+- **Income line:** `fsSyncBudgetIncome()` (called at the top of `_renderBudgetHtml`) keeps an auto, read-only income item `id: 'mom-fair-share'` ("Mom's Fair Share") in `budget.income`, valued at `fsCalc().herShare`, so her contribution counts as household income. It renders read-only (⚖️ "from Fair Share", no edit/lock/delete); `budgetDelete`/`budgetToggleLock` early-return for `FS_INCOME_ID`. It persists in the budget record but its amount is re-synced every render.
 
 **Data shape (`state.budget.fairShare`):**
 ```javascript
@@ -395,7 +396,7 @@ totalShared = Σ item.amount where fsItemShared(item, cat)
 perPerson   = totalShared / householdSize
 herShare    = roundDollar ? round(perPerson) : perPerson
 ```
-The card header shows `herShare` (always visible, even collapsed) and a green "Cost-sharing, not income" note when open. Personal items dim and their pill reads **Personal**. No SSI/SSA/FBR/buffer logic.
+The card header shows `herShare` (always visible, even collapsed) and a green "Cost-sharing, not income" note when open. Personal items dim and their pill reads **Personal**. No SSI/SSA/FBR/buffer logic. `herShare` is also surfaced as a read-only **"Mom's Fair Share" income line** in the budget's Income section (see `fsSyncBudgetIncome` above) so it rolls into Monthly Income / Net.
 
 **Persistence:** `fairShare` rides inside the `budget` KV record. The budget loader (`renderBudget`) reads it back via `fsNormalize(raw.fairShare)` — like `worksheets`, it must be pulled from `raw` or it's lost on the next save. `fsNormalize` also migrates the original standalone version's `roundUp` → `roundDollar`.
 
@@ -648,6 +649,7 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 - **Removed the standalone `⚖️ Fair Share` tab** and re-embedded it as a collapsible **section inside the Monthly Budget view** so it reuses the bills already entered as budget expenses — no double entry. Header button, `fair-share` view case, `state.fairShare`, and the `get_fair_share`/`save_fair_share` worker actions + `fair_share` KV key were all removed.
 - **Now derives from budget expenses.** `fsCalc()` iterates `state.budget.expenses`, summing items marked shared (per-item override in `fairShare.shared[itemId]`, else the `FS_SHARED_CAT_DEFAULTS[category]` default), ÷ household size. Settings + overrides live in `state.budget.fairShare` and save inside the `budget` record via `_saveBudget()` (read back through `fsNormalize(raw.fairShare)` in `renderBudget`). Card built by `fsRenderCard()`, collapse state in `localStorage` `rentals_budget_fairshare_open`.
+- **Her contribution shows as Income.** `fsSyncBudgetIncome()` adds a read-only auto income line (`id: 'mom-fair-share'`, "Mom's Fair Share") to `budget.income` valued at `herShare`, so it rolls into Monthly Income / Net on the budget tab.
 
 ### 2026-06-17 — Fair Share view
 
