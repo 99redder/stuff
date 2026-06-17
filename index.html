@@ -7741,43 +7741,35 @@ async function savDelete(id) {
 
 // ── View: Fair Share ──────────────────────────────────────────────────────────
 //
-// Calculates the household's monthly expenses and the share Red's mother must
-// contribute. The SSA rule (POMS SI 00835.480 / SI 00835.200): an SSI recipient
-// living in another person's household avoids any "In-Kind Support and
-// Maintenance" (ISM) benefit reduction by paying her pro-rata share of the
-// household's countable food + shelter operating costs. Countable costs are
-// specifically: food, rent/mortgage, property taxes, home/property insurance
-// required by the mortgage, heating fuel, gas, electricity, water, sewer, and
-// garbage. Phone, cable, internet, auto, etc. do NOT count toward that floor.
+// Plain household-cost splitter. Totals the family's actual monthly household
+// expenses, divides the SHARED ones by the number of people, and shows the fair
+// per-person amount Red's mother contributes once she lives with the family.
 //
-// If she pays at least (countable food+shelter ÷ household size), SSA charges no
-// ISM and her SSI is not reduced. Paying less can trigger the VTR (Value of the
-// One-Third Reduction = FBR ÷ 3) or the PMV cap (FBR ÷ 3 + $20).
+// Goal: keep her contribution at her *share of actual shared costs* (no markup),
+// so it reads as cost-sharing / expense reimbursement among household members —
+// not taxable rental income to the family. Her Social Security (Title II) benefit
+// is NOT needs-based, so household contributions don't affect it; there is no SSA
+// floor to hit. This tab carries no SSI logic.
 //
-// Per the user's choice, the *required* amount shown is her share of ALL tracked
-// household expenses (a fair contribution to everything), with the bare SSA
-// food+shelter floor displayed as the legal minimum reference.
+// Each bill has a `shared` flag: shared household costs everyone benefits from
+// (mortgage, utilities, food, internet) are split per-person; `shared:false`
+// bills are personal (e.g. an individual's phone) and excluded from her share.
 
-// Each seed bill: { name, amount, countsSSA, note }. countsSSA = part of the SSA
-// food+shelter "household operating costs" that determine the SSI floor.
 const DEFAULT_FAIR_SHARE_BILLS = [
-  { name: 'Mortgage / Rent',          amount: 0, countsSSA: true,  note: 'Shelter — counts toward SSA floor' },
-  { name: 'Property Taxes',           amount: 0, countsSSA: true,  note: 'Shelter — counts toward SSA floor' },
-  { name: 'Home / Property Insurance',amount: 0, countsSSA: true,  note: 'Counts when required by the mortgage holder' },
-  { name: 'Electricity',              amount: 0, countsSSA: true,  note: 'Utility — counts toward SSA floor' },
-  { name: 'Natural Gas / Heating',    amount: 0, countsSSA: true,  note: 'Heating fuel — counts toward SSA floor' },
-  { name: 'Water / Sewer',            amount: 0, countsSSA: true,  note: 'Utility — counts toward SSA floor' },
-  { name: 'Trash / Garbage',          amount: 0, countsSSA: true,  note: 'Utility — counts toward SSA floor' },
-  { name: 'Groceries / Food',         amount: 0, countsSSA: true,  note: 'Food — counts toward SSA floor' },
-  { name: 'Internet',                 amount: 0, countsSSA: false, note: 'Not an SSA household cost' },
-  { name: 'Cell Phones',              amount: 0, countsSSA: false, note: 'Not an SSA household cost' },
-  { name: 'Streaming / Cable',        amount: 0, countsSSA: false, note: 'Not an SSA household cost' },
+  { name: 'Mortgage / Rent',          amount: 0, shared: true,  note: 'Shared housing cost' },
+  { name: 'Property Taxes',           amount: 0, shared: true,  note: 'Shared housing cost' },
+  { name: 'Home / Property Insurance',amount: 0, shared: true,  note: 'Shared housing cost' },
+  { name: 'Electricity',              amount: 0, shared: true,  note: 'Shared utility' },
+  { name: 'Natural Gas / Heating',    amount: 0, shared: true,  note: 'Shared utility' },
+  { name: 'Water / Sewer',            amount: 0, shared: true,  note: 'Shared utility' },
+  { name: 'Trash / Garbage',          amount: 0, shared: true,  note: 'Shared utility' },
+  { name: 'Groceries / Food',         amount: 0, shared: true,  note: 'Shared household food' },
+  { name: 'Internet',                 amount: 0, shared: true,  note: 'Shared household service' },
+  { name: 'Streaming / Cable',        amount: 0, shared: true,  note: 'Shared household service' },
+  { name: 'Cell Phones',              amount: 0, shared: false, note: 'Personal — excluded from her share' },
 ];
 
-// Default 2025 Federal Benefit Rate (individual). Editable — bump for 2026 COLA.
-const FAIR_SHARE_DEFAULT_FBR = 967;
-
-let _fsEdit = null;  // { id, name, amount, countsSSA, note } when editing/adding
+let _fsEdit = null;  // { id, name, amount, shared, note } when editing/adding
 
 async function loadFairShare() {
   if (state.fairShare) return;
@@ -7790,12 +7782,19 @@ async function loadFairShare() {
       id: (crypto.randomUUID ? crypto.randomUUID() : 'b_' + Math.random().toString(36).slice(2)),
       ...b
     }));
+  } else {
+    // Migrate older records: legacy bills used `countsSSA` and lacked `shared`.
+    bills = bills.map(b => ({
+      id: b.id || (crypto.randomUUID ? crypto.randomUUID() : 'b_' + Math.random().toString(36).slice(2)),
+      name: b.name || '',
+      amount: (typeof b.amount === 'number' && isFinite(b.amount)) ? b.amount : 0,
+      shared: (b.shared !== undefined) ? (b.shared !== false) : (b.countsSSA !== false),
+      note: b.note || '',
+    }));
   }
   state.fairShare = {
-    householdSize: (typeof raw.householdSize === 'number' && raw.householdSize >= 1) ? raw.householdSize : 5,
-    buffer:        (typeof raw.buffer === 'number' && raw.buffer >= 0) ? raw.buffer : 25,
-    roundUp:       raw.roundUp !== false,
-    fbr:           (typeof raw.fbr === 'number' && raw.fbr > 0) ? raw.fbr : FAIR_SHARE_DEFAULT_FBR,
+    householdSize: (typeof raw.householdSize === 'number' && raw.householdSize >= 1) ? Math.round(raw.householdSize) : 5,
+    roundDollar:   (raw.roundDollar !== undefined) ? !!raw.roundDollar : (raw.roundUp !== false),
     bills,
   };
   if (justSeeded) await saveFairShare();
@@ -7808,19 +7807,15 @@ async function saveFairShare() {
 function fsCalc() {
   const f = state.fairShare;
   const size = Math.max(1, f.householdSize || 1);
-  let totalAll = 0, totalSSA = 0;
+  let totalAll = 0, totalShared = 0;
   for (const b of f.bills) {
     const amt = (typeof b.amount === 'number' && isFinite(b.amount)) ? b.amount : 0;
     totalAll += amt;
-    if (b.countsSSA) totalSSA += amt;
+    if (b.shared) totalShared += amt;
   }
-  const allShare = totalAll / size;       // her share of ALL household expenses
-  const ssaFloor = totalSSA / size;       // legal minimum (food + shelter only)
-  // Required = all-expenses share, optionally rounded up, plus buffer.
-  let required = allShare;
-  if (f.roundUp) required = Math.ceil(required);
-  required += (f.buffer || 0);
-  return { size, totalAll, totalSSA, allShare, ssaFloor, required };
+  const perPerson = totalShared / size;   // each person's share of shared costs
+  const herShare = f.roundDollar ? Math.round(perPerson) : perPerson;
+  return { size, totalAll, totalShared, perPerson, herShare };
 }
 
 async function renderFairShare() {
@@ -7831,14 +7826,31 @@ async function renderFairShare() {
 function _renderFairShareHtml() {
   const f = state.fairShare;
   const c = fsCalc();
-  const vtr = f.fbr / 3;          // Value of the One-Third Reduction
-  const pmvCap = f.fbr / 3 + 20;  // Presumed Maximum Value cap
+
+  // ── Result hero
+  const heroCard = `
+    <div class="card" style="margin-bottom:1rem;border:2px solid var(--primary);background:linear-gradient(135deg,rgba(37,99,235,.06),rgba(16,185,129,.05))">
+      <div style="padding:1.25rem 1.5rem">
+        <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Mom's Fair Monthly Share</div>
+        <div style="font-size:2.6rem;font-weight:800;line-height:1.1;margin:.2rem 0;color:var(--primary)">${fmt(c.herShare)}<span style="font-size:1rem;font-weight:600;color:var(--text-muted)"> / month</span></div>
+        <div style="font-size:.82rem;color:var(--text-muted)">
+          Her ${(100 / c.size).toFixed(1)}% share of <strong>${fmt(c.totalShared)}</strong> in shared monthly household costs
+          (split ${c.size} ways = ${fmt(c.perPerson)})${f.roundDollar ? ', rounded to a whole dollar' : ''}.
+        </div>
+        <div style="margin-top:.85rem;padding:.7rem .9rem;border-radius:var(--radius);background:rgba(16,185,129,.10);border:1px solid rgba(16,185,129,.35)">
+          <div style="font-size:.82rem;font-weight:700;color:var(--success)">✓ Cost-sharing, not income</div>
+          <div style="font-size:.78rem;color:var(--text-muted);margin-top:.2rem">
+            This is her share of the household's <strong>actual</strong> costs — reimbursing real expenses, not paying marked-up rent. Keeping her contribution at or below this figure keeps it as shared living expenses, not taxable income to your family. Her Social Security benefit is unaffected either way.
+          </div>
+        </div>
+      </div>
+    </div>`;
 
   // ── Settings card
   const settingsCard = `
     <div class="card" style="margin-bottom:1rem">
       <div class="card-header" style="padding:.6rem 1rem"><div class="card-title">Settings</div></div>
-      <div style="padding:1rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem">
+      <div style="padding:1rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1rem">
         <div>
           <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">People in Household</label>
           <input type="number" class="form-input" min="1" step="1" value="${escAttr(String(f.householdSize))}"
@@ -7846,57 +7858,12 @@ function _renderFairShareHtml() {
           <div style="font-size:.68rem;color:var(--text-muted);margin-top:.2rem">Everyone living there, incl. your mother &amp; children</div>
         </div>
         <div>
-          <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Safety Buffer ($/mo)</label>
-          <div style="position:relative">
-            <span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
-            <input type="number" class="form-input" min="0" step="1" value="${escAttr(String(f.buffer))}"
-                   onchange="fsUpdateSetting('buffer', this.value)" style="width:100%;padding-left:1.5rem;font-size:1.05rem;font-weight:600">
-          </div>
-          <div style="font-size:.68rem;color:var(--text-muted);margin-top:.2rem">Added on top so she never dips below the floor</div>
-        </div>
-        <div>
-          <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Round Up</label>
-          <button type="button" onclick="fsUpdateSetting('roundUp', ${f.roundUp ? 'false' : 'true'})"
-                  style="width:100%;padding:.5rem;border-radius:var(--radius);border:1px solid var(--border);cursor:pointer;font-weight:700;font-size:.9rem;background:${f.roundUp ? 'rgba(16,185,129,.14)' : 'var(--surface)'};color:${f.roundUp ? 'var(--success)' : 'var(--text-muted)'}">
-            ${f.roundUp ? '✓ Rounding up' : 'Off'}
+          <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Round to Whole Dollar</label>
+          <button type="button" onclick="fsUpdateSetting('roundDollar', ${f.roundDollar ? 'false' : 'true'})"
+                  style="width:100%;padding:.5rem;border-radius:var(--radius);border:1px solid var(--border);cursor:pointer;font-weight:700;font-size:.9rem;background:${f.roundDollar ? 'rgba(16,185,129,.14)' : 'var(--surface)'};color:${f.roundDollar ? 'var(--success)' : 'var(--text-muted)'}">
+            ${f.roundDollar ? '✓ Rounding to nearest $1' : 'Off — exact cents'}
           </button>
-          <div style="font-size:.68rem;color:var(--text-muted);margin-top:.2rem">Round share up to a whole dollar</div>
-        </div>
-        <div>
-          <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Federal Benefit Rate</label>
-          <div style="position:relative">
-            <span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
-            <input type="number" class="form-input" min="0" step="1" value="${escAttr(String(f.fbr))}"
-                   onchange="fsUpdateSetting('fbr', this.value)" style="width:100%;padding-left:1.5rem;font-size:1.05rem;font-weight:600">
-          </div>
-          <div style="font-size:.68rem;color:var(--text-muted);margin-top:.2rem">Individual SSI rate (2025 = $967; update for 2026 COLA)</div>
-        </div>
-      </div>
-    </div>`;
-
-  // ── Result hero
-  const floorCleared = c.required >= c.ssaFloor;
-  const heroCard = `
-    <div class="card" style="margin-bottom:1rem;border:2px solid var(--primary);background:linear-gradient(135deg,rgba(37,99,235,.06),rgba(16,185,129,.05))">
-      <div style="padding:1.25rem 1.5rem">
-        <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Mom's Required Monthly Payment</div>
-        <div style="font-size:2.6rem;font-weight:800;line-height:1.1;margin:.2rem 0;color:var(--primary)">${fmt(c.required)}<span style="font-size:1rem;font-weight:600;color:var(--text-muted)"> / month</span></div>
-        <div style="font-size:.82rem;color:var(--text-muted)">
-          Her ${(100 / c.size).toFixed(1)}% share of <strong>${fmt(c.totalAll)}</strong> total household expenses
-          (split ${c.size} ways = ${fmt(c.allShare)})${f.roundUp ? ', rounded up' : ''}${f.buffer ? ` + ${fmt(f.buffer)} buffer` : ''}.
-        </div>
-        <div style="margin-top:.85rem;padding:.7rem .9rem;border-radius:var(--radius);background:${floorCleared ? 'rgba(16,185,129,.10)' : 'rgba(220,38,38,.10)'};border:1px solid ${floorCleared ? 'rgba(16,185,129,.35)' : 'rgba(220,38,38,.35)'}">
-          <div style="font-size:.82rem;font-weight:700;color:${floorCleared ? 'var(--success)' : 'var(--danger)'}">
-            ${floorCleared ? '✓ Keeps her SSI intact' : '⚠ Below the SSA floor — SSI would be reduced'}
-          </div>
-          <div style="font-size:.78rem;color:var(--text-muted);margin-top:.2rem">
-            SSA legal minimum (food + shelter fair share) = <strong>${fmt(c.ssaFloor)} / month</strong>
-            &mdash; her share of ${fmt(c.totalSSA)} in countable food &amp; shelter costs. Paying at or above this avoids any In-Kind Support &amp; Maintenance reduction.
-          </div>
-        </div>
-        <div style="display:flex;gap:1.5rem;flex-wrap:wrap;margin-top:.9rem;font-size:.78rem;color:var(--text-muted)">
-          <div>If she pays nothing, the <strong>one-third reduction (VTR)</strong> would cut her SSI by ~${fmt(vtr)}/mo.</div>
-          <div>Otherwise the <strong>PMV cap</strong> limits any reduction to ~${fmt(pmvCap)}/mo.</div>
+          <div style="font-size:.68rem;color:var(--text-muted);margin-top:.2rem">Rounds her share to the nearest dollar for a clean payment</div>
         </div>
       </div>
     </div>`;
@@ -7905,16 +7872,16 @@ function _renderFairShareHtml() {
   const billRows = f.bills.map(b => {
     if (_fsEdit && _fsEdit.id === b.id) return _fsEditRow(b);
     const amt = (typeof b.amount === 'number' && isFinite(b.amount)) ? b.amount : 0;
-    return `<tr>
+    return `<tr style="${b.shared ? '' : 'opacity:.6'}">
       <td style="padding:.5rem .6rem;border-bottom:1px solid var(--border)">
         <div style="font-weight:600">${escHtml(b.name)}</div>
         ${b.note ? `<div style="font-size:.7rem;color:var(--text-muted)">${escHtml(b.note)}</div>` : ''}
       </td>
       <td style="padding:.5rem .6rem;border-bottom:1px solid var(--border);text-align:right;font-weight:600;white-space:nowrap">${fmt(amt)}</td>
       <td style="padding:.5rem .6rem;border-bottom:1px solid var(--border);text-align:center;white-space:nowrap">
-        <button type="button" onclick="fsToggleCounts('${escAttr(b.id)}')" title="Toggle whether this counts toward the SSA food+shelter floor"
-                style="padding:.18rem .55rem;border-radius:999px;font-size:.7rem;font-weight:750;cursor:pointer;border:1px solid ${b.countsSSA ? 'rgba(16,185,129,.4)' : 'var(--border)'};background:${b.countsSSA ? 'rgba(16,185,129,.12)' : 'var(--surface)'};color:${b.countsSSA ? 'var(--success)' : 'var(--text-muted)'}">
-          ${b.countsSSA ? 'Food/Shelter' : 'Other'}
+        <button type="button" onclick="fsToggleShared('${escAttr(b.id)}')" title="Toggle whether this is a shared household cost (split per person) or a personal one (excluded from her share)"
+                style="padding:.18rem .55rem;border-radius:999px;font-size:.7rem;font-weight:750;cursor:pointer;border:1px solid ${b.shared ? 'rgba(16,185,129,.4)' : 'var(--border)'};background:${b.shared ? 'rgba(16,185,129,.12)' : 'var(--surface)'};color:${b.shared ? 'var(--success)' : 'var(--text-muted)'}">
+          ${b.shared ? 'Shared' : 'Personal'}
         </button>
       </td>
       <td style="padding:.5rem .4rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap">
@@ -7937,16 +7904,16 @@ function _renderFairShareHtml() {
             <tr style="border-bottom:2px solid var(--border);text-align:left">
               <th style="padding:.45rem .6rem;font-weight:600;color:var(--text-muted);font-size:.72rem;text-transform:uppercase">Bill</th>
               <th style="padding:.45rem .6rem;font-weight:600;color:var(--text-muted);font-size:.72rem;text-transform:uppercase;text-align:right">Monthly</th>
-              <th style="padding:.45rem .6rem;font-weight:600;color:var(--text-muted);font-size:.72rem;text-transform:uppercase;text-align:center">SSA Floor?</th>
+              <th style="padding:.45rem .6rem;font-weight:600;color:var(--text-muted);font-size:.72rem;text-transform:uppercase;text-align:center">Split?</th>
               <th style="padding:.45rem .6rem"></th>
             </tr>
           </thead>
           <tbody>${newRow}${billRows || (newRow ? '' : `<tr><td colspan="4" style="padding:2rem;text-align:center;color:var(--text-muted)">No bills yet. Add your household expenses.</td></tr>`)}</tbody>
           <tfoot>
             <tr style="border-top:2px solid var(--border);font-weight:700">
-              <td style="padding:.55rem .6rem">Total household / mo</td>
-              <td style="padding:.55rem .6rem;text-align:right">${fmt(c.totalAll)}</td>
-              <td style="padding:.55rem .6rem;text-align:center;font-size:.72rem;color:var(--text-muted)">${fmt(c.totalSSA)} counts</td>
+              <td style="padding:.55rem .6rem">Shared costs / mo</td>
+              <td style="padding:.55rem .6rem;text-align:right">${fmt(c.totalShared)}</td>
+              <td style="padding:.55rem .6rem;text-align:center;font-size:.72rem;color:var(--text-muted)">${fmt(c.totalAll)} all bills</td>
               <td></td>
             </tr>
           </tfoot>
@@ -7959,10 +7926,11 @@ function _renderFairShareHtml() {
     <div class="card" style="margin-bottom:1rem">
       <div class="card-header" style="padding:.6rem 1rem"><div class="card-title">How this works</div></div>
       <div style="padding:1rem;font-size:.82rem;color:var(--text-secondary,inherit);line-height:1.5">
-        <p style="margin:0 0 .6rem">The SSA reduces SSI when a recipient gets free or subsidized <strong>food and shelter</strong> living in someone else's home (called <em>In-Kind Support &amp; Maintenance</em>). She avoids any reduction by paying her <strong>pro-rata share</strong> of the household's countable food + shelter costs.</p>
-        <p style="margin:0 0 .6rem"><strong>Counts toward the SSA floor</strong> (mark a bill "Food/Shelter"): food/groceries, rent or mortgage, property taxes, home insurance required by the mortgage, heating fuel, gas, electricity, water, sewer, and garbage.</p>
-        <p style="margin:0 0 .6rem"><strong>Does not count:</strong> phone, internet, cable/streaming, auto, and other non food-and-shelter bills. You can still track them here — they raise her even-split contribution but not the legal minimum.</p>
-        <p style="margin:0"><strong>Fair share</strong> = total ÷ ${c.size} people. The required figure above is her share of <em>all</em> tracked bills; the green box shows the bare food+shelter minimum that protects her SSI. This is a planning estimate — confirm specifics with SSA, since rules change and individual cases vary.</p>
+        <p style="margin:0 0 .6rem">This splits your <strong>actual</strong> household costs so your mother pays a fair per-person share — the same idea as roommates splitting the bills.</p>
+        <p style="margin:0 0 .6rem"><strong>Shared</strong> bills (mortgage, utilities, food, internet — anything the whole household uses) are divided by the number of people. <strong>Personal</strong> bills (like an individual's phone) are excluded from her share. Tap the pill in each row to switch a bill between Shared and Personal.</p>
+        <p style="margin:0 0 .6rem"><strong>Fair share</strong> = shared costs ÷ ${c.size} people = ${fmt(c.perPerson)}.</p>
+        <p style="margin:0 0 .6rem"><strong>Why it stays cost-sharing, not income:</strong> because she's only reimbursing her share of real costs (no profit/markup), it's treated as sharing living expenses — generally not taxable income to your family. If you ever charged her <em>more</em> than her actual share, that extra could look like rental income.</p>
+        <p style="margin:0;font-size:.76rem;color:var(--text-muted)">General info, not tax advice. Since you already file rental schedules, it's worth a quick confirmation with your CPA on your specific setup.</p>
       </div>
     </div>`;
 
@@ -7971,7 +7939,7 @@ function _renderFairShareHtml() {
       <button class="btn btn-ghost btn-sm" onclick="switchView('current-year')" style="flex-shrink:0;background:linear-gradient(135deg,#f59e0b,#d97706);color:white;border:none;box-shadow:0 2px 8px rgba(245,158,11,0.35)">← Back to Properties</button>
       <div style="flex:1;min-width:200px">
         <div style="font-size:1.2rem;font-weight:700">⚖️ Fair Share</div>
-        <div style="font-size:.8rem;color:var(--text-muted)">What your mother needs to pay toward household expenses to keep her SSI unreduced.</div>
+        <div style="font-size:.8rem;color:var(--text-muted)">Your mother's fair share of shared household costs — cost-sharing that stays out of taxable-income territory.</div>
       </div>
     </div>
     ${heroCard}
@@ -7985,6 +7953,7 @@ function _renderFairShareHtml() {
 
 function _fsEditRow(b) {
   const id = b.id || 'new';
+  const shared = (b.shared !== false);
   return `<tr style="background:var(--bg)">
     <td style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">
       <input type="text" id="fs-edit-name" class="form-input" placeholder="Bill name" value="${escAttr(b.name || '')}" style="width:100%;font-size:.85rem;margin-bottom:.25rem">
@@ -7994,9 +7963,9 @@ function _fsEditRow(b) {
       <input type="number" id="fs-edit-amount" class="form-input" step="0.01" min="0" placeholder="0" value="${escAttr(String(b.amount ?? ''))}" style="width:100%;font-size:.85rem;text-align:right">
     </td>
     <td style="padding:.4rem .6rem;border-bottom:1px solid var(--border);text-align:center">
-      <select id="fs-edit-counts" class="form-input" style="font-size:.8rem;padding:.25rem">
-        <option value="1" ${b.countsSSA ? 'selected' : ''}>Food/Shelter</option>
-        <option value="0" ${b.countsSSA ? '' : 'selected'}>Other</option>
+      <select id="fs-edit-shared" class="form-input" style="font-size:.8rem;padding:.25rem">
+        <option value="1" ${shared ? 'selected' : ''}>Shared</option>
+        <option value="0" ${shared ? '' : 'selected'}>Personal</option>
       </select>
     </td>
     <td style="padding:.4rem .6rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap">
@@ -8007,27 +7976,26 @@ function _fsEditRow(b) {
 }
 
 async function fsUpdateSetting(key, value) {
-  if (key === 'roundUp') {
-    state.fairShare.roundUp = (value === true || value === 'true');
-  } else {
+  if (key === 'roundDollar') {
+    state.fairShare.roundDollar = (value === true || value === 'true');
+  } else if (key === 'householdSize') {
     const v = parseFloat(value);
-    if (key === 'householdSize') state.fairShare.householdSize = (isFinite(v) && v >= 1) ? Math.round(v) : 1;
-    else state.fairShare[key] = (isFinite(v) && v >= 0) ? v : 0;
+    state.fairShare.householdSize = (isFinite(v) && v >= 1) ? Math.round(v) : 1;
   }
   await saveFairShare();
   _renderFairShareHtml();
 }
 
-async function fsToggleCounts(id) {
+async function fsToggleShared(id) {
   const b = state.fairShare.bills.find(x => x.id === id);
   if (!b) return;
-  b.countsSSA = !b.countsSSA;
+  b.shared = !b.shared;
   await saveFairShare();
   _renderFairShareHtml();
 }
 
 function fsAddNew() {
-  _fsEdit = { id: 'new', name: '', amount: '', countsSSA: true, note: '' };
+  _fsEdit = { id: 'new', name: '', amount: '', shared: true, note: '' };
   _renderFairShareHtml();
 }
 
@@ -8047,16 +8015,16 @@ async function fsSave(id) {
   const name = (document.getElementById('fs-edit-name')?.value || '').trim();
   const note = (document.getElementById('fs-edit-note')?.value || '').trim();
   const amount = parseFloat(document.getElementById('fs-edit-amount')?.value || '0') || 0;
-  const countsSSA = (document.getElementById('fs-edit-counts')?.value || '1') === '1';
+  const shared = (document.getElementById('fs-edit-shared')?.value || '1') === '1';
   if (!name) { showBrandedNotice({ title: 'Name required', message: 'Please enter a bill name.' }); return; }
   if (id === 'new') {
     state.fairShare.bills.push({
       id: (crypto.randomUUID ? crypto.randomUUID() : 'b_' + Math.random().toString(36).slice(2)),
-      name, amount, countsSSA, note
+      name, amount, shared, note
     });
   } else {
     const b = state.fairShare.bills.find(x => x.id === id);
-    if (b) { b.name = name; b.amount = amount; b.countsSSA = countsSSA; b.note = note; }
+    if (b) { b.name = name; b.amount = amount; b.shared = shared; b.note = note; }
   }
   _fsEdit = null;
   await saveFairShare();

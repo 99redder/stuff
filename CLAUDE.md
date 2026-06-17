@@ -76,7 +76,7 @@ Header buttons: [Deductions Tracker]  [Monthly Budget]  [Mom Budget]  [☀️ So
 | Tax Planning | `tax-planning` | Projected federal/MD/VA tax liability with live inputs |
 | Deductions Tracker | `deductions` | Global itemized deductions log for the current year |
 | Savings | `savings` | Account balances + annual obligations tracker with paid/unpaid checkboxes per year |
-| Fair Share | `fair-share` | Household-expense calculator for the SSI "fair share" Red's mother must pay to avoid an In-Kind Support & Maintenance benefit reduction |
+| Fair Share | `fair-share` | Household-cost splitter: divides shared monthly bills per person to show Red's mother's fair contribution (cost-sharing, kept out of taxable-income territory) |
 
 ### State Model
 ```javascript
@@ -96,7 +96,7 @@ const state = {
   momBudget: null,              // loaded once, global — { template, months }
   solar: { config: null, entries: null, summaries: null },
   savings: null,                // loaded once, global — { accounts, obligations, payments }
-  fairShare: null               // loaded once, global — { householdSize, buffer, roundUp, fbr, bills }
+  fairShare: null               // loaded once, global — { householdSize, roundDollar, bills }
 };
 ```
 `null` means not yet fetched. `ensureLoaded(property, key)` fetches on demand and caches in `state.data`.
@@ -120,7 +120,7 @@ const state = {
 | `renderDeductions()` | Deductions tracker view |
 | `renderSavings()` | Savings view — account balances + annual obligations |
 | `renderMomBudget()` | Mom Budget view — global monthly assistance tracker |
-| `renderFairShare()` | Fair Share view — SSI household-cost fair-share calculator (`fsCalc()` does the math) |
+| `renderFairShare()` | Fair Share view — household-cost splitter for Red's mother's fair share (`fsCalc()` does the math) |
 | `showBrandedNotice({title,message,type,confirmLabel,onConfirm})` | Branded confirmation modal used by all delete dialogs (replaces native `confirm()`); pass `type:'danger'` for red ⚠️ styling, `confirmLabel` to customize the button text. |
 | `openBudgetWorksheetModal(id)` | Opens the property income worksheet for a budget income item |
 | `calcDepreciationSchedule(costBasis, placedInService)` | MACRS 27.5-yr straight-line, mid-month convention |
@@ -367,36 +367,35 @@ On load, if no obligation has a `kind` field, a one-time migration backfills `ki
 
 ### Fair Share View
 
-Global view (not per-property) that calculates the monthly amount Red's mother must contribute toward household expenses once she lives with the family, so her **SSI** stays unreduced.
+Global view (not per-property) — a plain **household-cost splitter**. It totals the family's actual monthly bills, divides the **shared** ones by the number of people, and shows the fair per-person amount Red's mother contributes once she lives with the family.
+
+**Context / why it's *not* the SSI version:** the mother receives regular **Title II Social Security** (~$2,092.50/mo net; ~$2,989.90 gross), confirmed by her COLA notice and the "SSA TREAS 310 XXSOC SE" bank descriptor — **not SSI** (SSI caps ~$967 and her benefit income would zero it out). Title II is *not* needs-based, so household contributions don't change her check, and there is no SSA floor to hit. The goal of this tab is instead to keep her contribution at her **share of actual shared costs (no markup)** so it reads as **cost-sharing / expense reimbursement** among household members — generally not taxable income to the family. (Charging *above* her actual share is what could look like rental income.) Not tax advice; confirm specifics with a CPA.
 
 **Primary anchors in `index.html`:**
 - Section starts at `// ── View: Fair Share`
-- Defaults: `DEFAULT_FAIR_SHARE_BILLS`, `FAIR_SHARE_DEFAULT_FBR`
+- Defaults: `DEFAULT_FAIR_SHARE_BILLS` (seed bills with `shared` flags; amounts seeded at 0)
 - Render path: `renderFairShare()` → `_renderFairShareHtml()`; inline editor `_fsEditRow()`
-- Math helper: `fsCalc()` · save helper: `saveFairShare()`
-
-**SSA rule (POMS SI 00835.480 / SI 00835.200):** an SSI recipient living in another person's household avoids any **In-Kind Support & Maintenance (ISM)** benefit reduction by paying her **pro-rata share** of the household's *countable food + shelter operating costs*. Countable: food, rent/mortgage, property taxes, home insurance required by the mortgage, heating fuel, gas, electricity, water, sewer, garbage. **Not** countable: phone, internet, cable/streaming, auto, etc. Bills flagged `countsSSA:true` form the SSA floor; un-flagged bills are still tracked and split but don't raise the legal minimum.
+- Math helper: `fsCalc()` · save helper: `saveFairShare()` · per-bill toggle: `fsToggleShared()`
 
 **Data shape (`state.fairShare`):**
 ```javascript
 {
   householdSize,   // divisor — everyone living in the home (incl. mother & children)
-  buffer,          // $/mo added on top of the computed share
-  roundUp,         // round the share up to a whole dollar before adding buffer
-  fbr,             // Federal Benefit Rate (individual); used only for the VTR/PMV info display
-  bills: [ { id, name, amount /* monthly $ */, countsSSA, note } ]
+  roundDollar,     // round her share to the NEAREST whole dollar (Math.round, neutral)
+  bills: [ { id, name, amount /* monthly $ */, shared /* include in the split? */, note } ]
 }
 ```
 
 **`fsCalc()` math:**
 ```
-totalAll  = Σ bill.amount
-totalSSA  = Σ bill.amount where countsSSA
-allShare  = totalAll / householdSize        // her share of ALL expenses (the required figure)
-ssaFloor  = totalSSA / householdSize        // legal minimum to keep SSI intact
-required  = (roundUp ? ceil(allShare) : allShare) + buffer
+totalAll    = Σ bill.amount
+totalShared = Σ bill.amount where shared
+perPerson   = totalShared / householdSize
+herShare    = roundDollar ? round(perPerson) : perPerson
 ```
-The hero card shows `required` as her monthly payment, flags green when `required ≥ ssaFloor`, and displays the VTR (`fbr/3`) and PMV cap (`fbr/3 + 20`) as the reductions she'd face if she underpaid. Per the user's choice, the headline number is her share of **all** tracked bills (a fair contribution to everything); `ssaFloor` is the bare food+shelter minimum shown for reference. This is a planning estimate, not SSA advice.
+The hero card shows `herShare` as her monthly contribution and a green "Cost-sharing, not income" note. `shared:false` bills (e.g. an individual's phone) are excluded from the split — the row dims and the "Split?" pill reads **Personal** instead of **Shared**. No SSI/SSA/FBR/buffer logic remains.
+
+**Migration:** `loadFairShare()` (and `handleSaveFairShare` in the worker) backfill from the original SSI version of this tab — legacy bills' `countsSSA` maps to `shared`, and the old `roundUp` setting maps to `roundDollar`.
 
 ---
 
@@ -540,8 +539,8 @@ All calls: `POST /api/data` with JSON body `{ action, property, ...payload }`.
 #### Fair Share (global — not per-property)
 | Action | Extra payload | Returns |
 |---|---|---|
-| `get_fair_share` | — | `{ data: { householdSize, buffer, roundUp, fbr, bills } }` |
-| `save_fair_share` | `data: { householdSize, buffer, roundUp, fbr, bills } }` | `{ success: true, data }` — full overwrite of the `fair_share` KV record. The worker sanitizes: `householdSize ≥ 1` (default 5), `buffer ≥ 0`, `roundUp` boolean, `fbr > 0` (default 967), and each bill to `{ id, name, amount≥0, countsSSA:bool, note }`. |
+| `get_fair_share` | — | `{ data: { householdSize, roundDollar, bills } }` |
+| `save_fair_share` | `data: { householdSize, roundDollar, bills } }` | `{ success: true, data }` — full overwrite of the `fair_share` KV record. The worker sanitizes: `householdSize ≥ 1` (rounded, default 5), `roundDollar` boolean, and each bill to `{ id, name, amount≥0, shared:bool, note }`. Legacy records using `roundUp` / `countsSSA` are migrated to `roundDollar` / `shared`. |
 
 #### Solar ROI (global — not per-property)
 | Action | Extra payload | Returns |
@@ -577,7 +576,7 @@ solar:summaries            →  { [year]: { ... } }
 deductions                 →  Array of deduction entry objects
 tax_planning:{year}        →  Tax planning inputs for that year
 savings                    →  { accounts: {robinhood, ibkr}, obligations: [...], payments: { [year]: { [oid]: [bool, ...] } } }
-fair_share                 →  { householdSize, buffer, roundUp, fbr, bills: [ { id, name, amount, countsSSA, note } ] }
+fair_share                 →  { householdSize, roundDollar, bills: [ { id, name, amount, shared, note } ] }
 ```
 Valid properties: `6AL`, `95EB`, `446BB`, `731WO`
 
@@ -644,8 +643,9 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ### 2026-06-17 — Fair Share view
 
-- **New `⚖️ Fair Share` header button / view** (`fair-share`) — global calculator for the monthly amount Red's mother must pay toward household expenses, once she moves in with the family, to keep her SSI unreduced under the SSA In-Kind Support & Maintenance rules. Editable household-bill list (name / monthly amount / "Food/Shelter" SSA-countable toggle / note), plus settings for household size, safety buffer, round-up, and the Federal Benefit Rate. Hero card shows her required monthly payment (her even share of *all* tracked bills, optionally rounded + buffered), flags green when it clears the bare food+shelter SSA floor, and shows the VTR / PMV reductions she'd face if she underpaid. Math in `fsCalc()`; render in `renderFairShare()` / `_renderFairShareHtml()`.
-- **Worker API additions** — `get_fair_share` / `save_fair_share` (KV key `fair_share`). The save handler sanitizes household size (≥1, default 5), buffer (≥0), `roundUp` boolean, FBR (>0, default 967), and each bill to `{ id, name, amount≥0, countsSSA, note }`.
+- **New `⚖️ Fair Share` header button / view** (`fair-share`) — global view for what Red's mother contributes toward household expenses once she lives with the family. Editable household-bill list (name / monthly amount / Split toggle / note) with household-size and round-to-dollar settings, persisted to the `fair_share` KV record. Math in `fsCalc()`; render in `renderFairShare()` / `_renderFairShareHtml()`.
+- **Built first as an SSI calculator, then redesigned as a cost-sharing splitter.** It initially computed an SSI "fair share" (food+shelter floor, FBR, VTR/PMV reductions). Her COLA notice + bank descriptor confirmed she's on **Title II Social Security, not SSI** (so household payments don't affect her benefit and there's no SSA floor). Reworked into a plain per-person splitter whose goal is keeping her contribution at her share of *actual* shared costs — cost-sharing/reimbursement, generally not taxable income to the family. Dropped: SSA floor, `buffer`, `fbr`, `countsSSA`, VTR/PMV. Added: per-bill `shared` Shared/Personal toggle (`fsToggleShared()`), `roundDollar` (round to nearest), and a green "cost-sharing, not income" note + CPA-confirmation explainer.
+- **Worker API** — `get_fair_share` / `save_fair_share` (KV key `fair_share`). The save handler sanitizes household size (≥1, rounded, default 5), `roundDollar` boolean, and each bill to `{ id, name, amount≥0, shared, note }`, migrating legacy `roundUp` / `countsSSA` fields.
 
 ### 2026-06-14 — Mom Budget phone PWA: freshness + abuse guards
 

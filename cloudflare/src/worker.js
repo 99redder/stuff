@@ -1322,17 +1322,18 @@ async function handleSaveFairShare(env, data) {
     id: b.id || crypto.randomUUID(),
     name: String(b.name || '').trim().slice(0, 200),
     amount: (typeof b.amount === 'number' && isFinite(b.amount) && b.amount >= 0) ? b.amount : 0,
-    countsSSA: b.countsSSA !== false,
+    // `shared` = include in the per-person split; falls back to the legacy
+    // `countsSSA` flag for records saved by the original SSI version of this tab.
+    shared: (b.shared !== undefined) ? (b.shared !== false) : (b.countsSSA !== false),
     note: String(b.note || '').trim().slice(0, 400),
   })) : [];
 
-  const num = (v, def, min) => (typeof v === 'number' && isFinite(v) && v >= min) ? v : def;
+  const householdSize = (typeof data.householdSize === 'number' && isFinite(data.householdSize) && data.householdSize >= 1)
+    ? Math.round(data.householdSize) : 5;
 
   const saved = {
-    householdSize: num(data.householdSize, 5, 1),
-    buffer:        num(data.buffer, 0, 0),
-    roundUp:       data.roundUp !== false,
-    fbr:           num(data.fbr, 967, 0),
+    householdSize,
+    roundDollar: (data.roundDollar !== undefined) ? (data.roundDollar !== false) : (data.roundUp !== false),
     bills,
   };
 
