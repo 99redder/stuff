@@ -5168,7 +5168,7 @@ const MOM_BUDGET_DEFAULT = {
       { id: 'cell', name: 'Cell Phone', amount: 125 },
       { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 }
     ],
-    variable: { gas: 120, discretionary: 500 }
+    variable: { discretionary: 500 }
   },
   months: {}
 };
@@ -5276,23 +5276,13 @@ function mbNormalize(raw) {
   data.template.fixed = data.template.fixed.filter(item => item !== gasFixedItem);
   data.template.variable = data.template.variable || defaults.template.variable;
   delete data.template.variable.groceries;  // groceries folded into Fair Share — no longer her own budget
-  data.template.variable.gas = Number(data.template.variable.gas ?? gasFixedItem?.amount ?? defaults.template.variable.gas);
+  delete data.template.variable.gas;        // she has no car — gas budget/ledger removed entirely
   data.template.variable.discretionary = Number(data.template.variable.discretionary ?? defaults.template.variable.discretionary);
   data.template.variableLocks = data.template.variableLocks || {};
   data.months = data.months || {};
   Object.entries(data.months).forEach(([monthKey, month]) => {
     month.fixedPaid = month.fixedPaid || {};
     month.fixedActual = month.fixedActual || {};
-    month.groceries = Array.isArray(month.groceries) ? month.groceries : [];
-    month.gas = Array.isArray(month.gas) ? month.gas : [];
-    if (gasFixedItem && month.fixedPaid?.[gasFixedItem.id] && month.gas.length === 0) {
-      const actual = Number(month.fixedActual?.[gasFixedItem.id]);
-      month.gas.push({
-        id: mbUuid('gas'),
-        date: `${monthKey}-01`,
-        amount: Number.isFinite(actual) && actual > 0 ? actual : (Number(gasFixedItem.amount) || data.template.variable.gas || 0)
-      });
-    }
     if (gasFixedItem) {
       delete month.fixedPaid[gasFixedItem.id];
       if (month.fixedActual) delete month.fixedActual[gasFixedItem.id];
@@ -5341,9 +5331,8 @@ function mbTemplateTotals() {
   const t = state.momBudget.template;
   const income = t.income.reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const fixed = t.fixed.reduce((s, i) => s + (Number(i.amount) || 0), 0);
-  const gas = Number(t.variable.gas) || 0;
   const discretionary = Number(t.variable.discretionary) || 0;
-  return { income, fixed, gas, discretionary, planned: fixed + gas + discretionary };
+  return { income, fixed, discretionary, planned: fixed + discretionary };
 }
 
 function mbCalcMonth(monthKey) {
@@ -5368,27 +5357,22 @@ function mbCalcMonth(monthKey) {
     const paid = Number.isFinite(actual) && actual > 0 ? actual : fallback;
     return s + Math.max(0, paid - fallback);
   }, 0);
-  const gasSpent = (m.gas || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const discretionarySpent = (m.discretionary || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const otherSpent = (m.otherExpenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const otherOverages = otherSpent + fixedOver;
-  const gasOver = Math.max(0, gasSpent - base.gas);
-  const discretionaryAdjusted = Math.max(0, base.discretionary - gasOver - otherOverages);
-  const overallSpendingRemaining = base.gas + base.discretionary
-    - gasSpent - discretionarySpent - otherOverages;
-  const cashSpent = fixedPaid + gasSpent + discretionarySpent + otherSpent;
-  const budgetSpent = base.fixed + fixedOver + gasSpent + discretionarySpent + otherSpent;
+  const discretionaryAdjusted = Math.max(0, base.discretionary - otherOverages);
+  const overallSpendingRemaining = base.discretionary
+    - discretionarySpent - otherOverages;
+  const cashSpent = fixedPaid + discretionarySpent + otherSpent;
+  const budgetSpent = base.fixed + fixedOver + discretionarySpent + otherSpent;
   return {
     ...base,
     fixedDue,
     fixedPaid,
     fixedOver,
-    gasSpent,
     discretionarySpent,
     otherSpent,
     otherOverages,
-    gasRemaining: base.gas - gasSpent,
-    gasOver,
     discretionaryAdjusted,
     discretionaryRemaining: discretionaryAdjusted - discretionarySpent,
     overallSpendingRemaining,
@@ -5428,7 +5412,6 @@ function mbFixedOverageEntries(monthKey) {
 function mbMonthHasActivity(month) {
   return Object.values(month.fixedPaid || {}).some(Boolean)
     || Object.values(month.fixedActual || {}).some(v => Number(v) > 0)
-    || (month.gas || []).length > 0
     || (month.discretionary || []).length > 0
     || (month.otherExpenses || []).length > 0;
 }
@@ -5553,11 +5536,10 @@ function _renderMomBudgetHtml() {
 
     <div class="stats-row mb-stats-row mb-stats-primary">
       ${stat('Monthly Income', fmt(c.income), 'var(--success)', `${fmt(c.unallocated)} unallocated`)}
-      ${stat('Overall Spending Left', `${spendingRemaining < 0 ? '−' : ''}${fmt(Math.abs(spendingRemaining))}`, spendingRemaining >= 0 ? 'var(--success)' : 'var(--danger)', 'Gas + discretionary, including other overage amounts', 'is-prominent', spendingMonthLabel)}
+      ${stat('Overall Spending Left', `${spendingRemaining < 0 ? '−' : ''}${fmt(Math.abs(spendingRemaining))}`, spendingRemaining >= 0 ? 'var(--success)' : 'var(--danger)', 'Discretionary, including other overage amounts', 'is-prominent', spendingMonthLabel)}
     </div>
 
     <div class="stats-row mb-stats-row mb-stats-categories">
-      ${stat('Gas Left', `${c.gasRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.gasRemaining))}`, c.gasRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.gasSpent)} spent`)}
       ${stat('Discretionary Left', `${c.discretionaryRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.discretionaryRemaining))}`, c.discretionaryRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.discretionaryAdjusted)} adjusted budget`)}
     </div>
 
@@ -5590,7 +5572,6 @@ function _renderMomBudgetHtml() {
           <div class="card-body"><div class="mb-fixed-list">${fixedRows}</div></div>
         </div>
 
-        ${mbLedgerCard('Gas', 'gas', m.gas || [], '', 'orderNumber')}
         ${mbLedgerCard('Discretionary', 'discretionary', m.discretionary || [], 'Description', 'name', {
           note: 'Discretionary includes non-grocery purchase items, prescription copays, and overages from other budget areas.'
         })}
@@ -5609,11 +5590,9 @@ function _renderMomBudgetHtml() {
             <div class="tp-row"><span>Fixed monthly reserve</span><strong>${fmt(c.fixed)}</strong></div>
             <div class="tp-row"><span>Fixed due this month</span><strong>${fmt(c.fixedDue)}</strong></div>
             <div class="tp-row"><span>Fixed cash paid</span><strong>${fmt(c.fixedPaid)}</strong></div>
-            <div class="tp-row"><span>Gas budget</span><strong>${fmt(c.gas)}</strong></div>
             <div class="tp-row"><span>Discretionary base</span><strong>${fmt(c.discretionary)}</strong></div>
             <div class="tp-row sub"><span>Unallocated after template</span><strong>${c.unallocated < 0 ? '−' : ''}${fmt(Math.abs(c.unallocated))}</strong></div>
             <div class="tp-row"><span>Reserve cash delta</span><strong style="color:${c.reserveDelta >= 0 ? 'var(--success)' : 'var(--danger)'}">${c.reserveDelta < 0 ? '−' : '+'}${fmt(Math.abs(c.reserveDelta))}</strong></div>
-            <div class="tp-row"><span>Gas overage</span><strong style="color:${c.gasOver ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.gasOver)}</strong></div>
             <div class="tp-row"><span>Fixed bill overage</span><strong style="color:${c.fixedOver ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.fixedOver)}</strong></div>
             <div class="tp-row"><span>Other overages</span><strong style="color:${c.otherOverages ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.otherOverages)}</strong></div>
             <div class="tp-row sub"><span>Adjusted discretionary</span><strong>${fmt(c.discretionaryAdjusted)}</strong></div>
@@ -5637,11 +5616,6 @@ function _renderMomBudgetHtml() {
             ${templateFixedRows}
 
             <div class="tp-group">Variable Budgets</div>
-            <div class="tp-pay-row">
-              <span style="flex:1;font-weight:600">Gas</span>
-              ${mbLockButton(t.variableLocks.gas, `mbToggleVariableLock('gas')`, t.variableLocks.gas ? 'Unlock gas budget' : 'Lock gas budget')}
-              <span class="mb-money mb-variable-money"><input type="number" class="form-input" step=".01" min="0" value="${escAttr(t.variable.gas.toFixed(2))}" ${t.variableLocks.gas ? 'disabled' : ''} onchange="mbUpdateVariable('gas', this.value)"></span>
-            </div>
             <div class="tp-pay-row">
               <span style="flex:1;font-weight:600">Discretionary</span>
               ${mbLockButton(t.variableLocks.discretionary, `mbToggleVariableLock('discretionary')`, t.variableLocks.discretionary ? 'Unlock discretionary budget' : 'Lock discretionary budget')}

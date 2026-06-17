@@ -211,32 +211,30 @@ Global view (not per-property) for tracking Red's mother's monthly assistance bu
       }
     ],
     variable: {
-      gas: 120,
       discretionary: 500
     },
     variableLocks: {
-      gas: false,
       discretionary: false
     },
-    fairShareMigrated   // one-time flag — wrapped household bills already removed
+    fairShareMigrated,     // one-time flag — wrapped household bills already removed
+    carStreamingTrimmed    // one-time flag — car/streaming bills already removed
   },
   months: {
     'YYYY-MM': {
       fixedPaid: { [fixedId]: true },
       fixedActual: { [fixedId]: number },
-      gas: [{ id, date, amount, orderNumber }],
       discretionary: [{ id, date, amount, name }],
       otherExpenses: [{ id, date, amount, name }]
     }
   }
 }
 ```
-Now that the mother lives with the family, her household bills are wrapped into a single **auto-synced `fair-share` fixed line** whose monthly amount is pulled live from the Monthly Budget's Fair Share section (`mbSyncFairShare()` → `fsCalc().herShare`, run in `renderMomBudget` after `ensureBudgetLoaded()`). Groceries were folded into that household share, so there is no longer a groceries variable budget or ledger.
+Now that the mother lives with the family, her household bills are wrapped into a single **auto-synced `fair-share` fixed line** whose monthly amount is pulled live from the Monthly Budget's Fair Share section (`mbSyncFairShare()` → `fsCalc().herShare`, run in `renderMomBudget` after `ensureBudgetLoaded()`). Groceries were folded into that household share, and **Gas was removed entirely (she has no car)** — so the only variable budget left is Discretionary. She effectively tracks just **Fair Share, Discretionary, and overages**.
 
 **Current default template:**
 - Income: Social Security, 401k Distribution
 - Fixed/reserve list: **Fair Share (household)** (auto-synced), Cell Phone, CoPays / Prescriptions
-- Variable budgets: Gas, Discretionary
+- Variable budgets: Discretionary (Gas removed — she has no car)
 - The wrapped-away household bills (Rent, Internet, Water / Sewer / Trash, Electric, Nat Gas / Heat) and the Groceries budget were removed when she moved in with the family — their cost is represented by the single Fair Share line. Car Insurance / Car Repairs / Car Registration / Netflix / BritBox were also dropped (no longer tracked).
 
 **Fixed bill kinds:**
@@ -262,29 +260,27 @@ Now that the mother lives with the family, her household bills are wrapped into 
   - `Monthly Income`
   - prominent `Overall Spending Left`
 - Second summary row:
-  - `Gas Left`
   - `Discretionary Left`
 - Annual summary: collapsed by default behind an Expand/Minimize button; open state persists in `localStorage` key `rentals_mom_budget_year_stats_open`
 - Main layout:
-  - Left column cards: Fixed Bills, Gas, Discretionary, Other Expense Overages
+  - Left column cards: Fixed Bills, Discretionary, Other Expense Overages
   - Right sticky column: Month Math and Monthly Template
 
 **Top card formulas:**
 ```javascript
 overallSpendingRemaining =
-  base.gas + base.discretionary
-  - gasSpent - discretionarySpent - otherOverages;
+  base.discretionary
+  - discretionarySpent - otherOverages;
 
 otherOverages = manualOtherExpenses + fixedBillOverages;
 
 discretionaryAdjusted =
-  Math.max(0, base.discretionary - gasOver - otherOverages);
+  Math.max(0, base.discretionary - otherOverages);
 ```
 
-`Overall Spending Left` shows the selected month in italic text and the note: `Gas + discretionary, including other overage amounts`.
+`Overall Spending Left` shows the selected month in italic text and the note: `Discretionary, including other overage amounts`.
 
 **Ledger cards:**
-- Gas: date + amount rows, ordered with `orderNumber`
 - Discretionary: date + description + amount rows. Note at top says discretionary includes non-grocery purchases, prescription copays, and overages from other budget areas.
 - Other Expense Overages: no manual Add row. It auto-populates fixed bill overages. Legacy/manual rows are still included if already present in saved data.
 
@@ -299,6 +295,7 @@ discretionaryAdjusted =
 - Ensures all `template`, `months`, arrays, locks, and variable budgets exist.
 - **One-time `fairShareMigrated` migration:** removes the wrapped household bills (`rent`, `internet`, `water`, `electric`, `gas-heat`) from `template.fixed`, then ensures the auto-synced `fair-share` line exists (prepended). Also `delete`s `template.variable.groceries` (groceries folded into Fair Share).
 - **One-time `carStreamingTrimmed` migration:** removes `car-insurance`, `car-repairs`, `registration`, `netflix`, `britbox` from `template.fixed` (no longer tracked). Default fixed list is now just `fair-share`, `cell`, `medical`.
+- **Gas removed entirely:** `delete`s `template.variable.gas`; `mbCalcMonth`/`mbTemplateTotals` drop gas from all formulas; Gas Left stat, Gas ledger card, and Gas template row are gone. Old month `gas[]` ledger entries are left in storage but unused.
 - Backfills fixed item `frequency`, `dueMonth`, and `paymentAmount` from defaults.
 - Migrates old fixed Gas into the new monthly `gas` ledger, then removes old fixed Gas paid/actual state.
 - Migrates Car Repairs and Car Registration to reserve-only.
@@ -318,7 +315,6 @@ Separate public read-only page for an Android/Samsung Galaxy phone:
 This page has no password gate and no editing controls. It is meant to be installed to Red's mother's phone as a simple PWA that shows:
 
 - Current month `Overall Spending Left` prominently
-- `Gas Left`
 - `Discretionary Left`
 - Optional collapsed year status showing allocated, used, and under/over allocated
 
@@ -639,6 +635,11 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-06-17 — Mom Budget: removed Gas + car/streaming bills
+
+- **Gas budget and ledger removed** (she has no car). `mbNormalize` `delete`s `template.variable.gas`; `mbCalcMonth`/`mbTemplateTotals` and the worker's parallel math drop gas from every formula; the Gas Left stat, Gas ledger card, Gas budget/overage Month-Math rows, and Gas variable-template row are gone. Phone PWA drops the Gas Left card (`mom-budget-sw.js` → `v6`). She now tracks just **Fair Share, Discretionary, and overages**.
+- **Car Insurance / Car Repairs / Car Registration / Netflix / BritBox removed** from Fixed Bills via the one-time `carStreamingTrimmed` migration (runs even on records already past `fairShareMigrated`). Default fixed list: `fair-share`, `cell`, `medical`.
 
 ### 2026-06-17 — Mom Budget: bills wrapped into Fair Share (she now lives with family)
 

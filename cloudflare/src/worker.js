@@ -614,7 +614,7 @@ const MOM_BUDGET_DEFAULT = {
       { id: 'cell', name: 'Cell Phone', amount: 125 },
       { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 }
     ],
-    variable: { gas: 120, discretionary: 500 },
+    variable: { discretionary: 500 },
     variableLocks: {}
   },
   months: {}
@@ -681,10 +681,8 @@ async function handleGetMomBudgetPublicSummary(request, env, requestedMonth) {
     updatedAt: new Date().toISOString(),
     month: {
       overallSpendingRemaining: month.overallSpendingRemaining,
-      gasRemaining: month.gasRemaining,
       discretionaryRemaining: month.discretionaryRemaining,
       otherOverages: month.otherOverages,
-      gasSpent: month.gasSpent,
       discretionarySpent: month.discretionarySpent,
       discretionaryAdjusted: month.discretionaryAdjusted
     },
@@ -784,23 +782,13 @@ function normalizeMomBudget(raw) {
   data.template.fixed = data.template.fixed.filter(item => item !== gasFixedItem);
   data.template.variable = data.template.variable || defaults.template.variable;
   delete data.template.variable.groceries;  // groceries folded into the Fair Share line — no separate budget
-  data.template.variable.gas = Number(data.template.variable.gas ?? gasFixedItem?.amount ?? defaults.template.variable.gas) || 0;
+  delete data.template.variable.gas;        // she has no car — gas budget/ledger removed entirely
   data.template.variable.discretionary = Number(data.template.variable.discretionary ?? defaults.template.variable.discretionary) || 0;
 
   data.months = data.months && typeof data.months === 'object' ? data.months : {};
   Object.entries(data.months).forEach(([monthKey, month]) => {
     month.fixedPaid = month.fixedPaid || {};
     month.fixedActual = month.fixedActual || {};
-    month.groceries = Array.isArray(month.groceries) ? month.groceries : [];
-    month.gas = Array.isArray(month.gas) ? month.gas : [];
-    if (gasFixedItem && month.fixedPaid?.[gasFixedItem.id] && month.gas.length === 0) {
-      const actual = Number(month.fixedActual?.[gasFixedItem.id]);
-      month.gas.push({
-        id: `gas_${monthKey}`,
-        date: `${monthKey}-01`,
-        amount: Number.isFinite(actual) && actual > 0 ? actual : (Number(gasFixedItem.amount) || data.template.variable.gas || 0)
-      });
-    }
     if (gasFixedItem) {
       delete month.fixedPaid[gasFixedItem.id];
       if (month.fixedActual) delete month.fixedActual[gasFixedItem.id];
@@ -815,9 +803,8 @@ function momBudgetTemplateTotals(data) {
   const t = data.template;
   const income = t.income.reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const fixed = t.fixed.reduce((s, i) => s + (Number(i.amount) || 0), 0);
-  const gas = Number(t.variable.gas) || 0;
   const discretionary = Number(t.variable.discretionary) || 0;
-  return { income, fixed, gas, discretionary, planned: fixed + gas + discretionary };
+  return { income, fixed, discretionary, planned: fixed + discretionary };
 }
 
 function calcMomBudgetMonth(data, monthKey) {
@@ -841,25 +828,21 @@ function calcMomBudgetMonth(data, monthKey) {
     const paid = Number.isFinite(actual) && actual > 0 ? actual : fallback;
     return s + Math.max(0, paid - fallback);
   }, 0);
-  const gasSpent = (m.gas || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const discretionarySpent = (m.discretionary || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const otherSpent = (m.otherExpenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const otherOverages = otherSpent + fixedOver;
-  const gasOver = Math.max(0, gasSpent - base.gas);
-  const discretionaryAdjusted = Math.max(0, base.discretionary - gasOver - otherOverages);
-  const budgetSpent = base.fixed + fixedOver + gasSpent + discretionarySpent + otherSpent;
+  const discretionaryAdjusted = Math.max(0, base.discretionary - otherOverages);
+  const budgetSpent = base.fixed + fixedOver + discretionarySpent + otherSpent;
   return {
     ...base,
     fixedPaid,
     fixedOver,
-    gasSpent,
     discretionarySpent,
     otherOverages,
-    gasRemaining: base.gas - gasSpent,
     discretionaryAdjusted,
     discretionaryRemaining: discretionaryAdjusted - discretionarySpent,
-    overallSpendingRemaining: base.gas + base.discretionary
-      - gasSpent - discretionarySpent - otherOverages,
+    overallSpendingRemaining: base.discretionary
+      - discretionarySpent - otherOverages,
     budgetSpent,
     variance: base.planned - budgetSpent
   };
@@ -868,7 +851,6 @@ function calcMomBudgetMonth(data, monthKey) {
 function momMonthHasActivity(month) {
   return Object.values(month.fixedPaid || {}).some(Boolean)
     || Object.values(month.fixedActual || {}).some(v => Number(v) > 0)
-    || (month.gas || []).length > 0
     || (month.discretionary || []).length > 0
     || (month.otherExpenses || []).length > 0;
 }
