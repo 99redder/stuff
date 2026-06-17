@@ -266,18 +266,10 @@
     <section class="card overall">
       <div class="label">Overall Spending Left</div>
       <div class="amount" id="overall">$0</div>
-      <div class="note">Includes groceries, gas, discretionary, and any other overage amounts.</div>
+      <div class="note">Includes gas, discretionary, and any other overage amounts.</div>
     </section>
 
     <section class="grid" aria-label="Category balances">
-      <div class="card category">
-        <div>
-          <div class="category-name">Groceries Left</div>
-          <div class="category-sub" id="groceries-sub">Spent: $0</div>
-        </div>
-        <div class="category-amount" id="groceries">$0</div>
-      </div>
-
       <div class="card category">
         <div>
           <div class="category-name">Gas Left</div>
@@ -317,10 +309,8 @@
       month: document.getElementById('month-label'),
       status: document.getElementById('status'),
       overall: document.getElementById('overall'),
-      groceries: document.getElementById('groceries'),
       gas: document.getElementById('gas'),
       discretionary: document.getElementById('discretionary'),
-      groceriesSub: document.getElementById('groceries-sub'),
       gasSub: document.getElementById('gas-sub'),
       discretionarySub: document.getElementById('discretionary-sub'),
       updated: document.getElementById('updated'),
@@ -413,10 +403,8 @@
       const year = data.year || {};
       els.month.textContent = data.monthLabel || data.monthKey || 'Current month';
       setAmount(els.overall, month.overallSpendingRemaining);
-      setAmount(els.groceries, month.groceriesRemaining);
       setAmount(els.gas, month.gasRemaining);
       setAmount(els.discretionary, month.discretionaryRemaining);
-      els.groceriesSub.textContent = `Spent: ${money(month.groceriesSpent)}`;
       els.gasSub.textContent = `Spent: ${money(month.gasSpent)}`;
       els.discretionarySub.textContent = `Adjusted budget: ${money(month.discretionaryAdjusted)}`;
       els.yearTitle.textContent = `${year.year || new Date().getFullYear()} Year Status`;

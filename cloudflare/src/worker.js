@@ -609,12 +609,9 @@ const MOM_BUDGET_DEFAULT = {
       { id: '401k', name: '401k Distribution', amount: 1000 }
     ],
     fixed: [
-      { id: 'rent', name: 'Rent', amount: 800, frequency: 'yearly', dueMonth: 1, paymentAmount: 9600 },
-      { id: 'internet', name: 'Internet', amount: 60 },
+      // Household bills wrapped into one auto-synced Fair Share line (she lives with family).
+      { id: 'fair-share', name: 'Fair Share (household)', amount: 0, frequency: 'monthly', auto: true, locked: true },
       { id: 'cell', name: 'Cell Phone', amount: 125 },
-      { id: 'water', name: 'Water / Sewer / Trash', amount: 80 },
-      { id: 'electric', name: 'Electric', amount: 100 },
-      { id: 'gas-heat', name: 'Nat Gas / Heat', amount: 65 },
       { id: 'car-repairs', name: 'Car Repairs', amount: 50, frequency: 'reserve', paymentAmount: 0 },
       { id: 'car-insurance', name: 'Car Insurance', amount: 80, frequency: 'semiannual', dueMonth: 1, paymentAmount: 480 },
       { id: 'registration', name: 'Car Registration', amount: 10, frequency: 'reserve', paymentAmount: 0 },
@@ -622,7 +619,7 @@ const MOM_BUDGET_DEFAULT = {
       { id: 'netflix', name: 'Netflix', amount: 20 },
       { id: 'britbox', name: 'BritBox', amount: 10 }
     ],
-    variable: { groceries: 870, gas: 120, discretionary: 500 },
+    variable: { gas: 120, discretionary: 500 },
     variableLocks: {}
   },
   months: {}
@@ -689,11 +686,9 @@ async function handleGetMomBudgetPublicSummary(request, env, requestedMonth) {
     updatedAt: new Date().toISOString(),
     month: {
       overallSpendingRemaining: month.overallSpendingRemaining,
-      groceriesRemaining: month.groceryRemaining,
       gasRemaining: month.gasRemaining,
       discretionaryRemaining: month.discretionaryRemaining,
       otherOverages: month.otherOverages,
-      groceriesSpent: month.groceriesSpent,
       gasSpent: month.gasSpent,
       discretionarySpent: month.discretionarySpent,
       discretionaryAdjusted: month.discretionaryAdjusted
@@ -793,7 +788,7 @@ function normalizeMomBudget(raw) {
   });
   data.template.fixed = data.template.fixed.filter(item => item !== gasFixedItem);
   data.template.variable = data.template.variable || defaults.template.variable;
-  data.template.variable.groceries = Number(data.template.variable.groceries ?? defaults.template.variable.groceries) || 0;
+  delete data.template.variable.groceries;  // groceries folded into the Fair Share line — no separate budget
   data.template.variable.gas = Number(data.template.variable.gas ?? gasFixedItem?.amount ?? defaults.template.variable.gas) || 0;
   data.template.variable.discretionary = Number(data.template.variable.discretionary ?? defaults.template.variable.discretionary) || 0;
 
@@ -825,10 +820,9 @@ function momBudgetTemplateTotals(data) {
   const t = data.template;
   const income = t.income.reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const fixed = t.fixed.reduce((s, i) => s + (Number(i.amount) || 0), 0);
-  const groceries = Number(t.variable.groceries) || 0;
   const gas = Number(t.variable.gas) || 0;
   const discretionary = Number(t.variable.discretionary) || 0;
-  return { income, fixed, groceries, gas, discretionary, planned: fixed + groceries + gas + discretionary };
+  return { income, fixed, gas, discretionary, planned: fixed + gas + discretionary };
 }
 
 function calcMomBudgetMonth(data, monthKey) {
@@ -852,29 +846,25 @@ function calcMomBudgetMonth(data, monthKey) {
     const paid = Number.isFinite(actual) && actual > 0 ? actual : fallback;
     return s + Math.max(0, paid - fallback);
   }, 0);
-  const groceriesSpent = (m.groceries || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const gasSpent = (m.gas || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const discretionarySpent = (m.discretionary || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const otherSpent = (m.otherExpenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const otherOverages = otherSpent + fixedOver;
-  const groceryOver = Math.max(0, groceriesSpent - base.groceries);
   const gasOver = Math.max(0, gasSpent - base.gas);
-  const discretionaryAdjusted = Math.max(0, base.discretionary - groceryOver - gasOver - otherOverages);
-  const budgetSpent = base.fixed + fixedOver + groceriesSpent + gasSpent + discretionarySpent + otherSpent;
+  const discretionaryAdjusted = Math.max(0, base.discretionary - gasOver - otherOverages);
+  const budgetSpent = base.fixed + fixedOver + gasSpent + discretionarySpent + otherSpent;
   return {
     ...base,
     fixedPaid,
     fixedOver,
-    groceriesSpent,
     gasSpent,
     discretionarySpent,
     otherOverages,
-    groceryRemaining: base.groceries - groceriesSpent,
     gasRemaining: base.gas - gasSpent,
     discretionaryAdjusted,
     discretionaryRemaining: discretionaryAdjusted - discretionarySpent,
-    overallSpendingRemaining: base.groceries + base.gas + base.discretionary
-      - groceriesSpent - gasSpent - discretionarySpent - otherOverages,
+    overallSpendingRemaining: base.gas + base.discretionary
+      - gasSpent - discretionarySpent - otherOverages,
     budgetSpent,
     variance: base.planned - budgetSpent
   };
@@ -883,7 +873,6 @@ function calcMomBudgetMonth(data, monthKey) {
 function momMonthHasActivity(month) {
   return Object.values(month.fixedPaid || {}).some(Boolean)
     || Object.values(month.fixedActual || {}).some(v => Number(v) > 0)
-    || (month.groceries || []).length > 0
     || (month.gas || []).length > 0
     || (month.discretionary || []).length > 0
     || (month.otherExpenses || []).length > 0;

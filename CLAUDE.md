@@ -206,25 +206,24 @@ Global view (not per-property) for tracking Red's mother's monthly assistance bu
         locked,
         frequency,       // 'monthly', 'semiannual', 'yearly', or 'reserve'
         dueMonth,        // 1-12 for semiannual/yearly; ignored for reserve-only
-        paymentAmount    // cash due when scheduled; 0 for reserve-only
+        paymentAmount,   // cash due when scheduled; 0 for reserve-only
+        auto             // true ONLY for the 'fair-share' line (read-only, value synced from the budget)
       }
     ],
     variable: {
-      groceries: 870,
       gas: 120,
       discretionary: 500
     },
     variableLocks: {
-      groceries: false,
       gas: false,
       discretionary: false
-    }
+    },
+    fairShareMigrated   // one-time flag — wrapped household bills already removed
   },
   months: {
     'YYYY-MM': {
       fixedPaid: { [fixedId]: true },
       fixedActual: { [fixedId]: number },
-      groceries: [{ id, date, amount, orderNumber }],
       gas: [{ id, date, amount, orderNumber }],
       discretionary: [{ id, date, amount, name }],
       otherExpenses: [{ id, date, amount, name }]
@@ -232,16 +231,17 @@ Global view (not per-property) for tracking Red's mother's monthly assistance bu
   }
 }
 ```
+Now that the mother lives with the family, her household bills are wrapped into a single **auto-synced `fair-share` fixed line** whose monthly amount is pulled live from the Monthly Budget's Fair Share section (`mbSyncFairShare()` → `fsCalc().herShare`, run in `renderMomBudget` after `ensureBudgetLoaded()`). Groceries were folded into that household share, so there is no longer a groceries variable budget or ledger.
 
 **Current default template:**
 - Income: Social Security, 401k Distribution
-- Fixed/reserve list: Rent, Internet, Cell Phone, Water / Sewer / Trash, Electric, Nat Gas / Heat, Car Repairs, Car Insurance, Car Registration, CoPays / Prescriptions, Netflix, BritBox
-- Variable budgets: Groceries, Gas, Discretionary
+- Fixed/reserve list: **Fair Share (household)** (auto-synced), Cell Phone, Car Repairs, Car Insurance, Car Registration, CoPays / Prescriptions, Netflix, BritBox
+- Variable budgets: Gas, Discretionary
+- The wrapped-away household bills (Rent, Internet, Water / Sewer / Trash, Electric, Nat Gas / Heat) and the Groceries budget were removed when she moved in with the family — their cost is represented by the single Fair Share line.
 
 **Fixed bill kinds:**
-- `MB_VARIABLE_FIXED_BILL_IDS = new Set(['electric', 'water', 'gas-heat'])`
-- Variable fixed bills: Electric, Water / Sewer / Trash, Nat Gas / Heat
-- Fixed fixed bills: Rent, Cell Phone, Car Insurance, Internet, Netflix, BritBox, Car Registration, and other non-variable fixed items
+- `MB_VARIABLE_FIXED_BILL_IDS = new Set(['electric', 'water', 'gas-heat'])` — these ids are no longer in the default template (wrapped into Fair Share), but the set and its variable-paid-amount/overage machinery remain for any custom variable bills.
+- The `fair-share` line is `auto: true`: it renders read-only everywhere (no editable amount, lock, or delete) and its value comes from the budget; `mbDeleteTemplateItem` refuses to delete it.
 - Fixed rows render the scheduled/budgeted amount as read-only text. Variable rows render an editable paid-amount input.
 - Variable fixed bills can generate automatic overage rows when paid above budget; fixed fixed bills do not.
 
@@ -262,30 +262,28 @@ Global view (not per-property) for tracking Red's mother's monthly assistance bu
   - `Monthly Income`
   - prominent `Overall Spending Left`
 - Second summary row:
-  - `Groceries Left`
   - `Gas Left`
   - `Discretionary Left`
 - Annual summary: collapsed by default behind an Expand/Minimize button; open state persists in `localStorage` key `rentals_mom_budget_year_stats_open`
 - Main layout:
-  - Left column cards: Fixed Bills, Groceries, Gas, Discretionary, Other Expense Overages
+  - Left column cards: Fixed Bills, Gas, Discretionary, Other Expense Overages
   - Right sticky column: Month Math and Monthly Template
 
 **Top card formulas:**
 ```javascript
 overallSpendingRemaining =
-  base.groceries + base.gas + base.discretionary
-  - groceriesSpent - gasSpent - discretionarySpent - otherOverages;
+  base.gas + base.discretionary
+  - gasSpent - discretionarySpent - otherOverages;
 
 otherOverages = manualOtherExpenses + fixedBillOverages;
 
 discretionaryAdjusted =
-  Math.max(0, base.discretionary - groceryOver - gasOver - otherOverages);
+  Math.max(0, base.discretionary - gasOver - otherOverages);
 ```
 
-`Overall Spending Left` shows the selected month in italic text and the note: `Groceries + gas + discretionary, including other overage amounts`.
+`Overall Spending Left` shows the selected month in italic text and the note: `Gas + discretionary, including other overage amounts`.
 
 **Ledger cards:**
-- Groceries: date + amount rows, ordered with `orderNumber`
 - Gas: date + amount rows, ordered with `orderNumber`
 - Discretionary: date + description + amount rows. Note at top says discretionary includes non-grocery purchases, prescription copays, and overages from other budget areas.
 - Other Expense Overages: no manual Add row. It auto-populates fixed bill overages. Legacy/manual rows are still included if already present in saved data.
@@ -299,10 +297,12 @@ discretionaryAdjusted =
 
 **Normalization/migrations in `mbNormalize(raw)`:**
 - Ensures all `template`, `months`, arrays, locks, and variable budgets exist.
+- **One-time `fairShareMigrated` migration:** removes the wrapped household bills (`rent`, `internet`, `water`, `electric`, `gas-heat`) from `template.fixed`, then ensures the auto-synced `fair-share` line exists (prepended). Also `delete`s `template.variable.groceries` (groceries folded into Fair Share).
 - Backfills fixed item `frequency`, `dueMonth`, and `paymentAmount` from defaults.
 - Migrates old fixed Gas into the new monthly `gas` ledger, then removes old fixed Gas paid/actual state.
 - Migrates Car Repairs and Car Registration to reserve-only.
 - Ensures `variableLocks` exists.
+- The `fair-share` line's amount is **not** set here — `renderMomBudget` calls `mbSyncFairShare()` after `ensureBudgetLoaded()` to pull the live value from `fsCalc()`.
 
 ### Mom Budget Phone PWA
 
@@ -317,12 +317,11 @@ Separate public read-only page for an Android/Samsung Galaxy phone:
 This page has no password gate and no editing controls. It is meant to be installed to Red's mother's phone as a simple PWA that shows:
 
 - Current month `Overall Spending Left` prominently
-- `Groceries Left`
 - `Gas Left`
 - `Discretionary Left`
 - Optional collapsed year status showing allocated, used, and under/over allocated
 
-The page fetches only `get_mom_budget_public_summary`, a public Worker action that returns precomputed read-only numbers. It must never call `get_mom_budget`, `save_mom_budget`, or any authenticated/editing action.
+The page fetches only `get_mom_budget_public_summary`, a public Worker action that returns precomputed read-only numbers. It must never call `get_mom_budget`, `save_mom_budget`, or any authenticated/editing action. **The worker keeps its own parallel copy of the Mom Budget math** (`normalizeMomBudget` / `momBudgetTemplateTotals` / `calcMomBudgetMonth`) — when changing the frontend's `mbCalcMonth`/template, mirror it here or the phone shows stale numbers. (Groceries were removed from both.)
 
 The service worker is intentionally network-first and calls `registration.update()` on launch so the installed PWA gets the newest page/assets when opened. If changing the phone PWA files, bump `CACHE_NAME` in `mom-budget-sw.js` if cached asset behavior matters.
 
@@ -638,6 +637,12 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-06-17 — Mom Budget: bills wrapped into Fair Share (she now lives with family)
+
+- **Mom Budget no longer lists her household bills separately.** Rent, Internet, Water / Sewer / Trash, Electric, and Nat Gas / Heat are removed and replaced by one **auto-synced `fair-share` fixed line** whose monthly amount is pulled live from the Monthly Budget Fair Share section (`mbSyncFairShare()` → `fsCalc().herShare`, after a new shared `ensureBudgetLoaded()` helper). The line is `auto: true` → read-only amount, no lock/delete (guarded in `mbDeleteTemplateItem`), ⚖️ icon.
+- **Groceries folded into Fair Share.** Removed the Groceries variable budget, ledger card, and `Groceries Left` stat; `mbCalcMonth`/`mbTemplateTotals` drop groceries from `overallSpendingRemaining`, `discretionaryAdjusted`, `budgetSpent`. One-time `fairShareMigrated` flag in `mbNormalize` strips the wrapped fixed bills + `delete`s `template.variable.groceries`; existing month `groceries[]` arrays are left untouched but unused.
+- **Worker + phone PWA mirrored.** The worker's parallel public-summary math (`normalizeMomBudget`/`momBudgetTemplateTotals`/`calcMomBudgetMonth`) and `MOM_BUDGET_DEFAULT` were updated the same way (critically, it now `delete`s the groceries budget so it can't re-add $870). `mom-budget-phone.html` drops the Groceries Left card/JS; `mom-budget-sw.js` `CACHE_NAME` bumped to `v5`.
 
 ### 2026-06-17 — Fair Share moved into Monthly Budget
 
