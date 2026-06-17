@@ -235,9 +235,9 @@ Now that the mother lives with the family, her household bills are wrapped into 
 
 **Current default template:**
 - Income: Social Security, 401k Distribution
-- Fixed/reserve list: **Fair Share (household)** (auto-synced), Cell Phone, Car Repairs, Car Insurance, Car Registration, CoPays / Prescriptions, Netflix, BritBox
+- Fixed/reserve list: **Fair Share (household)** (auto-synced), Cell Phone, CoPays / Prescriptions
 - Variable budgets: Gas, Discretionary
-- The wrapped-away household bills (Rent, Internet, Water / Sewer / Trash, Electric, Nat Gas / Heat) and the Groceries budget were removed when she moved in with the family — their cost is represented by the single Fair Share line.
+- The wrapped-away household bills (Rent, Internet, Water / Sewer / Trash, Electric, Nat Gas / Heat) and the Groceries budget were removed when she moved in with the family — their cost is represented by the single Fair Share line. Car Insurance / Car Repairs / Car Registration / Netflix / BritBox were also dropped (no longer tracked).
 
 **Fixed bill kinds:**
 - `MB_VARIABLE_FIXED_BILL_IDS = new Set(['electric', 'water', 'gas-heat'])` — these ids are no longer in the default template (wrapped into Fair Share), but the set and its variable-paid-amount/overage machinery remain for any custom variable bills.
@@ -298,6 +298,7 @@ discretionaryAdjusted =
 **Normalization/migrations in `mbNormalize(raw)`:**
 - Ensures all `template`, `months`, arrays, locks, and variable budgets exist.
 - **One-time `fairShareMigrated` migration:** removes the wrapped household bills (`rent`, `internet`, `water`, `electric`, `gas-heat`) from `template.fixed`, then ensures the auto-synced `fair-share` line exists (prepended). Also `delete`s `template.variable.groceries` (groceries folded into Fair Share).
+- **One-time `carStreamingTrimmed` migration:** removes `car-insurance`, `car-repairs`, `registration`, `netflix`, `britbox` from `template.fixed` (no longer tracked). Default fixed list is now just `fair-share`, `cell`, `medical`.
 - Backfills fixed item `frequency`, `dueMonth`, and `paymentAmount` from defaults.
 - Migrates old fixed Gas into the new monthly `gas` ledger, then removes old fixed Gas paid/actual state.
 - Migrates Car Repairs and Car Registration to reserve-only.

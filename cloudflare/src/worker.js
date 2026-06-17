@@ -612,12 +612,7 @@ const MOM_BUDGET_DEFAULT = {
       // Household bills wrapped into one auto-synced Fair Share line (she lives with family).
       { id: 'fair-share', name: 'Fair Share (household)', amount: 0, frequency: 'monthly', auto: true, locked: true },
       { id: 'cell', name: 'Cell Phone', amount: 125 },
-      { id: 'car-repairs', name: 'Car Repairs', amount: 50, frequency: 'reserve', paymentAmount: 0 },
-      { id: 'car-insurance', name: 'Car Insurance', amount: 80, frequency: 'semiannual', dueMonth: 1, paymentAmount: 480 },
-      { id: 'registration', name: 'Car Registration', amount: 10, frequency: 'reserve', paymentAmount: 0 },
-      { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 },
-      { id: 'netflix', name: 'Netflix', amount: 20 },
-      { id: 'britbox', name: 'BritBox', amount: 10 }
+      { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 }
     ],
     variable: { gas: 120, discretionary: 500 },
     variableLocks: {}

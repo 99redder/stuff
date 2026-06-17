@@ -5166,12 +5166,7 @@ const MOM_BUDGET_DEFAULT = {
       // contribution (rent/utilities/internet/food) now lives in this one line.
       { id: 'fair-share', name: 'Fair Share (household)', amount: 0, frequency: 'monthly', auto: true, locked: true },
       { id: 'cell', name: 'Cell Phone', amount: 125 },
-      { id: 'car-repairs', name: 'Car Repairs', amount: 50, frequency: 'reserve', paymentAmount: 0 },
-      { id: 'car-insurance', name: 'Car Insurance', amount: 80, frequency: 'semiannual', dueMonth: 1, paymentAmount: 480 },
-      { id: 'registration', name: 'Car Registration', amount: 10, frequency: 'reserve', paymentAmount: 0 },
-      { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 },
-      { id: 'netflix', name: 'Netflix', amount: 20 },
-      { id: 'britbox', name: 'BritBox', amount: 10 }
+      { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 }
     ],
     variable: { gas: 120, discretionary: 500 }
   },
@@ -5257,6 +5252,13 @@ function mbNormalize(raw) {
   }
   if (!data.template.fixed.some(item => item.id === 'fair-share')) {
     data.template.fixed.unshift({ id: 'fair-share', name: 'Fair Share (household)', amount: 0, frequency: 'monthly', auto: true, locked: true });
+  }
+  // One-time migration: drop the car (insurance/repairs/registration) and streaming
+  // (Netflix/BritBox) bills she no longer tracks in Mom Budget.
+  if (!data.template.carStreamingTrimmed) {
+    const DROP_IDS = new Set(['car-insurance', 'car-repairs', 'registration', 'netflix', 'britbox']);
+    data.template.fixed = data.template.fixed.filter(item => !DROP_IDS.has(String(item.id || '').toLowerCase()));
+    data.template.carStreamingTrimmed = true;
   }
   const gasFixedItem = data.template.fixed.find(item => item.id === 'gas' || String(item.name || '').trim().toLowerCase() === 'gas');
   data.template.fixed.forEach(item => {
