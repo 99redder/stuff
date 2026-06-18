@@ -7874,14 +7874,14 @@ async function savDelete(id) {
 // ── Monthly Budget: Fair Share section ────────────────────────────────────────
 //
 // Embedded in the Monthly Budget view (not a separate tab) so it reuses the bills
-// already entered as budget expenses — no double entry. It totals the budget's
-// SHARED expense items, divides by household size, and shows the fair per-person
-// amount Red's mother contributes once she lives with the family.
+// already entered as budget expenses — no double entry. Each SHARED expense is
+// divided among the people who actually benefit from it, and Mom's portions are
+// added together into her monthly contribution.
 //
-// Goal: keep her contribution at her share of ACTUAL shared costs (no markup), so
-// it reads as cost-sharing / expense reimbursement — not taxable income to the
-// family. Her Social Security (Title II) benefit is not needs-based, so household
-// contributions don't change it; there is no SSI/SSA floor. No SSI logic here.
+// Goal: document that her payments reimburse her share of actual household costs
+// rather than paying marked-up rent or generating a profit. IRS caregiver guidance
+// says money a parent pays to offset their expenses is not taxable to the caregiver,
+// though it counts as support the parent provides for herself.
 //
 // Settings + per-item shared flags live inside the budget record
 // (state.budget.fairShare), so they save with the budget — no extra KV key.
@@ -7910,6 +7910,7 @@ function fsNormalize(raw) {
     householdSize: (typeof raw.householdSize === 'number' && raw.householdSize >= 1) ? Math.round(raw.householdSize) : 5,
     roundDollar:   (raw.roundDollar !== undefined) ? !!raw.roundDollar : (raw.roundUp !== false),
     shared:        (raw.shared && typeof raw.shared === 'object') ? { ...raw.shared } : {},
+    participants:  (raw.participants && typeof raw.participants === 'object') ? { ...raw.participants } : {},
   };
 }
 
@@ -7919,21 +7920,43 @@ function fsItemShared(item, cat, fs) {
   return !!FS_SHARED_CAT_DEFAULTS[cat];
 }
 
+// Phone service and car insurance in this household benefit the three adults:
+// Red, his wife, and his mother. Other shared expenses default to everyone in
+// the household. A saved per-item participant count always takes precedence.
+function fsDefaultParticipants(item, cat, householdSize) {
+  const name = String(item.name || '').trim().toLowerCase();
+  const isPhone = /\b(phone|phones|cell|cellular|mobile|wireless)\b/.test(name);
+  const isCarInsurance = cat === 'Insurance'
+    && /\b(car|auto|automobile|vehicle)\b/.test(name)
+    && /\binsurance\b/.test(name);
+  return (isPhone || isCarInsurance) ? Math.min(3, householdSize) : householdSize;
+}
+
+function fsItemParticipants(item, cat, fs) {
+  const saved = Number(fs.participants?.[item.id]);
+  if (Number.isFinite(saved) && saved >= 1) {
+    return Math.min(fs.householdSize, Math.round(saved));
+  }
+  return fsDefaultParticipants(item, cat, fs.householdSize);
+}
+
 function fsCalc() {
   const b = state.budget;
   const fs = b.fairShare;
   const size = Math.max(1, fs.householdSize || 1);
-  let totalAll = 0, totalShared = 0;
+  let totalAll = 0, totalShared = 0, herShareExact = 0;
   for (const cat of BUDGET_EXPENSE_CATS) {
     for (const item of (b.expenses[cat] || [])) {
       const amt = item.amount || 0;
       totalAll += amt;
-      if (fsItemShared(item, cat, fs)) totalShared += amt;
+      if (fsItemShared(item, cat, fs)) {
+        totalShared += amt;
+        herShareExact += amt / fsItemParticipants(item, cat, fs);
+      }
     }
   }
-  const perPerson = totalShared / size;
-  const herShare = fs.roundDollar ? Math.round(perPerson) : perPerson;
-  return { size, totalAll, totalShared, perPerson, herShare };
+  const herShare = fs.roundDollar ? Math.round(herShareExact) : herShareExact;
+  return { size, totalAll, totalShared, herShareExact, herShare };
 }
 
 // Keep an auto-synced "Mom's Fair Share" line in the budget's Income section,
@@ -7971,9 +7994,17 @@ function fsRenderCard() {
     if (!items.length) continue;
     const rows = items.map(item => {
       const isShared = fsItemShared(item, cat, fs);
+      const participants = fsItemParticipants(item, cat, fs);
+      const momPortion = isShared ? (Number(item.amount) || 0) / participants : 0;
       return `<div style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;border-bottom:1px solid var(--border)">
         <span style="flex:1;min-width:0;${isShared ? '' : 'opacity:.55'}">${escHtml(item.name)}</span>
         <span style="font-variant-numeric:tabular-nums;color:var(--text-muted);font-size:.85rem;${isShared ? '' : 'opacity:.55'}">${fmt(item.amount || 0)}/mo</span>
+        ${isShared ? `<label title="Number of people who benefit from this expense" style="display:flex;align-items:center;gap:.25rem;font-size:.68rem;color:var(--text-muted);white-space:nowrap">
+          ÷ <input type="number" min="1" max="${fs.householdSize}" step="1" value="${participants}"
+                   onchange="fsUpdateParticipants('${escAttr(item.id)}', this.value)"
+                   style="width:3.25rem;padding:.16rem .3rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);font-size:.75rem;text-align:center">
+          = ${fmt(momPortion)}
+        </label>` : ''}
         <button type="button" onclick="fsToggleShared('${escAttr(item.id)}')" title="Toggle shared (split across the household) vs personal (excluded from her share)"
                 style="min-width:74px;padding:.16rem .5rem;border-radius:999px;font-size:.68rem;font-weight:750;cursor:pointer;border:1px solid ${isShared ? 'rgba(16,185,129,.4)' : 'var(--border)'};background:${isShared ? 'rgba(16,185,129,.12)' : 'var(--surface)'};color:${isShared ? 'var(--success)' : 'var(--text-muted)'}">
           ${isShared ? 'Shared' : 'Personal'}
@@ -8005,8 +8036,8 @@ function fsRenderCard() {
               </button>
             </div>
           </div>
-          <div style="font-size:.74rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.3rem">Which bills are shared?</div>
-          <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.6rem">These are your Monthly Budget expenses below. Mark each <strong>Shared</strong> (split across the household) or <strong>Personal</strong> (excluded from her share). Edit the amounts in the budget itself — no double entry.</div>
+          <div style="font-size:.74rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.3rem">Which bills are shared, and by whom?</div>
+          <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.6rem">Mark each bill <strong>Shared</strong> or <strong>Personal</strong>, then set how many people actually benefit from each shared expense. Phone service and car insurance default to the three adults; household-wide expenses default to all ${fs.householdSize} residents. If Mom's exact incremental cost is known, use that instead of an equal split.</div>
           ${itemSections || `<div style="color:var(--text-muted);font-size:.85rem;padding:1rem 0">No budget expenses yet — add bills in the budget below and they'll appear here.</div>`}
           <div style="display:flex;justify-content:space-between;border-top:2px solid var(--border);padding-top:.5rem;margin-top:.3rem;font-weight:700;font-size:.85rem">
             <span>Shared costs / mo</span><span>${fmt(c.totalShared)}</span>
@@ -8014,15 +8045,15 @@ function fsRenderCard() {
         </div>
         <div>
           <div style="padding:.7rem .9rem;border-radius:var(--radius);background:rgba(16,185,129,.10);border:1px solid rgba(16,185,129,.35);margin-bottom:.7rem">
-            <div style="font-size:.8rem;font-weight:700;color:var(--success)">✓ Cost-sharing, not income</div>
+            <div style="font-size:.8rem;font-weight:700;color:var(--success)">✓ Actual-expense reimbursement</div>
             <div style="font-size:.75rem;color:var(--text-muted);margin-top:.2rem">
-              Her share of the household's <strong>actual</strong> costs — reimbursing real expenses, not marked-up rent. Keeping her contribution at or below this keeps it as shared living expenses, not taxable income to your family. Her Social Security benefit is unaffected either way.
+              This calculation limits Mom's contribution to her allocated share of <strong>actual household costs</strong>, with no markup or profit. IRS caregiver guidance treats money a parent pays to offset their own expenses as the parent's support payment rather than taxable income to the caregiver.
             </div>
           </div>
           <div style="font-size:.74rem;color:var(--text-muted);line-height:1.5">
-            <p style="margin:0 0 .5rem"><strong>Fair share</strong> = shared costs ÷ ${c.size} people = ${fmt(c.perPerson)}${fs.roundDollar ? ` → ${fmt(c.herShare)}` : ''}.</p>
+            <p style="margin:0 0 .5rem"><strong>Fair share</strong> = the sum of Mom's portion of each shared bill${fs.roundDollar ? `: ${fmt(c.herShareExact)} → ${fmt(c.herShare)}` : `: ${fmt(c.herShare)}`}.</p>
             <p style="margin:0 0 .5rem">This amount is added automatically as a read-only <strong>“Mom's Fair Share”</strong> line in the Income section above.</p>
-            <p style="margin:0;font-size:.72rem">General info, not tax advice. Since you file rental schedules, confirm your specific setup with your CPA.</p>
+            <p style="margin:0;font-size:.72rem">Keep the underlying bills and allocation method with your records. Her payments count as support she provides for herself, which matters if either of you claims her as a dependent. General information, not tax advice; confirm your specific setup with your CPA.</p>
           </div>
         </div>
       </div>
@@ -8060,6 +8091,15 @@ async function fsToggleShared(itemId) {
   }
   if (cur === null) return;
   fs.shared[itemId] = !cur;
+  await _saveBudget();
+  _renderBudgetHtml();
+}
+
+async function fsUpdateParticipants(itemId, value) {
+  const fs = state.budget.fairShare;
+  const count = Math.round(Number(value));
+  if (!Number.isFinite(count)) return;
+  fs.participants[itemId] = Math.min(fs.householdSize, Math.max(1, count));
   await _saveBudget();
   _renderBudgetHtml();
 }
