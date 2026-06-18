@@ -5194,14 +5194,20 @@ function mbRmdStartAge(birthYear) {
   return 72;  // born 1950 or earlier — RMDs already apply
 }
 
+// Red's mother's fixed facts: born 8/12/1952, retired (no still-working delay),
+// no spouse (so the IRS Uniform Lifetime Table applies). Only her year-end
+// balance varies, so it's the lone input.
+const MOM_RMD_BIRTH_LABEL = 'August 12, 1952';
+const MOM_RMD_BIRTH_YEAR = 1952;
+
 function mbCalcRmd() {
   const r = state.momBudget.rmd || {};
   const year = CURRENT_YEAR;
   const balance = Number(r.balance) || 0;
-  const birthYear = parseInt(r.birthYear, 10) || 0;
-  const age = birthYear ? year - birthYear : 0;
-  const startAge = birthYear ? mbRmdStartAge(birthYear) : 0;
-  const required = birthYear && age >= startAge;
+  const birthYear = MOM_RMD_BIRTH_YEAR;
+  const age = year - birthYear;
+  const startAge = mbRmdStartAge(birthYear);
+  const required = age >= startAge;
   const factorAge = Math.min(120, Math.max(72, age));
   const factor = RMD_UNIFORM_LIFETIME[factorAge] || 0;
   const rmd = (required && factor > 0) ? balance / factor : 0;
@@ -5315,8 +5321,9 @@ function mbNormalize(raw) {
   delete data.template.variable.gas;        // she has no car — gas budget/ledger removed entirely
   data.template.variable.discretionary = Number(data.template.variable.discretionary ?? defaults.template.variable.discretionary);
   data.template.variableLocks = data.template.variableLocks || {};
-  // 401(k) RMD calculator inputs (global, not per-month).
-  data.rmd = (data.rmd && typeof data.rmd === 'object') ? data.rmd : { balance: 0, birthYear: '' };
+  // 401(k) RMD calculator input (global, not per-month). Birth date is a fixed
+  // constant (MOM_RMD_BIRTH_YEAR) — only the year-end balance is stored.
+  data.rmd = (data.rmd && typeof data.rmd === 'object') ? data.rmd : { balance: 0 };
   data.months = data.months || {};
   Object.entries(data.months).forEach(([monthKey, month]) => {
     month.fixedPaid = month.fixedPaid || {};
@@ -5670,9 +5677,9 @@ function mbRmdCard() {
   const r = state.momBudget.rmd || {};
 
   let result;
-  if (!c.birthYear || !c.balance) {
+  if (!c.balance) {
     result = `<div style="padding:.85rem 1rem;background:var(--surface);border:1px dashed var(--border);border-radius:var(--radius);color:var(--text-muted);font-size:.85rem">
-      Enter her 401(k) balance and birth year above to calculate the ${c.year} minimum withdrawal.</div>`;
+      Enter her 401(k) balance above to calculate the ${c.year} minimum withdrawal.</div>`;
   } else if (!c.required) {
     const startYear = c.birthYear + c.startAge;
     result = `<div style="padding:.85rem 1rem;background:rgba(37,99,235,.08);border:1px solid rgba(37,99,235,.25);border-radius:var(--radius);font-size:.85rem">
@@ -5695,8 +5702,8 @@ function mbRmdCard() {
     <div class="card tp-card">
       <div class="card-header"><div class="card-title">401(k) Minimum Distribution (RMD)</div></div>
       <div class="card-body">
-        <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:.85rem">
-          <div style="flex:1;min-width:160px">
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.85rem">
+          <div style="flex:1;min-width:170px">
             <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">401(k) balance on Dec 31, ${priorYear}</label>
             <div style="position:relative">
               <span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
@@ -5704,28 +5711,24 @@ function mbRmdCard() {
                      onchange="mbUpdateRmd('balance', this.value)" style="width:100%;padding-left:1.5rem;font-weight:600">
             </div>
           </div>
-          <div style="flex:1;min-width:130px">
-            <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Her birth year</label>
-            <input type="number" class="form-input" min="1900" max="${c.year}" step="1" value="${escAttr(r.birthYear ? String(r.birthYear) : '')}" placeholder="e.g. 1953"
-                   onchange="mbUpdateRmd('birthYear', this.value)" style="width:100%;font-weight:600">
+          <div style="flex:1;min-width:140px">
+            <div style="font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Date of birth</div>
+            <div style="padding:.45rem .6rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);font-weight:600">${MOM_RMD_BIRTH_LABEL}</div>
           </div>
         </div>
         ${result}
         <div style="font-size:.72rem;color:var(--text-muted);margin-top:.6rem;line-height:1.5">
-          Uses the prior year-end balance ÷ the IRS Uniform Lifetime Table factor for the age she reaches this year. Estimate only — confirm with her plan administrator or CPA, and note 401(k) RMDs must be taken from the 401(k) itself.
+          Assumes she's <strong>retired</strong> (no still-working delay) and has <strong>no spouse</strong>, so the IRS <strong>Uniform Lifetime Table</strong> applies. RMD = prior year-end balance ÷ the table factor for the age she reaches this year. Estimate only — confirm with her plan administrator or CPA; 401(k) RMDs must be taken from the 401(k) itself.
         </div>
       </div>
     </div>`;
 }
 
 async function mbUpdateRmd(field, value) {
-  if (!state.momBudget.rmd) state.momBudget.rmd = { balance: 0, birthYear: '' };
+  if (!state.momBudget.rmd) state.momBudget.rmd = { balance: 0 };
   if (field === 'balance') {
     const v = parseFloat(value);
     state.momBudget.rmd.balance = (isFinite(v) && v >= 0) ? v : 0;
-  } else if (field === 'birthYear') {
-    const v = parseInt(value, 10);
-    state.momBudget.rmd.birthYear = (isFinite(v) && v >= 1900 && v <= CURRENT_YEAR) ? v : '';
   }
   _renderMomBudgetHtml();
   await _saveMomBudget();

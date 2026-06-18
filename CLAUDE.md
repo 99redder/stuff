@@ -227,7 +227,7 @@ Global view (not per-property) for tracking Red's mother's monthly assistance bu
       otherExpenses: [{ id, date, amount, name }]
     }
   },
-  rmd: { balance, birthYear }   // 401(k) RMD calculator inputs (global, not per-month)
+  rmd: { balance }   // 401(k) RMD calculator input (balance only; birth date is a fixed constant)
 }
 ```
 Now that the mother lives with the family, her household bills are wrapped into a single **auto-synced `fair-share` fixed line** whose monthly amount is pulled live from the Monthly Budget's Fair Share section (`mbSyncFairShare()` → `fsCalc().herShare`, run in `renderMomBudget` after `ensureBudgetLoaded()`). Groceries were folded into that household share, and **Gas was removed entirely (she has no car)** — so the only variable budget left is Discretionary. She effectively tracks just **Fair Share, Discretionary, and overages**.
@@ -266,7 +266,7 @@ Now that the mother lives with the family, her household bills are wrapped into 
   - Left column cards: Fixed Bills, Discretionary, Other Expense Overages, **401(k) Minimum Distribution (RMD)**
   - Right sticky column: Month Math and Monthly Template
 
-**401(k) RMD calculator** (`mbRmdCard()` / `mbCalcRmd()` / `mbUpdateRmd()`): card at the bottom of the left column. Inputs (prior Dec 31 balance + birth year) persist in `state.momBudget.rmd` and save with the record. `RMD = balance ÷ RMD_UNIFORM_LIFETIME[ageThisYear]` (IRS Uniform Lifetime Table, 2022+); shows yearly minimum + monthly equivalent. `mbRmdStartAge(birthYear)` applies SECURE Act 2.0 start ages (73 for 1951–1959, 75 for 1960+) and the card shows a "not required yet" note when she's below it. App-only — not surfaced on the phone PWA.
+**401(k) RMD calculator** (`mbRmdCard()` / `mbCalcRmd()` / `mbUpdateRmd()`): card at the bottom of the left column. Her birth date is a **fixed constant** (`MOM_RMD_BIRTH_YEAR = 1952`, born Aug 12, 1952; retired, no spouse → IRS Uniform Lifetime Table applies), so the **only editable input is the prior Dec 31 balance**, stored in `state.momBudget.rmd.balance` and saved with the record. `RMD = balance ÷ RMD_UNIFORM_LIFETIME[ageThisYear]` (IRS Uniform Lifetime Table, 2022+); shows yearly minimum + monthly equivalent. `mbRmdStartAge(birthYear)` applies SECURE Act 2.0 start ages (73 for 1951–1959, 75 for 1960+) and the card shows a "not required yet" note if below it. App-only — not surfaced on the phone PWA.
 
 **Top card formulas:**
 ```javascript
@@ -642,7 +642,7 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ### 2026-06-18 — Mom Budget: 401(k) RMD calculator
 
-- Added a **401(k) Minimum Distribution (RMD)** card to the Mom Budget left column. Inputs: prior Dec 31 401(k) balance + her birth year (persisted in `state.momBudget.rmd`, saved via the passthrough `save_mom_budget`). Computes the yearly required minimum = balance ÷ IRS Uniform Lifetime Table factor (`RMD_UNIFORM_LIFETIME`) for the age she reaches this year, plus a monthly equivalent. `mbRmdStartAge()` applies SECURE Act 2.0 start ages (73 / 75) and shows a "not required yet" note below that. `mbCalcRmd()` / `mbRmdCard()` / `mbUpdateRmd()`; `mbNormalize` seeds `data.rmd`. No worker/phone change.
+- Added a **401(k) Minimum Distribution (RMD)** card to the Mom Budget left column. Her birth date is fixed (`MOM_RMD_BIRTH_YEAR = 1952`, born Aug 12, 1952; retired, no spouse → Uniform Lifetime Table), so the **only input is the prior Dec 31 401(k) balance** (persisted in `state.momBudget.rmd`, saved via the passthrough `save_mom_budget`). Computes the yearly required minimum = balance ÷ IRS Uniform Lifetime Table factor (`RMD_UNIFORM_LIFETIME`) for the age she reaches this year, plus a monthly equivalent, and notes the retired/no-spouse assumptions. `mbRmdStartAge()` applies SECURE Act 2.0 start ages (73 / 75). `mbCalcRmd()` / `mbRmdCard()` / `mbUpdateRmd()`; `mbNormalize` seeds `data.rmd`. No worker/phone change.
 
 ### 2026-06-18 — Mom Budget phone PWA: Fair Share card
 
