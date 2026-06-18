@@ -5179,6 +5179,10 @@ const MOM_BUDGET_DEFAULT = {
 const MB_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MB_YEAR_STATS_OPEN_KEY = 'rentals_mom_budget_year_stats_open';
 const MB_VARIABLE_FIXED_BILL_IDS = new Set(['electric', 'water', 'gas-heat']);
+const IRS_CAREGIVER_GUIDANCE_URL = 'https://www.irs.gov/faqs/irs-procedures/for-caregivers';
+const IRS_GIFT_TAX_URL = 'https://www.irs.gov/businesses/small-businesses-self-employed/gift-tax';
+const IRS_GIFT_TAX_FAQ_URL = 'https://www.irs.gov/businesses/small-businesses-self-employed/frequently-asked-questions-on-gift-taxes';
+const IRS_GIFTS_INHERITANCES_URL = 'https://www.irs.gov/faqs/interest-dividends-other-types-of-income/gifts-inheritances';
 
 // IRS Uniform Lifetime Table (2022+) — distribution period (divisor) by the age
 // the account owner reaches during the distribution year. RMD = balance / factor.
@@ -5805,12 +5809,15 @@ function mbFixedTemplateRow(item, index = 0) {
     const autoSubtitle = item.id === 'family-gift'
       ? 'Separate voluntary gift · Auto-synced from Monthly Budget'
       : 'Auto-synced from Monthly Budget → Fair Share';
+    const autoSource = item.id === 'family-gift'
+      ? `<a href="${IRS_GIFTS_INHERITANCES_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">IRS gift rules ↗</a>`
+      : `<a href="${IRS_CAREGIVER_GUIDANCE_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">IRS caregiver guidance ↗</a>`;
     return `<div class="mb-fixed-template-row${index % 2 ? ' is-alt' : ''}">
       <div class="mb-fixed-template-row-header">
         <span class="mb-fixed-template-row-header-icon" aria-hidden="true">${mbBillIcon(item)}</span>
         <div class="mb-fixed-template-row-title-wrap">
           <div class="mb-fixed-template-row-header-title">${escHtml(item.name)}</div>
-          <div class="mb-fixed-template-row-subtitle">${autoSubtitle}</div>
+          <div class="mb-fixed-template-row-subtitle">${autoSubtitle} · ${autoSource}</div>
         </div>
       </div>
       <div class="mb-fixed-template-row-controls">
@@ -8094,6 +8101,13 @@ function fsRenderCard() {
             <p style="margin:0 0 .5rem">Fair Share and the separate ${fmt(fs.giftAmount)} monthly gift are added as distinct read-only lines in Monthly Budget income and Mom Budget fixed expenses.</p>
             <p style="margin:0 0 .5rem"><strong>Gift:</strong> voluntary and separate from rent, caregiving, or services. Record transfers as “gift,” not as Fair Share reimbursement.</p>
             <p style="margin:0;font-size:.72rem">Keep the underlying bills and allocation method with your records. Her payments count as support she provides for herself, which matters if either of you claims her as a dependent. General information, not tax advice; confirm your specific setup with your CPA.</p>
+            <div style="margin-top:.7rem;padding-top:.6rem;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:.35rem .85rem;font-size:.72rem">
+              <strong style="color:var(--text)">Official IRS references:</strong>
+              <a href="${IRS_CAREGIVER_GUIDANCE_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">Parent expense reimbursements ↗</a>
+              <a href="${IRS_GIFT_TAX_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">What qualifies as a gift ↗</a>
+              <a href="${IRS_GIFT_TAX_FAQ_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">Gift-tax exclusions ↗</a>
+              <a href="${IRS_GIFTS_INHERITANCES_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">Form 709 guidance ↗</a>
+            </div>
           </div>
         </div>
       </div>
