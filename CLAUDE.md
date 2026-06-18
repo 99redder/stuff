@@ -636,6 +636,10 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ## Recent Updates
 
+### 2026-06-17 — Mom Budget: simplified Month Math
+
+- Trimmed the **Month Math** card now that she has few bills. Removed `Fixed due this month` (identical to fixed total when all bills are monthly), `Reserve cash delta` (leftover reserve-bill jargon), and `Fixed bill overage` (always $0 — no variable fixed bills remain). Renamed `Fixed monthly reserve` → `Fixed bills`, `Discretionary base` → `Discretionary budget`, `Fixed cash paid` → `Fixed bills paid`. The `Other overages` + `Adjusted discretionary` rows now render **only when there are overages**. Result: 6 rows normally, 8 with overages (was 11).
+
 ### 2026-06-17 — Mom Budget: removed Cell Phone + Mark Reserve Bills Paid button
 
 - **Cell Phone removed** (she's on the family cell plan) via the one-time `cellTrimmed` migration in `mbNormalize`. Default fixed list is now just `fair-share`, `medical`.

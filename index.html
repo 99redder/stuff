@@ -5588,15 +5588,12 @@ function _renderMomBudgetHtml() {
           <div class="card-header"><div class="card-title">Month Math</div></div>
           <div class="card-body">
             <div class="tp-row"><span>Income</span><strong style="color:var(--success)">${fmt(c.income)}</strong></div>
-            <div class="tp-row"><span>Fixed monthly reserve</span><strong>${fmt(c.fixed)}</strong></div>
-            <div class="tp-row"><span>Fixed due this month</span><strong>${fmt(c.fixedDue)}</strong></div>
-            <div class="tp-row"><span>Fixed cash paid</span><strong>${fmt(c.fixedPaid)}</strong></div>
-            <div class="tp-row"><span>Discretionary base</span><strong>${fmt(c.discretionary)}</strong></div>
-            <div class="tp-row sub"><span>Unallocated after template</span><strong>${c.unallocated < 0 ? '−' : ''}${fmt(Math.abs(c.unallocated))}</strong></div>
-            <div class="tp-row"><span>Reserve cash delta</span><strong style="color:${c.reserveDelta >= 0 ? 'var(--success)' : 'var(--danger)'}">${c.reserveDelta < 0 ? '−' : '+'}${fmt(Math.abs(c.reserveDelta))}</strong></div>
-            <div class="tp-row"><span>Fixed bill overage</span><strong style="color:${c.fixedOver ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.fixedOver)}</strong></div>
-            <div class="tp-row"><span>Other overages</span><strong style="color:${c.otherOverages ? 'var(--danger)' : 'var(--text-muted)'}">${fmt(c.otherOverages)}</strong></div>
-            <div class="tp-row sub"><span>Adjusted discretionary</span><strong>${fmt(c.discretionaryAdjusted)}</strong></div>
+            <div class="tp-row"><span>Fixed bills</span><strong>${fmt(c.fixed)}</strong></div>
+            <div class="tp-row"><span>Discretionary budget</span><strong>${fmt(c.discretionary)}</strong></div>
+            <div class="tp-row sub"><span>Unallocated after budget</span><strong>${c.unallocated < 0 ? '−' : ''}${fmt(Math.abs(c.unallocated))}</strong></div>
+            <div class="tp-row"><span>Fixed bills paid</span><strong>${fmt(c.fixedPaid)}</strong></div>
+            ${c.otherOverages ? `<div class="tp-row"><span>Other overages</span><strong style="color:var(--danger)">${fmt(c.otherOverages)}</strong></div>
+            <div class="tp-row sub"><span>Adjusted discretionary</span><strong>${fmt(c.discretionaryAdjusted)}</strong></div>` : ''}
             <div class="tp-row ${c.cashLeft >= 0 ? 'refund' : 'owed'}"><span>Cash left by recorded spend</span><span>${c.cashLeft < 0 ? '−' : ''}${fmt(Math.abs(c.cashLeft))}</span></div>
           </div>
         </div>
