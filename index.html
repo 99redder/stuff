@@ -4638,7 +4638,7 @@ async function renderBudget() {
 
 function _renderBudgetHtml() {
   const b = state.budget;
-  fsSyncBudgetIncome();   // keep the auto "Mom's Fair Share" income line in sync with the Fair Share calc
+  fsSyncBudgetIncome();   // keep Mom's reimbursement and gift income lines in sync
   const totalIncome = b.income.reduce((s, i) => s + (i.amount || 0), 0);
   const catTotals = {};
   let totalExpenses = 0;
@@ -4734,12 +4734,15 @@ function _renderBudgetHtml() {
     </div>`;
 
   const incomeRows = sortedIncome.map(item => {
-    // Auto-synced "Mom's Fair Share" income line — read-only, value comes from the Fair Share calc.
+    // Auto-synced Mom transfer lines — read-only, managed from the Fair Share card.
     if (item.auto) {
       const incomeRowPct = totalIncome > 0 ? ((item.amount / totalIncome) * 100).toFixed(1) : '0.0';
+      const autoNote = item.autoType === 'gift' || item.id === FS_GIFT_INCOME_ID
+        ? '🎁 separate gift'
+        : '⚖️ from Fair Share';
       return `<div class="budget-item">
         <span class="budget-item-pct">${incomeRowPct}%</span>
-        <span class="budget-item-name">${escHtml(item.name)} <span style="font-size:.7rem;color:var(--text-muted)">⚖️ from Fair Share</span></span>
+        <span class="budget-item-name">${escHtml(item.name)} <span style="font-size:.7rem;color:var(--text-muted)">${autoNote}</span></span>
         <span class="budget-item-lock"><span style="display:inline-block;width:1.5rem"></span></span>
         <span class="budget-item-amt">${fmt(item.amount)}/mo</span>
         <span class="budget-item-actions"></span>
@@ -5132,7 +5135,7 @@ async function budgetSave(section, id) {
 }
 
 async function budgetDelete(section, id) {
-  if (section === 'income' && id === FS_INCOME_ID) return;  // auto Fair Share line can't be deleted here
+  if (section === 'income' && (id === FS_INCOME_ID || id === FS_GIFT_INCOME_ID)) return;
   showBrandedNotice({
     title: 'Remove Item',
     message: 'Are you sure you want to remove this item?',
@@ -5165,6 +5168,7 @@ const MOM_BUDGET_DEFAULT = {
       // Auto-synced from the Monthly Budget Fair Share section — her household
       // contribution (rent/utilities/internet/food) now lives in this one line.
       { id: 'fair-share', name: 'Fair Share (household)', amount: 0, frequency: 'monthly', auto: true, locked: true },
+      { id: 'family-gift', name: 'Gift to Chris & Family', amount: 200, frequency: 'monthly', auto: true, locked: true },
       { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 }
     ],
     variable: { discretionary: 500 }
@@ -5303,6 +5307,10 @@ function mbNormalize(raw) {
   if (!data.template.fixed.some(item => item.id === 'fair-share')) {
     data.template.fixed.unshift({ id: 'fair-share', name: 'Fair Share (household)', amount: 0, frequency: 'monthly', auto: true, locked: true });
   }
+  if (!data.template.fixed.some(item => item.id === 'family-gift')) {
+    const fairShareIndex = data.template.fixed.findIndex(item => item.id === 'fair-share');
+    data.template.fixed.splice(fairShareIndex + 1, 0, { id: 'family-gift', name: 'Gift to Chris & Family', amount: 200, frequency: 'monthly', auto: true, locked: true });
+  }
   // One-time migration: drop the car (insurance/repairs/registration) and streaming
   // (Netflix/BritBox) bills she no longer tracks in Mom Budget.
   if (!data.template.carStreamingTrimmed) {
@@ -5357,24 +5365,34 @@ async function renderMomBudget() {
     const result = await callApi({ action: 'get_mom_budget' });
     state.momBudget = mbNormalize(result.data || {});
   }
-  // Fair Share line is auto-valued from the Monthly Budget's shared-cost split.
+  // Household reimbursement and the separate family gift are auto-valued from
+  // Monthly Budget so the two types of transfer remain distinct.
   try { await ensureBudgetLoaded(); } catch { /* offline — keep last synced value */ }
-  mbSyncFairShare();
+  mbSyncHouseholdTransfers();
   if (!state.momBudget.months[_mbMonth]) state.momBudget.months[_mbMonth] = mbBlankMonth();
   _renderMomBudgetHtml();
 }
 
 // Pull the household Fair Share amount from the Monthly Budget calc into the
 // auto-synced fixed bill so Mom Budget never needs its own copy of those bills.
-function mbSyncFairShare() {
-  const item = state.momBudget?.template?.fixed?.find(i => i.id === 'fair-share');
-  if (!item) return;
+function mbSyncHouseholdTransfers() {
+  const fairShareItem = state.momBudget?.template?.fixed?.find(i => i.id === 'fair-share');
+  const giftItem = state.momBudget?.template?.fixed?.find(i => i.id === 'family-gift');
   let herShare = 0;
   try { if (state.budget && state.budget.fairShare) herShare = fsCalc().herShare || 0; } catch { herShare = 0; }
-  item.amount = herShare;
-  item.paymentAmount = herShare;
-  item.frequency = 'monthly';
-  item.auto = true;
+  if (fairShareItem) {
+    fairShareItem.amount = herShare;
+    fairShareItem.paymentAmount = herShare;
+    fairShareItem.frequency = 'monthly';
+    fairShareItem.auto = true;
+  }
+  if (giftItem) {
+    const giftAmount = Number(state.budget?.fairShare?.giftAmount) || 0;
+    giftItem.amount = giftAmount;
+    giftItem.paymentAmount = giftAmount;
+    giftItem.frequency = 'monthly';
+    giftItem.auto = true;
+  }
 }
 
 function mbYearStatsOpen() {
@@ -5494,6 +5512,7 @@ function mbBillIcon(item) {
   const id = String(item.id || '').toLowerCase();
   const name = String(item.name || '').toLowerCase();
   if (id === 'fair-share' || name.includes('fair share')) return '⚖️';
+  if (id === 'family-gift' || name.includes('gift')) return '🎁';
   if (id.includes('rent') || name.includes('rent')) return '🏠';
   if (id.includes('internet') || name.includes('internet')) return '🌐';
   if (id.includes('cell') || name.includes('phone')) return '📱';
@@ -5783,12 +5802,15 @@ function mbFixedTemplateRow(item, index = 0) {
   // Auto-synced Fair Share line: read-only amount, no lock/delete — its value
   // comes from the Monthly Budget shared-cost split.
   if (item.auto) {
+    const autoSubtitle = item.id === 'family-gift'
+      ? 'Separate voluntary gift · Auto-synced from Monthly Budget'
+      : 'Auto-synced from Monthly Budget → Fair Share';
     return `<div class="mb-fixed-template-row${index % 2 ? ' is-alt' : ''}">
       <div class="mb-fixed-template-row-header">
         <span class="mb-fixed-template-row-header-icon" aria-hidden="true">${mbBillIcon(item)}</span>
         <div class="mb-fixed-template-row-title-wrap">
           <div class="mb-fixed-template-row-header-title">${escHtml(item.name)}</div>
-          <div class="mb-fixed-template-row-subtitle">Auto-synced from Monthly Budget → Fair Share</div>
+          <div class="mb-fixed-template-row-subtitle">${autoSubtitle}</div>
         </div>
       </div>
       <div class="mb-fixed-template-row-controls">
@@ -7903,12 +7925,15 @@ const FS_SHARED_CAT_DEFAULTS = {
 };
 
 let _fsOpen = (localStorage.getItem('rentals_budget_fairshare_open') === '1');
+const FS_GIFT_ANNUAL_MAX = 3000;
+const FS_GIFT_MONTHLY_MAX = FS_GIFT_ANNUAL_MAX / 12;
 
 function fsNormalize(raw) {
   raw = (raw && typeof raw === 'object') ? raw : {};
   return {
     householdSize: (typeof raw.householdSize === 'number' && raw.householdSize >= 1) ? Math.round(raw.householdSize) : 5,
     roundDollar:   (raw.roundDollar !== undefined) ? !!raw.roundDollar : (raw.roundUp !== false),
+    giftAmount:    Math.min(FS_GIFT_MONTHLY_MAX, Math.max(0, Number(raw.giftAmount ?? 200) || 0)),
     shared:        (raw.shared && typeof raw.shared === 'object') ? { ...raw.shared } : {},
     participants:  (raw.participants && typeof raw.participants === 'object') ? { ...raw.participants } : {},
   };
@@ -7959,26 +7984,31 @@ function fsCalc() {
   return { size, totalAll, totalShared, herShareExact, herShare };
 }
 
-// Keep an auto-synced "Mom's Fair Share" line in the budget's Income section,
-// valued at her computed contribution. Read-only — managed entirely from the
-// Fair Share section. Persists in the budget record like any income item.
+// Keep separate auto-synced income lines for Mom's expense reimbursement and
+// voluntary gift. Both are read-only in Income and managed from this section.
 const FS_INCOME_ID = 'mom-fair-share';
+const FS_GIFT_INCOME_ID = 'mom-family-gift';
 function fsSyncBudgetIncome() {
   const b = state.budget;
   if (!b) return;
   if (!Array.isArray(b.income)) b.income = [];
   let herShare = 0;
   try { if (b.fairShare) herShare = fsCalc().herShare || 0; } catch { herShare = 0; }
-  let item = b.income.find(i => i.id === FS_INCOME_ID);
-  if (!item) {
-    item = { id: FS_INCOME_ID, name: "Mom's Fair Share", amount: herShare, auto: true, locked: true };
-    b.income.push(item);
-  } else {
-    item.name = "Mom's Fair Share";
-    item.amount = herShare;
-    item.auto = true;
-    item.locked = true;
-  }
+  const syncItem = (id, name, amount, autoType) => {
+    let item = b.income.find(i => i.id === id);
+    if (!item) {
+      item = { id, name, amount, auto: true, autoType, locked: true };
+      b.income.push(item);
+    } else {
+      item.name = name;
+      item.amount = amount;
+      item.auto = true;
+      item.autoType = autoType;
+      item.locked = true;
+    }
+  };
+  syncItem(FS_INCOME_ID, "Mom's Fair Share", herShare, 'fair-share');
+  syncItem(FS_GIFT_INCOME_ID, "Mom's Family Gift", Number(b.fairShare?.giftAmount) || 0, 'gift');
 }
 
 // Returns the collapsible Fair Share card injected into the budget layout.
@@ -8035,6 +8065,15 @@ function fsRenderCard() {
                 ${fs.roundDollar ? '✓ Nearest $1' : 'Off — exact cents'}
               </button>
             </div>
+            <div style="flex:1;min-width:170px">
+              <label style="display:block;font-size:.72rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Separate Monthly Gift</label>
+              <div style="position:relative">
+                <span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:700">$</span>
+                <input type="number" class="form-input" min="0" max="${FS_GIFT_MONTHLY_MAX}" step="1" value="${escAttr(String(fs.giftAmount))}"
+                       onchange="fsUpdateSetting('giftAmount', this.value)" style="width:100%;padding-left:1.4rem;font-size:1.05rem;font-weight:600">
+              </div>
+              <div style="font-size:.66rem;color:var(--text-muted);margin-top:.2rem">${fmt(fs.giftAmount * 12)} / year · personal cap ${fmt(FS_GIFT_ANNUAL_MAX)}</div>
+            </div>
           </div>
           <div style="font-size:.74rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.3rem">Which bills are shared, and by whom?</div>
           <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.6rem">Mark each bill <strong>Shared</strong> or <strong>Personal</strong>, then set how many people actually benefit from each shared expense. Phone service and car insurance default to the three adults; household-wide expenses default to all ${fs.householdSize} residents. If Mom's exact incremental cost is known, use that instead of an equal split.</div>
@@ -8052,7 +8091,8 @@ function fsRenderCard() {
           </div>
           <div style="font-size:.74rem;color:var(--text-muted);line-height:1.5">
             <p style="margin:0 0 .5rem"><strong>Fair share</strong> = the sum of Mom's portion of each shared bill${fs.roundDollar ? `: ${fmt(c.herShareExact)} → ${fmt(c.herShare)}` : `: ${fmt(c.herShare)}`}.</p>
-            <p style="margin:0 0 .5rem">This amount is added automatically as a read-only <strong>“Mom's Fair Share”</strong> line in the Income section above.</p>
+            <p style="margin:0 0 .5rem">Fair Share and the separate ${fmt(fs.giftAmount)} monthly gift are added as distinct read-only lines in Monthly Budget income and Mom Budget fixed expenses.</p>
+            <p style="margin:0 0 .5rem"><strong>Gift:</strong> voluntary and separate from rent, caregiving, or services. Record transfers as “gift,” not as Fair Share reimbursement.</p>
             <p style="margin:0;font-size:.72rem">Keep the underlying bills and allocation method with your records. Her payments count as support she provides for herself, which matters if either of you claims her as a dependent. General information, not tax advice; confirm your specific setup with your CPA.</p>
           </div>
         </div>
@@ -8111,7 +8151,11 @@ async function fsUpdateSetting(key, value) {
   } else if (key === 'householdSize') {
     const v = parseFloat(value);
     fs.householdSize = (isFinite(v) && v >= 1) ? Math.round(v) : 1;
+  } else if (key === 'giftAmount') {
+    const v = parseFloat(value);
+    fs.giftAmount = (isFinite(v) && v >= 0) ? Math.min(FS_GIFT_MONTHLY_MAX, v) : 0;
   }
+  fsSyncBudgetIncome();
   await _saveBudget();
   _renderBudgetHtml();
 }
