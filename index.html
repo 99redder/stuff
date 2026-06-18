@@ -4590,7 +4590,7 @@ const BUDGET_EXPENSE_CATS = [
 
 let _bEdit = null; // { section: 'income'|catName, id: uuid|'new' }
 let _bSort = 'desc'; // 'alpha' | 'asc' | 'desc' — sorts the category cards themselves
-let _bIncomeSort = 'none'; // 'none' | 'asc' | 'desc' — sorts income rows by amount
+let _bIncomeSort = 'desc'; // default highest-to-lowest; controls can switch or clear
 let _chartCollapsed = true; // expense pie chart collapsed state
 let _bModal = null; // { incomeItemId, property } — property worksheet modal state
 
