@@ -5176,6 +5176,38 @@ const MB_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 
 const MB_YEAR_STATS_OPEN_KEY = 'rentals_mom_budget_year_stats_open';
 const MB_VARIABLE_FIXED_BILL_IDS = new Set(['electric', 'water', 'gas-heat']);
 
+// IRS Uniform Lifetime Table (2022+) — distribution period (divisor) by the age
+// the account owner reaches during the distribution year. RMD = balance / factor.
+const RMD_UNIFORM_LIFETIME = {
+  72: 27.4, 73: 26.5, 74: 25.5, 75: 24.6, 76: 23.7, 77: 22.9, 78: 22.0, 79: 21.1,
+  80: 20.2, 81: 19.4, 82: 18.5, 83: 17.7, 84: 16.8, 85: 16.0, 86: 15.2, 87: 14.4,
+  88: 13.7, 89: 12.9, 90: 12.2, 91: 11.5, 92: 10.8, 93: 10.1, 94: 9.5, 95: 8.9,
+  96: 8.4, 97: 7.8, 98: 7.3, 99: 6.8, 100: 6.4, 101: 6.0, 102: 5.6, 103: 5.2,
+  104: 4.9, 105: 4.6, 106: 4.3, 107: 4.1, 108: 3.9, 109: 3.7, 110: 3.5, 111: 3.4,
+  112: 3.3, 113: 3.1, 114: 3.0, 115: 2.9, 116: 2.8, 117: 2.7, 118: 2.5, 119: 2.3, 120: 2.0
+};
+
+// SECURE Act 2.0 RMD start age by birth year.
+function mbRmdStartAge(birthYear) {
+  if (birthYear >= 1960) return 75;
+  if (birthYear >= 1951) return 73;
+  return 72;  // born 1950 or earlier — RMDs already apply
+}
+
+function mbCalcRmd() {
+  const r = state.momBudget.rmd || {};
+  const year = CURRENT_YEAR;
+  const balance = Number(r.balance) || 0;
+  const birthYear = parseInt(r.birthYear, 10) || 0;
+  const age = birthYear ? year - birthYear : 0;
+  const startAge = birthYear ? mbRmdStartAge(birthYear) : 0;
+  const required = birthYear && age >= startAge;
+  const factorAge = Math.min(120, Math.max(72, age));
+  const factor = RMD_UNIFORM_LIFETIME[factorAge] || 0;
+  const rmd = (required && factor > 0) ? balance / factor : 0;
+  return { year, balance, birthYear, age, startAge, required, factor, rmd, monthly: rmd / 12 };
+}
+
 let _mbMonth = appTodayIso().slice(0, 7);
 let _mbFixedSort = 'amount';
 
@@ -5283,6 +5315,8 @@ function mbNormalize(raw) {
   delete data.template.variable.gas;        // she has no car — gas budget/ledger removed entirely
   data.template.variable.discretionary = Number(data.template.variable.discretionary ?? defaults.template.variable.discretionary);
   data.template.variableLocks = data.template.variableLocks || {};
+  // 401(k) RMD calculator inputs (global, not per-month).
+  data.rmd = (data.rmd && typeof data.rmd === 'object') ? data.rmd : { balance: 0, birthYear: '' };
   data.months = data.months || {};
   Object.entries(data.months).forEach(([monthKey, month]) => {
     month.fixedPaid = month.fixedPaid || {};
@@ -5581,6 +5615,7 @@ function _renderMomBudgetHtml() {
           emptyText: 'No fixed bill overages recorded for this month.',
           note: 'This fills automatically when a fixed bill is marked paid above its budgeted amount.'
         })}
+        ${mbRmdCard()}
       </div>
 
       <div class="tp-sticky">
@@ -5627,6 +5662,73 @@ function _renderMomBudgetHtml() {
 
 function mbLockButton(locked, onClick, title) {
   return `<button class="btn btn-ghost btn-sm mb-lock-btn ${locked ? 'is-locked' : 'is-unlocked'}" title="${escAttr(title)}" onclick="${escAttr(onClick)}">${locked ? '🔒 Locked' : '🔓 Open'}</button>`;
+}
+
+function mbRmdCard() {
+  const c = mbCalcRmd();
+  const priorYear = c.year - 1;
+  const r = state.momBudget.rmd || {};
+
+  let result;
+  if (!c.birthYear || !c.balance) {
+    result = `<div style="padding:.85rem 1rem;background:var(--surface);border:1px dashed var(--border);border-radius:var(--radius);color:var(--text-muted);font-size:.85rem">
+      Enter her 401(k) balance and birth year above to calculate the ${c.year} minimum withdrawal.</div>`;
+  } else if (!c.required) {
+    const startYear = c.birthYear + c.startAge;
+    result = `<div style="padding:.85rem 1rem;background:rgba(37,99,235,.08);border:1px solid rgba(37,99,235,.25);border-radius:var(--radius);font-size:.85rem">
+      <strong>No RMD required yet.</strong> At age ${c.age} in ${c.year}, she isn't subject to required minimum distributions. They begin at age <strong>${c.startAge}</strong> (in ${startYear}).</div>`;
+  } else {
+    result = `
+      <div style="padding:1rem;background:linear-gradient(135deg,rgba(37,99,235,.08),rgba(16,185,129,.07));border:2px solid var(--primary);border-radius:var(--radius)">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Minimum withdrawal for ${c.year}</div>
+        <div style="font-size:2rem;font-weight:800;line-height:1.1;margin:.15rem 0;color:var(--primary)">${fmt(c.rmd)}</div>
+        <div style="font-size:.82rem;color:var(--text-muted)">≈ ${fmt(c.monthly)} / month if taken monthly</div>
+        <div style="margin-top:.6rem;padding-top:.5rem;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:.25rem 1.25rem;font-size:.78rem;color:var(--text-muted)">
+          <span>Age in ${c.year}: <strong>${c.age}</strong></span>
+          <span>IRS factor: <strong>${c.factor}</strong></span>
+          <span>${fmt(c.balance)} ÷ ${c.factor}</span>
+        </div>
+      </div>`;
+  }
+
+  return `
+    <div class="card tp-card">
+      <div class="card-header"><div class="card-title">401(k) Minimum Distribution (RMD)</div></div>
+      <div class="card-body">
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:.85rem">
+          <div style="flex:1;min-width:160px">
+            <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">401(k) balance on Dec 31, ${priorYear}</label>
+            <div style="position:relative">
+              <span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
+              <input type="number" class="form-input" min="0" step="0.01" value="${escAttr(r.balance ? String(r.balance) : '')}" placeholder="0.00"
+                     onchange="mbUpdateRmd('balance', this.value)" style="width:100%;padding-left:1.5rem;font-weight:600">
+            </div>
+          </div>
+          <div style="flex:1;min-width:130px">
+            <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Her birth year</label>
+            <input type="number" class="form-input" min="1900" max="${c.year}" step="1" value="${escAttr(r.birthYear ? String(r.birthYear) : '')}" placeholder="e.g. 1953"
+                   onchange="mbUpdateRmd('birthYear', this.value)" style="width:100%;font-weight:600">
+          </div>
+        </div>
+        ${result}
+        <div style="font-size:.72rem;color:var(--text-muted);margin-top:.6rem;line-height:1.5">
+          Uses the prior year-end balance ÷ the IRS Uniform Lifetime Table factor for the age she reaches this year. Estimate only — confirm with her plan administrator or CPA, and note 401(k) RMDs must be taken from the 401(k) itself.
+        </div>
+      </div>
+    </div>`;
+}
+
+async function mbUpdateRmd(field, value) {
+  if (!state.momBudget.rmd) state.momBudget.rmd = { balance: 0, birthYear: '' };
+  if (field === 'balance') {
+    const v = parseFloat(value);
+    state.momBudget.rmd.balance = (isFinite(v) && v >= 0) ? v : 0;
+  } else if (field === 'birthYear') {
+    const v = parseInt(value, 10);
+    state.momBudget.rmd.birthYear = (isFinite(v) && v >= 1900 && v <= CURRENT_YEAR) ? v : '';
+  }
+  _renderMomBudgetHtml();
+  await _saveMomBudget();
 }
 
 function mbFixedTemplateSubtitle(item) {
