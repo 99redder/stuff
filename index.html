@@ -7926,10 +7926,10 @@ function fsItemShared(item, cat, fs) {
 function fsDefaultParticipants(item, cat, householdSize) {
   const name = String(item.name || '').trim().toLowerCase();
   const isPhone = /\b(phone|phones|cell|cellular|mobile|wireless)\b/.test(name);
-  const isCarInsurance = cat === 'Insurance'
-    && /\b(car|auto|automobile|vehicle)\b/.test(name)
-    && /\binsurance\b/.test(name);
-  return (isPhone || isCarInsurance) ? Math.min(3, householdSize) : householdSize;
+  const isCarsCategory = cat === 'Cars';
+  const isCarInsurance = /\binsurance\b/.test(name)
+    && (isCarsCategory || /\b(car|auto|automobile|vehicle)\b/.test(name));
+  return (isPhone || isCarsCategory || isCarInsurance) ? Math.min(3, householdSize) : householdSize;
 }
 
 function fsItemParticipants(item, cat, fs) {
