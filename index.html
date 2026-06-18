@@ -5199,6 +5199,7 @@ function mbRmdStartAge(birthYear) {
 const MOM_RMD_BIRTH_LABEL = 'August 12, 1952';
 const MOM_RMD_BIRTH_YEAR = 1952;
 const MOM_RMD_MAX_PROJECTION_YEAR = 2100;
+const MOM_RMD_TAX_WITHHOLDING_RATE = 0.20;
 
 function mbNormalizeRmdYear(value) {
   const year = Math.trunc(Number(value));
@@ -5218,7 +5219,12 @@ function mbCalcRmd() {
   const factorAge = Math.min(120, Math.max(72, age));
   const factor = RMD_UNIFORM_LIFETIME[factorAge] || 0;
   const rmd = (required && factor > 0) ? balance / factor : 0;
-  return { year, balance, birthYear, age, startAge, required, factor, rmd, monthly: rmd / 12 };
+  const withholding = rmd * MOM_RMD_TAX_WITHHOLDING_RATE;
+  const net = rmd - withholding;
+  return {
+    year, balance, birthYear, age, startAge, required, factor,
+    rmd, monthly: rmd / 12, withholding, net, netMonthly: net / 12
+  };
 }
 
 let _mbMonth = appTodayIso().slice(0, 7);
@@ -5687,7 +5693,7 @@ function mbRmdCard() {
   let result;
   if (!c.balance) {
     result = `<div style="padding:.85rem 1rem;background:var(--surface);border:1px dashed var(--border);border-radius:var(--radius);color:var(--text-muted);font-size:.85rem">
-      Enter her 401(k) balance above to calculate the ${c.year} minimum withdrawal.</div>`;
+      Enter her traditional 401(k) balance above to calculate the ${c.year} minimum withdrawal.</div>`;
   } else if (!c.required) {
     const startYear = c.birthYear + c.startAge;
     result = `<div style="padding:.85rem 1rem;background:rgba(37,99,235,.08);border:1px solid rgba(37,99,235,.25);border-radius:var(--radius);font-size:.85rem">
@@ -5695,9 +5701,14 @@ function mbRmdCard() {
   } else {
     result = `
       <div style="padding:1rem;background:linear-gradient(135deg,rgba(37,99,235,.08),rgba(16,185,129,.07));border:2px solid var(--primary);border-radius:var(--radius)">
-        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Minimum withdrawal for ${c.year}</div>
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Gross minimum withdrawal for ${c.year}</div>
         <div style="font-size:2rem;font-weight:800;line-height:1.1;margin:.15rem 0;color:var(--primary)">${fmt(c.rmd)}</div>
-        <div style="font-size:.82rem;color:var(--text-muted)">≈ ${fmt(c.monthly)} / month if taken monthly</div>
+        <div style="font-size:.82rem;color:var(--text-muted)">≈ ${fmt(c.monthly)} / month gross if taken monthly</div>
+        <div style="margin-top:.65rem;padding:.65rem .75rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:.5rem 1rem;font-size:.82rem">
+          <div><span style="display:block;color:var(--text-muted);font-size:.72rem">Tax withheld (20%)</span><strong>${fmt(c.withholding)}</strong></div>
+          <div><span style="display:block;color:var(--text-muted);font-size:.72rem">Estimated net received</span><strong style="color:var(--success)">${fmt(c.net)}</strong></div>
+          <div><span style="display:block;color:var(--text-muted);font-size:.72rem">Net per month</span><strong>${fmt(c.netMonthly)}</strong></div>
+        </div>
         <div style="margin-top:.6rem;padding-top:.5rem;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:.25rem 1.25rem;font-size:.78rem;color:var(--text-muted)">
           <span>Age in ${c.year}: <strong>${c.age}</strong></span>
           <span>IRS factor: <strong>${c.factor}</strong></span>
@@ -5708,7 +5719,7 @@ function mbRmdCard() {
 
   return `
     <div class="card tp-card">
-      <div class="card-header"><div class="card-title">401(k) Minimum Distribution (RMD)</div></div>
+      <div class="card-header"><div class="card-title">Traditional 401(k) Minimum Distribution (RMD)</div></div>
       <div class="card-body">
         <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.85rem">
           <div style="flex:0 1 130px;min-width:120px">
@@ -5717,7 +5728,7 @@ function mbRmdCard() {
                    value="${c.year}" onchange="mbUpdateRmd('year', this.value)" style="width:100%;font-weight:600">
           </div>
           <div style="flex:1;min-width:170px">
-            <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">401(k) balance on Dec 31, ${priorYear}</label>
+            <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Traditional 401(k) gross balance on Dec 31, ${priorYear}</label>
             <div style="position:relative">
               <span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
               <input type="number" class="form-input" min="0" step="0.01" value="${escAttr(r.balance ? String(r.balance) : '')}" placeholder="0.00"
@@ -5731,7 +5742,7 @@ function mbRmdCard() {
         </div>
         ${result}
         <div style="font-size:.72rem;color:var(--text-muted);margin-top:.6rem;line-height:1.5">
-          Assumes she's <strong>retired</strong> (no still-working delay) and has <strong>no spouse</strong>, so the IRS <strong>Uniform Lifetime Table</strong> applies. RMD = prior year-end balance ÷ the table factor for the age she reaches in the selected distribution year. Future-year results are projections based on the balance entered. Estimate only — confirm with her plan administrator or CPA; 401(k) RMDs must be taken from the 401(k) itself.
+          Uses the full pre-tax traditional 401(k) balance. The gross RMD satisfies the withdrawal requirement; the net estimate subtracts the plan's automatic <strong>20% tax withholding</strong>. Assumes she's <strong>retired</strong> (no still-working delay) and has <strong>no spouse</strong>, so the IRS <strong>Uniform Lifetime Table</strong> applies. Future-year results are projections based on the balance entered. Estimate only — actual tax owed may differ from the amount withheld; confirm with her plan administrator or CPA.
         </div>
       </div>
     </div>`;
