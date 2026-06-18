@@ -315,10 +315,11 @@ Separate public read-only page for an Android/Samsung Galaxy phone:
 This page has no password gate and no editing controls. It is meant to be installed to Red's mother's phone as a simple PWA that shows:
 
 - Current month `Overall Spending Left` prominently
+- `Fair Share` — her monthly household contribution (read-only, computed live from the family budget)
 - `Discretionary Left`
 - Optional collapsed year status showing allocated, used, and under/over allocated
 
-The page fetches only `get_mom_budget_public_summary`, a public Worker action that returns precomputed read-only numbers. It must never call `get_mom_budget`, `save_mom_budget`, or any authenticated/editing action. **The worker keeps its own parallel copy of the Mom Budget math** (`normalizeMomBudget` / `momBudgetTemplateTotals` / `calcMomBudgetMonth`) — when changing the frontend's `mbCalcMonth`/template, mirror it here or the phone shows stale numbers. (Groceries were removed from both.)
+The page fetches only `get_mom_budget_public_summary`, a public Worker action that returns precomputed read-only numbers. It must never call `get_mom_budget`, `save_mom_budget`, or any authenticated/editing action. **The worker keeps its own parallel copy of the Mom Budget math** (`normalizeMomBudget` / `momBudgetTemplateTotals` / `calcMomBudgetMonth`) — when changing the frontend's `mbCalcMonth`/template, mirror it here or the phone shows stale numbers. (Groceries and Gas were removed from both.) The `month.fairShare` field is computed by `calcFairShareFromBudget(budget)` — a mirror of the frontend `fsCalc()` (shared budget expenses ÷ household size) that reads the `budget` KV record directly, so it stays accurate even if the `mom_budget` record's fair-share line is stale. `FS_SHARED_CAT_DEFAULTS` in the worker must match index.html.
 
 The service worker is intentionally network-first and calls `registration.update()` on launch so the installed PWA gets the newest page/assets when opened. If changing the phone PWA files, bump `CACHE_NAME` in `mom-budget-sw.js` if cached asset behavior matters.
 
@@ -516,7 +517,7 @@ All calls: `POST /api/data` with JSON body `{ action, property, ...payload }`.
 |---|---|---|
 | `get_mom_budget` | — | `{ data: { template, months } }` |
 | `save_mom_budget` | `data: { template, months }` | `{ success: true }` — full overwrite of the `mom_budget` KV record |
-| `get_mom_budget_public_summary` | optional `month: "YYYY-MM"` | `{ monthKey, monthLabel, updatedAt, month: {...}, year: {...} }` — public unauthenticated read-only summary for `mom-budget-phone.html`; returns calculated numbers only, never raw editable records. Guarded by a per-IP rate limit (`env.PUBLIC_RATELIMIT`, 60 req/60s → `429`, fails open) and a ~45s edge cache (synthetic GET cache key keyed by month, `Cache-Control: public, s-maxage=45`). Both are invisible to the phone and cap bot/flood abuse. |
+| `get_mom_budget_public_summary` | optional `month: "YYYY-MM"` | `{ monthKey, monthLabel, updatedAt, month: { overallSpendingRemaining, discretionaryRemaining, discretionaryAdjusted, otherOverages, discretionarySpent, fairShare }, year: {...} }` — public unauthenticated read-only summary for `mom-budget-phone.html`; returns calculated numbers only, never raw editable records. `month.fairShare` is computed live from the `budget` KV record (`calcFairShareFromBudget`). Guarded by a per-IP rate limit (`env.PUBLIC_RATELIMIT`, 60 req/60s → `429`, fails open) and a ~45s edge cache (synthetic GET cache key keyed by month, `Cache-Control: public, s-maxage=45`). Both are invisible to the phone and cap bot/flood abuse. |
 
 #### Deductions (global — not per-property)
 | Action | Extra payload | Returns |
@@ -635,6 +636,10 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-06-18 — Mom Budget phone PWA: Fair Share card
+
+- Added a **Fair Share** card to `mom-budget-phone.html` (between Overall Spending Left and Discretionary Left) showing her monthly household contribution. The worker's `get_mom_budget_public_summary` now returns `month.fairShare`, computed live from the `budget` KV record by `calcFairShareFromBudget()` (a mirror of the frontend `fsCalc()` + `FS_SHARED_CAT_DEFAULTS`), so it reflects the latest household bills even if the `mom_budget` record's fair-share line is stale. `mom-budget-sw.js` `CACHE_NAME` bumped to `v7`.
 
 ### 2026-06-17 — Mom Budget: simplified Month Math
 

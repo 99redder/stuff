@@ -602,6 +602,45 @@ async function handleSaveBudget(env, data) {
 
 // ── Mom Budget ───────────────────────────────────────────────────────────────
 
+// ── Fair Share (mirror of the frontend's fsCalc, for the public phone summary) ──
+// Which budget expense categories count as shared (split across the household)
+// by default. Must match FS_SHARED_CAT_DEFAULTS in index.html.
+const FS_SHARED_CAT_DEFAULTS = {
+  'Weekly Spending': true,
+  'Utilities': true,
+  'Services': true,
+  'Mortgage': true,
+  'Insurance': true,
+  'Travel': false,
+  'Cars': false,
+  'Retirement Savings': false,
+  'School Savings': false,
+  'Investments': false,
+  'Misc Savings': false,
+};
+
+// Her monthly Fair Share = shared budget expenses ÷ household size (rounded).
+function calcFairShareFromBudget(budget) {
+  if (!budget || typeof budget !== 'object') return 0;
+  const fs = (budget.fairShare && typeof budget.fairShare === 'object') ? budget.fairShare : {};
+  const householdSize = (typeof fs.householdSize === 'number' && fs.householdSize >= 1) ? Math.round(fs.householdSize) : 5;
+  const roundDollar = (fs.roundDollar !== undefined) ? !!fs.roundDollar : (fs.roundUp !== false);
+  const shared = (fs.shared && typeof fs.shared === 'object') ? fs.shared : {};
+  const expenses = (budget.expenses && typeof budget.expenses === 'object') ? budget.expenses : {};
+  let totalShared = 0;
+  for (const cat of Object.keys(expenses)) {
+    const items = Array.isArray(expenses[cat]) ? expenses[cat] : [];
+    for (const item of items) {
+      const isShared = Object.prototype.hasOwnProperty.call(shared, item.id)
+        ? !!shared[item.id]
+        : !!FS_SHARED_CAT_DEFAULTS[cat];
+      if (isShared) totalShared += (Number(item.amount) || 0);
+    }
+  }
+  const perPerson = totalShared / Math.max(1, householdSize);
+  return roundDollar ? Math.round(perPerson) : perPerson;
+}
+
 const MOM_BUDGET_DEFAULT = {
   template: {
     income: [
@@ -674,6 +713,12 @@ async function handleGetMomBudgetPublicSummary(request, env, requestedMonth) {
   const month = calcMomBudgetMonth(data, monthKey);
   const yearSummary = calcMomBudgetYear(data, year);
 
+  // Fair Share is computed live from the family budget (its shared expenses ÷
+  // household size), the same source the main app uses — not the possibly-stale
+  // copy stored on the mom_budget fixed line.
+  const budgetRaw = await env.RENTALS.get('budget', 'json') || {};
+  const fairShare = calcFairShareFromBudget(budgetRaw);
+
   const response = new Response(JSON.stringify({
     monthKey,
     monthLabel: monthLabel(monthKey),
@@ -683,7 +728,8 @@ async function handleGetMomBudgetPublicSummary(request, env, requestedMonth) {
       discretionaryRemaining: month.discretionaryRemaining,
       otherOverages: month.otherOverages,
       discretionarySpent: month.discretionarySpent,
-      discretionaryAdjusted: month.discretionaryAdjusted
+      discretionaryAdjusted: month.discretionaryAdjusted,
+      fairShare
     },
     year: yearSummary
   }), {
