@@ -5464,8 +5464,6 @@ function _renderMomBudgetHtml() {
     ...fixedOverageRows,
     ...(m.otherExpenses || []).map(entry => ({ ...entry, legacy: true }))
   ];
-  const reserveFixedItems = t.fixed.filter(mbIsReserveBill);
-  const reserveAllPaid = reserveFixedItems.length > 0 && reserveFixedItems.every(item => !!m.fixedPaid?.[item.id]);
   const monthOptions = Object.keys(state.momBudget.months)
     .sort().reverse()
     .map(k => `<option value="${escAttr(k)}"${k === _mbMonth ? ' selected' : ''}>${escHtml(k)}</option>`)
@@ -5565,8 +5563,7 @@ function _renderMomBudgetHtml() {
         <div class="card tp-card">
           <div class="card-header" style="gap:.75rem;flex-wrap:wrap">
             <div class="card-title">Fixed Bills — ${escHtml(_mbMonth)}</div>
-            <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="mbMarkReserveBillsPaid()" ${reserveFixedItems.length ? '' : 'disabled'}>${reserveAllPaid ? 'Reserve Bills Paid' : 'Mark Reserve Bills Paid'}</button>
-            <select class="form-input mb-fixed-sort" onchange="mbSetFixedSort(this.value)">
+            <select class="form-input mb-fixed-sort" style="margin-left:auto" onchange="mbSetFixedSort(this.value)">
               <option value="template"${_mbFixedSort === 'template' ? ' selected' : ''}>Template order</option>
               <option value="amount"${_mbFixedSort === 'amount' ? ' selected' : ''}>Amount high to low</option>
               <option value="az"${_mbFixedSort === 'az' ? ' selected' : ''}>A to Z</option>
@@ -5805,22 +5802,6 @@ async function mbToggleFixed(id, checked) {
   } else {
     delete m.fixedActual[id];
   }
-  _renderMomBudgetHtml();
-  await _saveMomBudget();
-}
-
-async function mbMarkReserveBillsPaid() {
-  const m = state.momBudget.months[_mbMonth] || (state.momBudget.months[_mbMonth] = mbBlankMonth());
-  if (!m.fixedPaid) m.fixedPaid = {};
-  if (!m.fixedActual) m.fixedActual = {};
-  state.momBudget.template.fixed
-    .filter(mbIsReserveBill)
-    .forEach(item => {
-      m.fixedPaid[item.id] = true;
-      if (!m.fixedActual[item.id]) {
-        m.fixedActual[item.id] = mbFixedExpectedPayment(item, _mbMonth) || (Number(item.amount) || 0);
-      }
-    });
   _renderMomBudgetHtml();
   await _saveMomBudget();
 }

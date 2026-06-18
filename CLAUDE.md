@@ -245,8 +245,7 @@ Now that the mother lives with the family, her household bills are wrapped into 
 
 **Reserve bills:**
 - `mbIsReserveBill(item)` returns true when `item.frequency && item.frequency !== 'monthly'`
-- Reserve bills are exactly the rows affected by the `Mark Reserve Bills Paid` button in the Fixed Bills card.
-- Those rows display a `Reserve Bill` badge, using the same predicate as the button.
+- Such rows display a `Reserve Bill` badge. (The bulk **Mark Reserve Bills Paid** button was removed — the remaining default bills are all monthly, so there are no reserve bills. The predicate/badge remain for any custom non-monthly bill.)
 - Frequencies:
   - `monthly`: due every month
   - `yearly`: due once in `dueMonth`
@@ -636,6 +635,11 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-06-17 — Mom Budget: removed Cell Phone + Mark Reserve Bills Paid button
+
+- **Cell Phone removed** (she's on the family cell plan) via the one-time `cellTrimmed` migration in `mbNormalize`. Default fixed list is now just `fair-share`, `medical`.
+- **`Mark Reserve Bills Paid` button removed** from the Fixed Bills card header (and the `mbMarkReserveBillsPaid()` function + `reserveFixedItems`/`reserveAllPaid` locals deleted). No remaining default bills are reserve bills. `mbIsReserveBill()` and the `Reserve Bill` badge are kept for any custom non-monthly bill.
 
 ### 2026-06-17 — Mom Budget: removed Gas + car/streaming bills
 
