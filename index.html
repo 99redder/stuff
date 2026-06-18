@@ -5195,14 +5195,21 @@ function mbRmdStartAge(birthYear) {
 }
 
 // Red's mother's fixed facts: born 8/12/1952, retired (no still-working delay),
-// no spouse (so the IRS Uniform Lifetime Table applies). Only her year-end
-// balance varies, so it's the lone input.
+// no spouse (so the IRS Uniform Lifetime Table applies).
 const MOM_RMD_BIRTH_LABEL = 'August 12, 1952';
 const MOM_RMD_BIRTH_YEAR = 1952;
+const MOM_RMD_MAX_PROJECTION_YEAR = 2100;
+
+function mbNormalizeRmdYear(value) {
+  const year = Math.trunc(Number(value));
+  return Number.isFinite(year)
+    ? Math.min(MOM_RMD_MAX_PROJECTION_YEAR, Math.max(CURRENT_YEAR, year))
+    : CURRENT_YEAR;
+}
 
 function mbCalcRmd() {
   const r = state.momBudget.rmd || {};
-  const year = CURRENT_YEAR;
+  const year = mbNormalizeRmdYear(r.year);
   const balance = Number(r.balance) || 0;
   const birthYear = MOM_RMD_BIRTH_YEAR;
   const age = year - birthYear;
@@ -5321,9 +5328,10 @@ function mbNormalize(raw) {
   delete data.template.variable.gas;        // she has no car — gas budget/ledger removed entirely
   data.template.variable.discretionary = Number(data.template.variable.discretionary ?? defaults.template.variable.discretionary);
   data.template.variableLocks = data.template.variableLocks || {};
-  // 401(k) RMD calculator input (global, not per-month). Birth date is a fixed
-  // constant (MOM_RMD_BIRTH_YEAR) — only the year-end balance is stored.
+  // 401(k) RMD calculator inputs are global, not per-month. Existing records
+  // without a projection year default to the current year.
   data.rmd = (data.rmd && typeof data.rmd === 'object') ? data.rmd : { balance: 0 };
+  data.rmd.year = mbNormalizeRmdYear(data.rmd.year);
   data.months = data.months || {};
   Object.entries(data.months).forEach(([monthKey, month]) => {
     month.fixedPaid = month.fixedPaid || {};
@@ -5703,6 +5711,11 @@ function mbRmdCard() {
       <div class="card-header"><div class="card-title">401(k) Minimum Distribution (RMD)</div></div>
       <div class="card-body">
         <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.85rem">
+          <div style="flex:0 1 130px;min-width:120px">
+            <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Distribution year</label>
+            <input type="number" class="form-input" min="${CURRENT_YEAR}" max="${MOM_RMD_MAX_PROJECTION_YEAR}" step="1"
+                   value="${c.year}" onchange="mbUpdateRmd('year', this.value)" style="width:100%;font-weight:600">
+          </div>
           <div style="flex:1;min-width:170px">
             <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">401(k) balance on Dec 31, ${priorYear}</label>
             <div style="position:relative">
@@ -5718,17 +5731,19 @@ function mbRmdCard() {
         </div>
         ${result}
         <div style="font-size:.72rem;color:var(--text-muted);margin-top:.6rem;line-height:1.5">
-          Assumes she's <strong>retired</strong> (no still-working delay) and has <strong>no spouse</strong>, so the IRS <strong>Uniform Lifetime Table</strong> applies. RMD = prior year-end balance ÷ the table factor for the age she reaches this year. Estimate only — confirm with her plan administrator or CPA; 401(k) RMDs must be taken from the 401(k) itself.
+          Assumes she's <strong>retired</strong> (no still-working delay) and has <strong>no spouse</strong>, so the IRS <strong>Uniform Lifetime Table</strong> applies. RMD = prior year-end balance ÷ the table factor for the age she reaches in the selected distribution year. Future-year results are projections based on the balance entered. Estimate only — confirm with her plan administrator or CPA; 401(k) RMDs must be taken from the 401(k) itself.
         </div>
       </div>
     </div>`;
 }
 
 async function mbUpdateRmd(field, value) {
-  if (!state.momBudget.rmd) state.momBudget.rmd = { balance: 0 };
+  if (!state.momBudget.rmd) state.momBudget.rmd = { balance: 0, year: CURRENT_YEAR };
   if (field === 'balance') {
     const v = parseFloat(value);
     state.momBudget.rmd.balance = (isFinite(v) && v >= 0) ? v : 0;
+  } else if (field === 'year') {
+    state.momBudget.rmd.year = mbNormalizeRmdYear(value);
   }
   _renderMomBudgetHtml();
   await _saveMomBudget();
