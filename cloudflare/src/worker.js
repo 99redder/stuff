@@ -619,7 +619,26 @@ const FS_SHARED_CAT_DEFAULTS = {
   'Misc Savings': false,
 };
 
-// Her monthly Fair Share = shared budget expenses ÷ household size (rounded).
+function fairShareDefaultParticipants(item, category, householdSize) {
+  const name = String(item?.name || '').trim().toLowerCase();
+  const isPhone = /\b(phone|phones|cell|cellular|mobile|wireless)\b/.test(name);
+  const isCarsCategory = category === 'Cars';
+  const isCarInsurance = /\binsurance\b/.test(name)
+    && (isCarsCategory || /\b(car|auto|automobile|vehicle)\b/.test(name));
+  return (isPhone || isCarsCategory || isCarInsurance)
+    ? Math.min(3, householdSize)
+    : householdSize;
+}
+
+function fairShareItemParticipants(item, category, fairShare, householdSize) {
+  const saved = Number(fairShare.participants?.[item.id]);
+  if (Number.isFinite(saved) && saved >= 1) {
+    return Math.min(householdSize, Math.round(saved));
+  }
+  return fairShareDefaultParticipants(item, category, householdSize);
+}
+
+// Her monthly Fair Share = the sum of her portion of each shared expense.
 function calcFairShareFromBudget(budget) {
   if (!budget || typeof budget !== 'object') return 0;
   const fs = (budget.fairShare && typeof budget.fairShare === 'object') ? budget.fairShare : {};
@@ -627,18 +646,25 @@ function calcFairShareFromBudget(budget) {
   const roundDollar = (fs.roundDollar !== undefined) ? !!fs.roundDollar : (fs.roundUp !== false);
   const shared = (fs.shared && typeof fs.shared === 'object') ? fs.shared : {};
   const expenses = (budget.expenses && typeof budget.expenses === 'object') ? budget.expenses : {};
-  let totalShared = 0;
+  let herShare = 0;
   for (const cat of Object.keys(expenses)) {
     const items = Array.isArray(expenses[cat]) ? expenses[cat] : [];
     for (const item of items) {
       const isShared = Object.prototype.hasOwnProperty.call(shared, item.id)
         ? !!shared[item.id]
         : !!FS_SHARED_CAT_DEFAULTS[cat];
-      if (isShared) totalShared += (Number(item.amount) || 0);
+      if (isShared) {
+        const participants = fairShareItemParticipants(item, cat, fs, householdSize);
+        herShare += (Number(item.amount) || 0) / participants;
+      }
     }
   }
-  const perPerson = totalShared / Math.max(1, householdSize);
-  return roundDollar ? Math.round(perPerson) : perPerson;
+  return roundDollar ? Math.round(herShare) : herShare;
+}
+
+function giftAmountFromBudget(budget) {
+  const amount = Number(budget?.fairShare?.giftAmount);
+  return Number.isFinite(amount) ? Math.min(250, Math.max(0, amount)) : 200;
 }
 
 const MOM_BUDGET_DEFAULT = {
@@ -650,6 +676,7 @@ const MOM_BUDGET_DEFAULT = {
     fixed: [
       // Household bills wrapped into one auto-synced Fair Share line (she lives with family).
       { id: 'fair-share', name: 'Fair Share (household)', amount: 0, frequency: 'monthly', auto: true, locked: true },
+      { id: 'family-gift', name: 'Gift to Chris & Family', amount: 200, frequency: 'monthly', auto: true, locked: true },
       { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 }
     ],
     variable: { discretionary: 500 },
@@ -708,16 +735,16 @@ async function handleGetMomBudgetPublicSummary(request, env, requestedMonth) {
   if (cached) return cached;
 
   const year = monthKey.slice(0, 4);
-  const raw = await env.RENTALS.get('mom_budget', 'json') || {};
-  const data = normalizeMomBudget(raw);
-  const month = calcMomBudgetMonth(data, monthKey);
-  const yearSummary = calcMomBudgetYear(data, year);
-
-  // Fair Share is computed live from the family budget (its shared expenses ÷
-  // household size), the same source the main app uses — not the possibly-stale
-  // copy stored on the mom_budget fixed line.
+  // Compute both transfers live from the family budget, the same source the main
+  // app uses, rather than relying on possibly-stale copies in mom_budget.
   const budgetRaw = await env.RENTALS.get('budget', 'json') || {};
   const fairShare = calcFairShareFromBudget(budgetRaw);
+  const giftAmount = giftAmountFromBudget(budgetRaw);
+  const raw = await env.RENTALS.get('mom_budget', 'json') || {};
+  const data = normalizeMomBudget(raw);
+  syncMomHouseholdTransfers(data, fairShare, giftAmount);
+  const month = calcMomBudgetMonth(data, monthKey);
+  const yearSummary = calcMomBudgetYear(data, year);
 
   const response = new Response(JSON.stringify({
     monthKey,
@@ -729,7 +756,8 @@ async function handleGetMomBudgetPublicSummary(request, env, requestedMonth) {
       otherOverages: month.otherOverages,
       discretionarySpent: month.discretionarySpent,
       discretionaryAdjusted: month.discretionaryAdjusted,
-      fairShare
+      fairShare,
+      giftAmount
     },
     year: yearSummary
   }), {
@@ -812,6 +840,13 @@ function normalizeMomBudget(raw) {
   data.template = data.template || defaults.template;
   data.template.income = Array.isArray(data.template.income) ? data.template.income : defaults.template.income;
   data.template.fixed = Array.isArray(data.template.fixed) ? data.template.fixed : defaults.template.fixed;
+  if (!data.template.fixed.some(item => item.id === 'fair-share')) {
+    data.template.fixed.unshift(cloneJson(defaults.template.fixed.find(item => item.id === 'fair-share')));
+  }
+  if (!data.template.fixed.some(item => item.id === 'family-gift')) {
+    const fairShareIndex = data.template.fixed.findIndex(item => item.id === 'fair-share');
+    data.template.fixed.splice(fairShareIndex + 1, 0, cloneJson(defaults.template.fixed.find(item => item.id === 'family-gift')));
+  }
 
   const gasFixedItem = data.template.fixed.find(item => item.id === 'gas' || String(item.name || '').trim().toLowerCase() === 'gas');
   data.template.fixed.forEach(item => {
@@ -842,6 +877,20 @@ function normalizeMomBudget(raw) {
     month.otherExpenses = Array.isArray(month.otherExpenses) ? month.otherExpenses : [];
   });
   return data;
+}
+
+function syncMomHouseholdTransfers(data, fairShare, giftAmount) {
+  const sync = (id, amount) => {
+    const item = data.template.fixed.find(entry => entry.id === id);
+    if (!item) return;
+    item.amount = amount;
+    item.paymentAmount = amount;
+    item.frequency = 'monthly';
+    item.auto = true;
+    item.locked = true;
+  };
+  sync('fair-share', fairShare);
+  sync('family-gift', giftAmount);
 }
 
 function momBudgetTemplateTotals(data) {

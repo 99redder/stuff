@@ -147,6 +147,8 @@
       padding: 18px 16px;
     }
 
+    .transfer { margin-bottom: 12px; }
+
     .category-name {
       min-width: 0;
       font-size: 1.3rem;
@@ -269,12 +271,20 @@
       <div class="note">Includes discretionary and any other overage amounts.</div>
     </section>
 
-    <section class="card category" aria-label="Fair Share">
+    <section class="card category transfer" aria-label="Fair Share">
       <div>
         <div class="category-name">Fair Share</div>
         <div class="category-sub">Your monthly household contribution</div>
       </div>
       <div class="category-amount" id="fair-share">$0</div>
+    </section>
+
+    <section class="card category transfer" aria-label="Family Gift">
+      <div>
+        <div class="category-name">Family Gift</div>
+        <div class="category-sub">Separate voluntary monthly gift</div>
+      </div>
+      <div class="category-amount" id="family-gift">$0</div>
     </section>
 
     <section class="grid" aria-label="Category balances">
@@ -310,6 +320,7 @@
       status: document.getElementById('status'),
       overall: document.getElementById('overall'),
       fairShare: document.getElementById('fair-share'),
+      familyGift: document.getElementById('family-gift'),
       discretionary: document.getElementById('discretionary'),
       discretionarySub: document.getElementById('discretionary-sub'),
       updated: document.getElementById('updated'),
@@ -403,6 +414,7 @@
       els.month.textContent = data.monthLabel || data.monthKey || 'Current month';
       setAmount(els.overall, month.overallSpendingRemaining);
       els.fairShare.textContent = money(month.fairShare);
+      els.familyGift.textContent = money(month.giftAmount);
       setAmount(els.discretionary, month.discretionaryRemaining);
       els.discretionarySub.textContent = `Adjusted budget: ${money(month.discretionaryAdjusted)}`;
       els.yearTitle.textContent = `${year.year || new Date().getFullYear()} Year Status`;
