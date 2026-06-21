@@ -7558,7 +7558,9 @@ function _renderSavingsHtml() {
   const stats = savingsObligationStats();
 
   const totalLiquid = (s.accounts.robinhood || 0) + (s.accounts.ibkr || 0);
-  const progressPct = stats.totalAnnual > 0 ? Math.min(100, (stats.totalPaid / stats.totalAnnual) * 100) : 0;
+  const fundingDelta = totalLiquid - stats.outstanding;
+  const hasFundingSurplus = fundingDelta >= 0;
+  const coveragePct = stats.outstanding > 0 ? Math.min(999, (totalLiquid / stats.outstanding) * 100) : 100;
   const obligationProgress = s.obligations.map(o => ({ obligation: o, progress: savProgressFor(o, paidMap) }));
   const statusCounts = obligationProgress.reduce((acc, item) => {
     const p = item.progress;
@@ -7581,22 +7583,25 @@ function _renderSavingsHtml() {
   }, { needsCount: 0, needsAmount: 0, partialCount: 0, partialAmount: 0, doneCount: 0, doneAmount: 0, staticCount: 0, staticDoneCount: 0 });
 
   const statsBar = `
-    <div style="display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:1.25rem;padding:.75rem 1rem;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius)">
-      <div><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">${year} Annual Obligations</div>
-           <div style="font-size:1.3rem;font-weight:700">${fmt(stats.totalAnnual)}</div></div>
-      <div><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Paid So Far</div>
-           <div style="font-size:1.3rem;font-weight:700;color:var(--success)">${fmt(stats.totalPaid)}</div>
-           <div style="font-size:.7rem;color:var(--text-muted)">${stats.paidSlots} / ${stats.totalSlots} installments</div></div>
-      <div><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Outstanding</div>
-           <div style="font-size:1.3rem;font-weight:700;color:var(--danger)">${fmt(stats.outstanding)}</div></div>
-      <div><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Liquid in Accounts</div>
-           <div style="font-size:1.3rem;font-weight:700">${fmt(totalLiquid)}</div></div>
-      <div style="flex:1;min-width:220px;align-self:center">
-        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.25rem">${year} Progress</div>
-        <div style="height:.6rem;background:var(--border);border-radius:999px;overflow:hidden">
-          <div style="height:100%;width:${progressPct}%;background:linear-gradient(90deg,#10b981,#059669)"></div>
-        </div>
-        <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem">${progressPct.toFixed(0)}% paid</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.85rem;margin-bottom:1.25rem">
+      <div style="padding:1rem 1.1rem;background:${hasFundingSurplus ? 'rgba(16,185,129,.10)' : 'rgba(220,38,38,.08)'};border:1px solid ${hasFundingSurplus ? 'rgba(16,185,129,.35)' : 'rgba(220,38,38,.30)'};border-radius:var(--radius)">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.2rem">Funding ${hasFundingSurplus ? 'Surplus' : 'Shortfall'}</div>
+        <div style="font-size:1.75rem;font-weight:800;line-height:1;color:${hasFundingSurplus ? 'var(--success)' : 'var(--danger)'}">${hasFundingSurplus ? '+' : '−'}${fmt(Math.abs(fundingDelta))}</div>
+        <div style="font-size:.76rem;color:var(--text-muted);margin-top:.35rem">${fmt(totalLiquid)} available vs ${fmt(stats.outstanding)} still needed</div>
+      </div>
+      <div style="padding:.9rem 1rem;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius)">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Available Accounts</div>
+        <div style="font-size:1.3rem;font-weight:750;margin-top:.15rem">${fmt(totalLiquid)}</div>
+        <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem">${coveragePct.toFixed(0)}% of outstanding covered</div>
+      </div>
+      <div style="padding:.9rem 1rem;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius)">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Outstanding</div>
+        <div style="font-size:1.3rem;font-weight:750;color:var(--danger);margin-top:.15rem">${fmt(stats.outstanding)}</div>
+      </div>
+      <div style="padding:.9rem 1rem;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius)">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">${year} Total Obligations</div>
+        <div style="font-size:1.3rem;font-weight:750;margin-top:.15rem">${fmt(stats.totalAnnual)}</div>
+        <div style="font-size:.7rem;color:var(--text-muted);margin-top:.2rem">${fmt(stats.totalPaid)} already paid/funded</div>
       </div>
     </div>`;
 
@@ -7647,7 +7652,7 @@ function _renderSavingsHtml() {
           <span style="font-size:1.25rem;font-weight:700">${fmt(totalLiquid)}</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:baseline">
-          <span style="font-size:.85rem;font-weight:600;color:var(--text-muted);text-transform:uppercase">After Outstanding</span>
+          <span style="font-size:.85rem;font-weight:600;color:var(--text-muted);text-transform:uppercase">Funding ${hasFundingSurplus ? 'Surplus' : 'Shortfall'}</span>
           <span style="font-size:1.05rem;font-weight:700;color:${(totalLiquid - stats.outstanding) >= 0 ? 'var(--success)' : 'var(--danger)'}">${(totalLiquid - stats.outstanding) < 0 ? '−' : ''}${fmt(Math.abs(totalLiquid - stats.outstanding))}</span>
         </div>
       </div>

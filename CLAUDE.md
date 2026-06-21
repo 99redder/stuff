@@ -330,7 +330,7 @@ The service worker is intentionally network-first and calls `registration.update
 
 Global view (not per-property) for tracking liquid account balances against the year's annual obligations.
 
-**Layout:** Stats bar on top (annual total, paid so far, outstanding, liquid in accounts, coverage %, YTD progress bar) — accounts card on left, obligations table on right.
+**Layout:** Funding summary cards on top (surplus/shortfall, available accounts, outstanding, annual total) — accounts card on left, obligations table on right. Outstanding remains a simple number; there is no paid-progress bar.
 
 **Data shape (`state.savings`):**
 ```javascript
@@ -699,7 +699,7 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ### 2026-05-11 — Savings
 
-- **Savings view added** (`💰 Savings` header button) — global view with manual account balances (Robinhood Checking, IBKR Individual Brokerage) on the left and the year's annual obligations on the right. Stats bar at top shows total annual, paid so far, outstanding, liquid coverage %, and a YTD progress bar. Each obligation has 1 or 2 paid checkboxes (H1/H2 for twice-a-year items). Payments are keyed by year so Jan 1 auto-resets to all-unpaid; past years stay in KV.
+- **Savings view added** (`💰 Savings` header button) — global view with manual account balances (Robinhood Checking, IBKR Individual Brokerage) on the left and the year's annual obligations on the right. Funding summary at top shows whether available account balances cover outstanding obligations, with surplus/shortfall as the primary metric and Outstanding as a simple number. Each obligation has 1 or 2 paid checkboxes (H1/H2 for twice-a-year items). Payments are keyed by year so Jan 1 auto-resets to all-unpaid; past years stay in KV.
 - **Obligation sorting** — sort buttons in the Savings card header: Default (input order), Amount (largest first), A→Z, Unpaid (highest outstanding first). Sort state is in-memory only (not persisted).
 - **Default obligations seed** — `DEFAULT_SAVINGS_OBLIGATIONS` (32 items, sourced from the 2026 goal-budget spreadsheet) is auto-seeded on first visit if the `savings` KV record has no obligations.
 - **Branded delete modals** — all delete confirmations now go through `showBrandedNotice({ type:'danger', ... })` instead of native `confirm()`. Affected flows: historical year summary, maintenance entry, solar entry, solar summary, savings obligation. `showBrandedNotice` accepts a new `confirmLabel` option (defaults to "Yes, Delete" when type is `danger`).
