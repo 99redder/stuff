@@ -1190,7 +1190,7 @@
       <button class="prop-tab" data-prop="95EB">95EB</button>
       <button class="prop-tab" data-prop="446BB">446BB</button>
       <button class="prop-tab" data-prop="731WO">731WO</button>
-      <button class="prop-tab" data-prop="NUTTERS">Nutters Crossing</button>
+      <button class="prop-tab" data-prop="4781MC">4781 MC</button>
     </div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
       <button class="tp-header-btn" id="deductions-btn" onclick="switchView('deductions')">Deductions Tracker</button>
@@ -1478,7 +1478,7 @@
  *
  * HTML SECTIONS  (search <!-- ── to jump)
  *   <style>          CSS variables, reset, component classes, print styles
- *   <header>         Property tabs (6AL/95EB/446BB/731WO/Nutters Crossing) + view tabs + utility buttons
+ *   <header>         Property tabs (6AL/95EB/446BB/731WO/4781 MC) + view tabs + utility buttons
  *   <main #app>      View container — empty shell filled by renderView()
  *   Modals:          delete (2-step confirm), edit transaction,
  *                    property income worksheet (#budget-worksheet-modal),
@@ -1514,8 +1514,8 @@
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const API = 'https://rentals-api.99redder.workers.dev';
-const PROPERTIES = ['6AL', '95EB', '446BB', '731WO', 'NUTTERS'];
-const PRIMARY_PROPERTIES = new Set(['731WO', 'NUTTERS']); // primary residences: Investment Return + Maintenance only
+const PROPERTIES = ['6AL', '95EB', '446BB', '731WO', '4781MC'];
+const PRIMARY_PROPERTIES = new Set(['731WO', '4781MC']); // primary residences: Investment Return + Maintenance only
 const PRIMARY_VIEWS = new Set(['investment-return', 'maintenance']);
 const APP_TIME_ZONE = 'America/New_York';
 function appTodayParts(date = new Date()) {
@@ -1596,7 +1596,7 @@ const PROPERTY_SALE_STATE = {
   '6AL': 'NH',
   '446BB': 'VA',
   '731WO': 'MD',
-  'NUTTERS': 'MD',
+  '4781MC': 'MD',
 };
 const SALE_STATE_NAMES = {
   NH: 'New Hampshire',
@@ -1971,7 +1971,7 @@ const MAINT_SEED = {
     {date:'2025-11-05',description:'Plumbing line declogged (roots broke the piping causing a clog)',cost:250.00,performedBy:'RotoRooter',notes:''},
     {date:'2025-11-11',description:'Front tree removed and broken plumbing pipe replaced',cost:2000.00,performedBy:"Johnson's Allscapes",notes:''},
   ],
-  'NUTTERS': []
+  '4781MC': []
 };
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -1985,7 +1985,7 @@ const state = {
     '95EB':  { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
     '446BB': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
     '731WO': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
-    'NUTTERS': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null }
+    '4781MC': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null }
   },
   pendingDefaultPrompt: null,  // { category, amount } after a save
   pendingMaintPrompt: null,    // { date, amount, description, category } after expense save

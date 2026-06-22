@@ -23,7 +23,7 @@ Worker is deployed at: `https://rentals-api.99redder.workers.dev`
 ```json
 {
   "action": "get" | "save",
-  "property": "6AL" | "95EB" | "446BB" | "731WO" | "NUTTERS",
+  "property": "6AL" | "95EB" | "446BB" | "731WO" | "4781MC",
   "transactions": [...]  // required for save action
 }
 ```

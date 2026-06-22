@@ -2,7 +2,7 @@
 // All amounts stored and returned in DOLLARS (never cents).
 // KV keys: transactions:{property}, summaries:{property}, defaults:{property}, depreciation:{property}
 
-const VALID_PROPERTIES = ['6AL', '95EB', '446BB', '731WO', 'NUTTERS'];
+const VALID_PROPERTIES = ['6AL', '95EB', '446BB', '731WO', '4781MC'];
 
 const VALID_CATEGORIES = [
   'rent', 'deposit', 'late_fee', 'other_income',
