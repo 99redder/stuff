@@ -6,7 +6,7 @@ Developer reference for AI agents working on this project.
 
 ## What This Is
 
-A single-page property management app for tracking rental income, expenses, and depreciation across three rental properties (**6AL**, **95EB**, **446BB**) plus one primary residence (**731WO**).
+A single-page property management app for tracking rental income, expenses, and depreciation across three rental properties (**6AL**, **95EB**, **446BB**) plus two primary residences (**731WO**, **NUTTERS** / Nutters Crossing).
 
 Deployed as:
 - **Frontend**: GitHub Pages — static `index.html` served from `https://99redder.github.io/rentals/`
@@ -53,12 +53,12 @@ A full table of contents is in the `NAVIGATION GUIDE` block comment at the very 
 
 ### Navigation (two-tier)
 ```
-Property tabs:  [6AL]  [95EB]  [446BB]  [731WO]
+Property tabs:  [6AL]  [95EB]  [446BB]  [731WO]  [Nutters Crossing]
 View tabs:      [Current Year]  [Tax Summary]  [Investment Return]  [Historical]  [Maintenance]  [All Properties]
 Header buttons: [Deductions Tracker]  [Monthly Budget]  [Mom Budget]  [☀️ Solar]  [Tax Planning]  [💰 Savings]
 ```
 - Property tabs are hidden when **All Properties**, **Deductions Tracker**, **Monthly Budget**, **Mom Budget**, **Solar**, **Tax Planning**, or **Savings** views are active.
-- **731WO** is a primary residence — only shows Investment Return and Maintenance views (`PRIMARY_PROPERTIES` / `PRIMARY_VIEWS` constants).
+- **731WO** and **NUTTERS** are primary residences — only show Investment Return and Maintenance views (`PRIMARY_PROPERTIES` / `PRIMARY_VIEWS` constants).
 - Switching property tabs reloads the current view for the new property.
 
 ### Views
@@ -87,7 +87,8 @@ const state = {
     '6AL':   { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
     '95EB':  { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
     '446BB': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
-    '731WO': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null }
+    '731WO': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
+    'NUTTERS': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null }
   },
   pendingDefaultPrompt: null,   // { category, amount } — shown after saving a transaction
   pendingMaintPrompt: null,     // { date, amount, description, category } — shown after expense save
@@ -578,7 +579,7 @@ deductions                 →  Array of deduction entry objects
 tax_planning:{year}        →  Tax planning inputs for that year
 savings                    →  { accounts: {robinhood, ibkr}, obligations: [...], payments: { [year]: { [oid]: [bool, ...] } } }
 ```
-Valid properties: `6AL`, `95EB`, `446BB`, `731WO`
+Valid properties: `6AL`, `95EB`, `446BB`, `731WO`, `NUTTERS`
 
 ---
 
