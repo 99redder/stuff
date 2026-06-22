@@ -4620,14 +4620,18 @@ async function ensureBudgetLoaded() {
   if (state.budget) return;
   const result = await callApi({ action: 'get_budget' });
   const raw = result.data || {};
+  const fairShare = fsNormalize(raw.fairShare);
   state.budget = {
     income: raw.income || [],
     expenses: {},
     worksheets: raw.worksheets || {},
-    fairShare: fsNormalize(raw.fairShare)
+    fairShare
   };
   for (const cat of BUDGET_EXPENSE_CATS) {
     state.budget.expenses[cat] = raw.expenses?.[cat] || [];
+  }
+  if (fairShare.giftAmount300Migrated && raw.fairShare?.giftAmount300Migrated !== true) {
+    await _saveBudget();
   }
 }
 
@@ -5168,7 +5172,7 @@ const MOM_BUDGET_DEFAULT = {
       // Auto-synced from the Monthly Budget Fair Share section — her household
       // contribution (rent/utilities/internet/food) now lives in this one line.
       { id: 'fair-share', name: 'Fair Share (household)', amount: 0, frequency: 'monthly', auto: true, locked: true },
-      { id: 'family-gift', name: 'Gift to Chris & Family', amount: 200, frequency: 'monthly', auto: true, locked: true },
+      { id: 'family-gift', name: 'Gift to Chris & Family', amount: 300, frequency: 'monthly', auto: true, locked: true },
       { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 }
     ],
     variable: { discretionary: 500 }
@@ -5313,7 +5317,7 @@ function mbNormalize(raw) {
   }
   if (!data.template.fixed.some(item => item.id === 'family-gift')) {
     const fairShareIndex = data.template.fixed.findIndex(item => item.id === 'fair-share');
-    data.template.fixed.splice(fairShareIndex + 1, 0, { id: 'family-gift', name: 'Gift to Chris & Family', amount: 200, frequency: 'monthly', auto: true, locked: true });
+    data.template.fixed.splice(fairShareIndex + 1, 0, { id: 'family-gift', name: 'Gift to Chris & Family', amount: 300, frequency: 'monthly', auto: true, locked: true });
   }
   // One-time migration: drop the car (insurance/repairs/registration) and streaming
   // (Netflix/BritBox) bills she no longer tracks in Mom Budget.
@@ -7937,15 +7941,18 @@ const FS_SHARED_CAT_DEFAULTS = {
 };
 
 let _fsOpen = (localStorage.getItem('rentals_budget_fairshare_open') === '1');
-const FS_GIFT_ANNUAL_MAX = 3000;
+const FS_GIFT_ANNUAL_MAX = 3600;
 const FS_GIFT_MONTHLY_MAX = FS_GIFT_ANNUAL_MAX / 12;
+const FS_GIFT_MONTHLY_DEFAULT = 300;
 
 function fsNormalize(raw) {
   raw = (raw && typeof raw === 'object') ? raw : {};
+  const shouldMigrateLegacyGift = Number(raw.giftAmount) === 200 && raw.giftAmount300Migrated !== true;
   return {
     householdSize: (typeof raw.householdSize === 'number' && raw.householdSize >= 1) ? Math.round(raw.householdSize) : 5,
     roundDollar:   (raw.roundDollar !== undefined) ? !!raw.roundDollar : (raw.roundUp !== false),
-    giftAmount:    Math.min(FS_GIFT_MONTHLY_MAX, Math.max(0, Number(raw.giftAmount ?? 200) || 0)),
+    giftAmount:    shouldMigrateLegacyGift ? FS_GIFT_MONTHLY_DEFAULT : Math.min(FS_GIFT_MONTHLY_MAX, Math.max(0, Number(raw.giftAmount ?? FS_GIFT_MONTHLY_DEFAULT) || 0)),
+    giftAmount300Migrated: !!raw.giftAmount300Migrated || shouldMigrateLegacyGift,
     shared:        (raw.shared && typeof raw.shared === 'object') ? { ...raw.shared } : {},
     participants:  (raw.participants && typeof raw.participants === 'object') ? { ...raw.participants } : {},
   };
