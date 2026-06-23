@@ -336,7 +336,7 @@ Global view (not per-property) for tracking liquid account balances against the 
 **Data shape (`state.savings`):**
 ```javascript
 {
-  accounts: { robinhood: 0, ibkr: 0 },   // manually edited dollar balances
+  accounts: { robinhoodChecking: 0, robinhoodBrokerage: 0 },   // manually edited dollar balances
   obligations: [
     { id: 'uuid', name: '6AL Taxes', amount: 7400, paymentsPerYear: 2, kind: 'recurring', note: 'Paid twice a year' },
     { id: 'uuid', name: 'Mom Assistance Fund', amount: 3500, paymentsPerYear: 1, kind: 'static', note: 'Target: $25,000' },
@@ -540,7 +540,7 @@ All calls: `POST /api/data` with JSON body `{ action, property, ...payload }`.
 | Action | Extra payload | Returns |
 |---|---|---|
 | `get_savings` | — | `{ data: { accounts, obligations, payments } }` |
-| `save_savings` | `data: { accounts, obligations, payments }` | `{ success: true, data }` — full overwrite of the `savings` KV record. The worker sanitizes: clamps `accounts.{robinhood,ibkr}` to numbers, coerces `paymentsPerYear` to `1` or `2`, drops any year key that isn't a 4-digit string. |
+| `save_savings` | `data: { accounts, obligations, payments }` | `{ success: true, data }` — full overwrite of the `savings` KV record. The worker sanitizes: clamps `accounts.{robinhoodChecking,robinhoodBrokerage}` to numbers, coerces `paymentsPerYear` to `1` or `2`, drops any year key that isn't a 4-digit string. |
 
 > **Fair Share** has no dedicated action/KV key — its settings (`householdSize`, `roundDollar`, per-item `shared` overrides) live inside the `budget` record under `data.fairShare` and are saved via `save_budget`.
 
@@ -577,7 +577,7 @@ solar:entries              →  Array of solar entry objects
 solar:summaries            →  { [year]: { ... } }
 deductions                 →  Array of deduction entry objects
 tax_planning:{year}        →  Tax planning inputs for that year
-savings                    →  { accounts: {robinhood, ibkr}, obligations: [...], payments: { [year]: { [oid]: [bool, ...] } } }
+savings                    →  { accounts: {robinhoodChecking, robinhoodBrokerage}, obligations: [...], payments: { [year]: { [oid]: [bool, ...] } } }
 ```
 Valid properties: `6AL`, `95EB`, `446BB`, `731WO`, `4781MC`
 
@@ -701,7 +701,7 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ### 2026-05-11 — Savings
 
-- **Savings view added** (`💰 Savings` header button) — global view with manual account balances (Robinhood Checking, IBKR Individual Brokerage) on the left and the year's annual obligations on the right. Funding summary at top shows whether available account balances cover total annual obligations, with surplus/shortfall as the primary metric and Outstanding as a simple number. Each obligation has 1 or 2 paid checkboxes (H1/H2 for twice-a-year items). Payments are keyed by year so Jan 1 auto-resets to all-unpaid; past years stay in KV.
+- **Savings view added** (`💰 Savings` header button) — global view with manual account balances (Robinhood Checking, Robinhood Brokerage) on the left and the year's annual obligations on the right. Funding summary at top shows whether available account balances cover total annual obligations, with surplus/shortfall as the primary metric and Outstanding as a simple number. Each obligation has 1 or 2 paid checkboxes (H1/H2 for twice-a-year items). Payments are keyed by year so Jan 1 auto-resets to all-unpaid; past years stay in KV.
 - **Obligation sorting** — sort buttons in the Savings card header: Default (input order), Amount (largest first), A→Z, Unpaid (highest outstanding first). Sort state is in-memory only (not persisted).
 - **Default obligations seed** — `DEFAULT_SAVINGS_OBLIGATIONS` (32 items, sourced from the 2026 goal-budget spreadsheet) is auto-seeded on first visit if the `savings` KV record has no obligations.
 - **Branded delete modals** — all delete confirmations now go through `showBrandedNotice({ type:'danger', ... })` instead of native `confirm()`. Affected flows: historical year summary, maintenance entry, solar entry, solar summary, savings obligation. `showBrandedNotice` accepts a new `confirmLabel` option (defaults to "Yes, Delete" when type is `danger`).

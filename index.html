@@ -7498,8 +7498,12 @@ async function loadSavings() {
   }
   state.savings = {
     accounts: {
-      robinhood: typeof raw.accounts?.robinhood === 'number' ? raw.accounts.robinhood : 0,
-      ibkr:      typeof raw.accounts?.ibkr      === 'number' ? raw.accounts.ibkr      : 0,
+      robinhoodChecking: typeof raw.accounts?.robinhoodChecking === 'number'
+        ? raw.accounts.robinhoodChecking
+        : (typeof raw.accounts?.robinhood === 'number' ? raw.accounts.robinhood : 0),
+      robinhoodBrokerage: typeof raw.accounts?.robinhoodBrokerage === 'number'
+        ? raw.accounts.robinhoodBrokerage
+        : (typeof raw.accounts?.ibkr === 'number' ? raw.accounts.ibkr : 0),
     },
     obligations,
     payments: (raw.payments && typeof raw.payments === 'object') ? raw.payments : {},
@@ -7565,7 +7569,7 @@ function _renderSavingsHtml() {
   const paidMap = s.payments[year] || {};
   const stats = savingsObligationStats();
 
-  const totalLiquid = (s.accounts.robinhood || 0) + (s.accounts.ibkr || 0);
+  const totalLiquid = (s.accounts.robinhoodChecking || 0) + (s.accounts.robinhoodBrokerage || 0);
   const fundingDelta = totalLiquid - stats.totalAnnual;
   const hasFundingSurplus = fundingDelta >= 0;
   const coveragePct = stats.totalAnnual > 0 ? Math.min(999, (totalLiquid / stats.totalAnnual) * 100) : 100;
@@ -7639,19 +7643,19 @@ function _renderSavingsHtml() {
           <label style="display:block;font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Robinhood Checking</label>
           <div style="position:relative">
             <span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
-            <input type="number" id="sav-acct-robinhood" class="form-input" step="0.01" min="0"
-                   value="${escAttr(String(s.accounts.robinhood || 0))}"
-                   onchange="savUpdateAccount('robinhood', this.value)"
+            <input type="number" id="sav-acct-robinhood-checking" class="form-input" step="0.01" min="0"
+                   value="${escAttr(String(s.accounts.robinhoodChecking || 0))}"
+                   onchange="savUpdateAccount('robinhoodChecking', this.value)"
                    style="width:100%;padding-left:1.5rem;font-size:1.05rem;font-weight:600">
           </div>
         </div>
         <div>
-          <label style="display:block;font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">IBKR Individual Brokerage</label>
+          <label style="display:block;font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Robinhood Brokerage</label>
           <div style="position:relative">
             <span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
-            <input type="number" id="sav-acct-ibkr" class="form-input" step="0.01" min="0"
-                   value="${escAttr(String(s.accounts.ibkr || 0))}"
-                   onchange="savUpdateAccount('ibkr', this.value)"
+            <input type="number" id="sav-acct-robinhood-brokerage" class="form-input" step="0.01" min="0"
+                   value="${escAttr(String(s.accounts.robinhoodBrokerage || 0))}"
+                   onchange="savUpdateAccount('robinhoodBrokerage', this.value)"
                    style="width:100%;padding-left:1.5rem;font-size:1.05rem;font-weight:600">
           </div>
         </div>

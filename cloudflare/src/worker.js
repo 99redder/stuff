@@ -1333,8 +1333,12 @@ async function handleSaveSavings(env, data) {
 
   const accounts = (data.accounts && typeof data.accounts === 'object') ? data.accounts : {};
   const sanitizedAccounts = {
-    robinhood: (typeof accounts.robinhood === 'number' && isFinite(accounts.robinhood)) ? accounts.robinhood : 0,
-    ibkr:      (typeof accounts.ibkr      === 'number' && isFinite(accounts.ibkr))      ? accounts.ibkr      : 0,
+    robinhoodChecking: (typeof accounts.robinhoodChecking === 'number' && isFinite(accounts.robinhoodChecking))
+      ? accounts.robinhoodChecking
+      : ((typeof accounts.robinhood === 'number' && isFinite(accounts.robinhood)) ? accounts.robinhood : 0),
+    robinhoodBrokerage: (typeof accounts.robinhoodBrokerage === 'number' && isFinite(accounts.robinhoodBrokerage))
+      ? accounts.robinhoodBrokerage
+      : ((typeof accounts.ibkr === 'number' && isFinite(accounts.ibkr)) ? accounts.ibkr : 0),
   };
 
   const obligations = Array.isArray(data.obligations) ? data.obligations.map(o => ({
