@@ -380,7 +380,7 @@ A collapsible **section inside the Monthly Budget view** — not a standalone ta
 - Collapse: `fsToggleSection()` (open state in `localStorage` key `rentals_budget_fairshare_open`)
 - Mutators: `fsToggleShared(itemId)`, `fsUpdateSetting(key, value)` — both persist via `_saveBudget()`
 - **Income line:** `fsSyncBudgetIncome()` (called at the top of `_renderBudgetHtml`) keeps an auto, read-only income item `id: 'mom-fair-share'` ("Mom's Fair Share") in `budget.income`, valued at `fsCalc().herShare`, so her contribution counts as household income. It renders read-only (⚖️ "from Fair Share", no edit/lock/delete); `budgetDelete`/`budgetToggleLock` early-return for `FS_INCOME_ID`. It persists in the budget record but its amount is re-synced every render.
-- **Separate family gift:** `giftAmount` defaults to `$300/mo` and is capped by `FS_GIFT_ANNUAL_MAX` (`$3,600/year`). `fsNormalize()` migrates the old `$200/mo` value once via `giftAmount300Migrated`; the Worker mirror uses the same `$300/mo` cap/default for the public Mom Budget phone summary.
+- **Separate family gift:** `giftAmount` defaults to `$400/mo` and is capped by `FS_GIFT_ANNUAL_MAX` (`$4,800/year`). `fsNormalize()` migrates the old `$200/mo` value once via `giftAmount300Migrated` and the old `$300/mo` value once via `giftAmount400Migrated`; the Worker mirror uses the same `$400/mo` cap/default for the public Mom Budget phone summary.
 
 **Data shape (`state.budget.fairShare`):**
 ```javascript

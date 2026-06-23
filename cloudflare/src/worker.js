@@ -662,12 +662,13 @@ function calcFairShareFromBudget(budget) {
   return roundDollar ? Math.round(herShare) : herShare;
 }
 
-const FAMILY_GIFT_MONTHLY_MAX = 300;
-const FAMILY_GIFT_MONTHLY_DEFAULT = 300;
+const FAMILY_GIFT_MONTHLY_MAX = 400;
+const FAMILY_GIFT_MONTHLY_DEFAULT = 400;
 
 function giftAmountFromBudget(budget) {
   const amount = Number(budget?.fairShare?.giftAmount);
   if (amount === 200 && budget?.fairShare?.giftAmount300Migrated !== true) return FAMILY_GIFT_MONTHLY_DEFAULT;
+  if (amount === 300 && budget?.fairShare?.giftAmount400Migrated !== true) return FAMILY_GIFT_MONTHLY_DEFAULT;
   return Number.isFinite(amount) ? Math.min(FAMILY_GIFT_MONTHLY_MAX, Math.max(0, amount)) : FAMILY_GIFT_MONTHLY_DEFAULT;
 }
 
@@ -680,7 +681,7 @@ const MOM_BUDGET_DEFAULT = {
     fixed: [
       // Household bills wrapped into one auto-synced Fair Share line (she lives with family).
       { id: 'fair-share', name: 'Fair Share (household)', amount: 0, frequency: 'monthly', auto: true, locked: true },
-      { id: 'family-gift', name: 'Gift to Chris & Family', amount: 300, frequency: 'monthly', auto: true, locked: true },
+      { id: 'family-gift', name: 'Gift to Chris & Family', amount: 400, frequency: 'monthly', auto: true, locked: true },
       { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 }
     ],
     variable: { discretionary: 500 },
