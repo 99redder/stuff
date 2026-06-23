@@ -501,9 +501,11 @@ All calls: `POST /api/data` with JSON body `{ action, property, ...payload }`.
 |---|---|---|
 | `get_maintenance` | — | `{ entries: [...] }` |
 | `save_maintenance` | `entries: [...]` | `{ success: true }` |
-| `add_maintenance_entry` | `entry: { date, description, amount, category, isImprovement }` | `{ entry: { id, ... } }` |
+| `add_maintenance_entry` | `entry: { date, description, cost, performedBy, notes, capitalImprovement }` | `{ entry: { id, ... } }` |
 | `update_maintenance_entry` | `id`, `entry: {...}` | `{ success: true }` |
 | `delete_maintenance_entry` | `id` | `{ success: true }` |
+
+Maintenance entries use `capitalImprovement: true` when marked **Improvement** in the UI. For `6AL`, `95EB`, and primary residences (`731WO`, `4781MC`), those marked-improvement maintenance costs are included in Investment Return cost basis, sale closeout math, and Tax Planning property-sale imports. Entries marked **Repair** remain in the maintenance log but are excluded from basis.
 
 #### Investment Return (per-property config)
 | Action | Extra payload | Returns |

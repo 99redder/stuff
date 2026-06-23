@@ -511,7 +511,8 @@ async function handleSaveMaintenance(env, property, entries) {
     description: String(e.description || '').trim(),
     cost: typeof e.cost === 'number' && isFinite(e.cost) ? e.cost : 0,
     performedBy: String(e.performedBy || '').trim(),
-    notes: String(e.notes || '').trim()
+    notes: String(e.notes || '').trim(),
+    capitalImprovement: !!e.capitalImprovement,
   }));
   await env.RENTALS.put(`maintenance:${property}`, JSON.stringify(saved));
   return jsonResponse({ entries: saved });
