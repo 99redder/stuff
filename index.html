@@ -2911,6 +2911,11 @@ async function renderMaintenance() {
   document.getElementById('app').innerHTML = renderMaintenanceSection(prop);
 }
 
+function getMaintTaxTreatment(entry) {
+  if (['repair', 'improvement', 'other'].includes(entry?.taxTreatment)) return entry.taxTreatment;
+  return entry?.capitalImprovement ? 'improvement' : 'repair';
+}
+
 function renderMaintenanceSection(prop) {
   const entries = (state.data[prop].maintenance || []).slice().sort((a, b) => b.date.localeCompare(a.date));
   const total = entries.reduce((s, e) => s + (e.cost || 0), 0);
@@ -2919,19 +2924,24 @@ function renderMaintenanceSection(prop) {
   const tracksMaintenanceBasis = MAINTENANCE_BASIS_PROPERTIES.has(prop);
   const closed = isPropertyClosed(prop);
 
-  const capImprovEntries = tracksMaintenanceBasis ? entries.filter(e => e.capitalImprovement) : [];
+  const capImprovEntries = tracksMaintenanceBasis ? entries.filter(e => getMaintTaxTreatment(e) === 'improvement') : [];
   const capImprovTotal   = capImprovEntries.reduce((s, e) => s + (e.cost || 0), 0);
-  const repairEntries = tracksMaintenanceBasis ? entries.filter(e => !e.capitalImprovement) : [];
+  const repairEntries = tracksMaintenanceBasis ? entries.filter(e => getMaintTaxTreatment(e) === 'repair') : [];
   const repairTotal = repairEntries.reduce((s, e) => s + (e.cost || 0), 0);
+  const otherEntries = tracksMaintenanceBasis ? entries.filter(e => getMaintTaxTreatment(e) === 'other') : [];
+  const otherTotal = otherEntries.reduce((s, e) => s + (e.cost || 0), 0);
 
-  const rows = entries.map(e => `
-    <tr${e.capitalImprovement ? ' style="background:color-mix(in srgb,var(--success) 6%,transparent)"' : ''}>
+  const rows = entries.map(e => {
+    const treatment = getMaintTaxTreatment(e);
+    return `
+    <tr${treatment === 'improvement' ? ' style="background:color-mix(in srgb,var(--success) 6%,transparent)"' : ''}>
       ${tracksMaintenanceBasis ? `
-      <td class="no-print" style="padding:.4rem .5rem;min-width:130px" title="Repair is currently deductible; Improvement increases cost basis in Investment Return">
+      <td class="no-print" style="padding:.4rem .5rem;min-width:150px" title="Repair is currently deductible; Improvement increases cost basis; Other is excluded from both">
         <select ${closed ? 'disabled' : `onchange="toggleMaintImprovement('${escAttr(e.id)}', this.value)"`}
                 style="width:100%;padding:.25rem .35rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);font-size:.78rem;font-weight:650;cursor:${closed ? 'not-allowed' : 'pointer'}">
-          <option value="repair" ${e.capitalImprovement ? '' : 'selected'}>Repair</option>
-          <option value="improvement" ${e.capitalImprovement ? 'selected' : ''}>Improvement</option>
+          <option value="repair" ${treatment === 'repair' ? 'selected' : ''}>Repair</option>
+          <option value="improvement" ${treatment === 'improvement' ? 'selected' : ''}>Improvement</option>
+          <option value="other" ${treatment === 'other' ? 'selected' : ''}>Other / Excluded</option>
         </select>
       </td>` : ''}
       <td style="white-space:nowrap;padding:.4rem .5rem">${fmtDate(e.date)}</td>
@@ -2947,18 +2957,20 @@ function renderMaintenanceSection(prop) {
         <button class="btn btn-ghost btn-sm" style="color:var(--danger);padding:.15rem .4rem"
                 onclick="deleteMaintEntry('${escAttr(e.id)}')">×</button>`}
       </td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 
   const seedBtn = isEmpty && hasSeed
     ? `<button class="btn btn-ghost btn-sm" onclick="seedMaintData('${escAttr(prop)}')">Load Historical Records</button>`
     : '';
 
-  const capImprovNote = tracksMaintenanceBasis && capImprovEntries.length > 0
-    ? `<div style="font-size:.8rem;color:var(--success);margin-top:.1rem">
-        ${capImprovEntries.length} improvement${capImprovEntries.length > 1 ? 's' : ''} · ${fmt(capImprovTotal)} added to Investment Return basis
-        ${repairEntries.length ? `<span style="color:var(--text-muted);margin-left:.5rem">${repairEntries.length} repair${repairEntries.length > 1 ? 's' : ''} · ${fmt(repairTotal)} excluded from basis</span>` : ''}
+  const capImprovNote = tracksMaintenanceBasis && entries.length > 0
+    ? `<div style="font-size:.8rem;color:var(--text-muted);margin-top:.1rem">
+        ${capImprovEntries.length ? `<span style="color:var(--success)">${capImprovEntries.length} improvement${capImprovEntries.length > 1 ? 's' : ''} · ${fmt(capImprovTotal)} added to Investment Return basis</span>` : ''}
+        ${repairEntries.length ? `<span style="margin-left:${capImprovEntries.length ? '.5rem' : '0'}">${repairEntries.length} repair${repairEntries.length > 1 ? 's' : ''} · ${fmt(repairTotal)} excluded from basis</span>` : ''}
+        ${otherEntries.length ? `<span style="margin-left:${capImprovEntries.length || repairEntries.length ? '.5rem' : '0'}">${otherEntries.length} other · ${fmt(otherTotal)} excluded from maintenance/tax basis</span>` : ''}
        </div>`
-    : (tracksMaintenanceBasis ? `<div style="font-size:.8rem;color:var(--text-muted);margin-top:.1rem">Mark entries as Repair or Improvement. Improvements increase Investment Return cost basis; repairs stay out of basis.</div>` : '');
+    : (tracksMaintenanceBasis ? `<div style="font-size:.8rem;color:var(--text-muted);margin-top:.1rem">Mark entries as Repair, Improvement, or Other. Improvements increase Investment Return cost basis; Other stays out of repair totals and basis.</div>` : '');
 
   return `
     <div class="card mt-2">
@@ -3022,6 +3034,7 @@ function renderMaintenanceSection(prop) {
             <select id="mf-tax-treatment" style="width:100%;padding:.55rem .7rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);font-size:.9rem">
               <option value="repair">Repair — do not add to cost basis</option>
               <option value="improvement">Improvement — add to Investment Return cost basis</option>
+              <option value="other">Other / Excluded — deposit or non-maintenance tracking item</option>
             </select>
           </div>` : ''}
         </div>
@@ -3063,7 +3076,7 @@ function editMaintEntry(id) {
   document.getElementById('mf-performed-by').value = entry.performedBy || '';
   document.getElementById('mf-notes').value = entry.notes || '';
   const treatmentEl = document.getElementById('mf-tax-treatment');
-  if (treatmentEl) treatmentEl.value = entry.capitalImprovement ? 'improvement' : 'repair';
+  if (treatmentEl) treatmentEl.value = getMaintTaxTreatment(entry);
   document.getElementById('maint-form-title').textContent = 'Edit Maintenance Entry';
   document.getElementById('maint-form-submit').textContent = 'Update Entry';
   openAddMaint();
@@ -3078,7 +3091,8 @@ async function saveMaintEntry() {
   const cost = parseFloat(document.getElementById('mf-cost').value) || 0;
   const performedBy = document.getElementById('mf-performed-by').value.trim();
   const notes = document.getElementById('mf-notes').value.trim();
-  const capitalImprovement = document.getElementById('mf-tax-treatment')?.value === 'improvement';
+  const taxTreatment = document.getElementById('mf-tax-treatment')?.value || 'repair';
+  const capitalImprovement = taxTreatment === 'improvement';
   const errEl = document.getElementById('maint-form-error');
 
   if (!description) { errEl.textContent = 'Description is required.'; errEl.classList.remove('hidden'); return; }
@@ -3086,11 +3100,11 @@ async function saveMaintEntry() {
 
   try {
     if (editId) {
-      const result = await callApi({ action: 'update_maintenance_entry', property: prop, id: editId, entry: { date, description, cost, performedBy, notes, capitalImprovement } });
+      const result = await callApi({ action: 'update_maintenance_entry', property: prop, id: editId, entry: { date, description, cost, performedBy, notes, taxTreatment, capitalImprovement } });
       const idx = state.data[prop].maintenance.findIndex(e => e.id === editId);
       if (idx !== -1) state.data[prop].maintenance[idx] = result.entry;
     } else {
-      const result = await callApi({ action: 'add_maintenance_entry', property: prop, entry: { date, description, cost, performedBy, notes, capitalImprovement } });
+      const result = await callApi({ action: 'add_maintenance_entry', property: prop, entry: { date, description, cost, performedBy, notes, taxTreatment, capitalImprovement } });
       state.data[prop].maintenance.push(result.entry);
     }
     closeMaintForm();
@@ -3106,11 +3120,11 @@ async function toggleMaintImprovement(id, treatment) {
   const entries = state.data[prop].maintenance || [];
   const entry = entries.find(e => e.id === id);
   if (!entry) return;
-  const newVal = treatment ? treatment === 'improvement' : !entry.capitalImprovement;
+  const taxTreatment = treatment || (getMaintTaxTreatment(entry) === 'improvement' ? 'repair' : 'improvement');
   try {
     const result = await callApi({
       action: 'update_maintenance_entry', property: prop, id,
-      entry: { ...entry, capitalImprovement: newVal }
+      entry: { ...entry, taxTreatment, capitalImprovement: taxTreatment === 'improvement' }
     });
     const idx = entries.findIndex(e => e.id === id);
     if (idx !== -1) state.data[prop].maintenance[idx] = result.entry;

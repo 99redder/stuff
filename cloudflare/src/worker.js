@@ -506,31 +506,41 @@ async function handleSaveMaintenance(env, property, entries) {
     return jsonResponse({ error: 'entries must be an array' }, 400);
   }
   const saved = entries.map(e => ({
+    ...normalizeMaintenanceEntry(e),
     id: e.id || crypto.randomUUID(),
-    date: e.date || '',
-    description: String(e.description || '').trim(),
-    cost: typeof e.cost === 'number' && isFinite(e.cost) ? e.cost : 0,
-    performedBy: String(e.performedBy || '').trim(),
-    notes: String(e.notes || '').trim(),
-    capitalImprovement: !!e.capitalImprovement,
   }));
   await env.RENTALS.put(`maintenance:${property}`, JSON.stringify(saved));
   return jsonResponse({ entries: saved });
+}
+
+function normalizeMaintenanceTaxTreatment(entry) {
+  const treatment = String(entry?.taxTreatment || '').trim().toLowerCase();
+  if (['repair', 'improvement', 'other'].includes(treatment)) return treatment;
+  return entry?.capitalImprovement ? 'improvement' : 'repair';
+}
+
+function normalizeMaintenanceEntry(entry) {
+  const taxTreatment = normalizeMaintenanceTaxTreatment(entry);
+  return {
+    id: entry.id || crypto.randomUUID(),
+    date: entry.date || '',
+    description: String(entry.description || '').trim(),
+    cost: typeof entry.cost === 'number' && isFinite(entry.cost) ? entry.cost : 0,
+    performedBy: String(entry.performedBy || '').trim(),
+    notes: String(entry.notes || '').trim(),
+    taxTreatment,
+    capitalImprovement: taxTreatment === 'improvement',
+  };
 }
 
 async function handleAddMaintenanceEntry(env, property, entry) {
   if (!entry || typeof entry !== 'object') {
     return jsonResponse({ error: 'Missing entry object' }, 400);
   }
-  const newEntry = {
+  const newEntry = normalizeMaintenanceEntry({
+    ...entry,
     id: crypto.randomUUID(),
-    date: entry.date || '',
-    description: String(entry.description || '').trim(),
-    cost: typeof entry.cost === 'number' && isFinite(entry.cost) ? entry.cost : 0,
-    performedBy: String(entry.performedBy || '').trim(),
-    notes: String(entry.notes || '').trim(),
-    capitalImprovement: !!entry.capitalImprovement,
-  };
+  });
   const entries = await env.RENTALS.get(`maintenance:${property}`, 'json') || [];
   entries.push(newEntry);
   await env.RENTALS.put(`maintenance:${property}`, JSON.stringify(entries));
@@ -543,15 +553,11 @@ async function handleUpdateMaintenanceEntry(env, property, id, entry) {
   const entries = await env.RENTALS.get(`maintenance:${property}`, 'json') || [];
   const idx = entries.findIndex(e => e.id === id);
   if (idx === -1) return jsonResponse({ error: 'Entry not found' }, 404);
-  entries[idx] = {
+  entries[idx] = normalizeMaintenanceEntry({
+    ...entries[idx],
+    ...entry,
     id,
-    date: entry.date || entries[idx].date,
-    description: String(entry.description || '').trim(),
-    cost: typeof entry.cost === 'number' && isFinite(entry.cost) ? entry.cost : entries[idx].cost,
-    performedBy: String(entry.performedBy || '').trim(),
-    notes: String(entry.notes || '').trim(),
-    capitalImprovement: 'capitalImprovement' in entry ? !!entry.capitalImprovement : !!entries[idx].capitalImprovement,
-  };
+  });
   await env.RENTALS.put(`maintenance:${property}`, JSON.stringify(entries));
   return jsonResponse({ entry: entries[idx] });
 }
