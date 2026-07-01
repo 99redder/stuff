@@ -1209,6 +1209,7 @@
     <button class="view-btn" data-view="investment-return">Investment Return</button>
     <button class="view-btn" data-view="historical">Historical</button>
     <button class="view-btn" data-view="maintenance">Maintenance</button>
+    <button class="view-btn" data-view="move-in-purchases">Move in Purchases</button>
     <button class="view-btn" data-view="portfolio">All Properties</button>
   </div>
 </header>
@@ -1517,6 +1518,7 @@ const API = 'https://rentals-api.99redder.workers.dev';
 const PROPERTIES = ['6AL', '95EB', '446BB', '731WO', '4781MC'];
 const PRIMARY_PROPERTIES = new Set(['731WO', '4781MC']); // primary residences: Investment Return + Maintenance only
 const MAINTENANCE_BASIS_PROPERTIES = new Set(['6AL', '95EB', ...PRIMARY_PROPERTIES]); // Maintenance entries marked Improvement increase Investment Return basis
+const MOVE_IN_PURCHASE_PROPERTY = '4781MC';
 const PRIMARY_VIEWS = new Set(['investment-return', 'maintenance']);
 const APP_TIME_ZONE = 'America/New_York';
 function appTodayParts(date = new Date()) {
@@ -1982,11 +1984,11 @@ const state = {
   currentView: 'current-year',
   password: '', // legacy only; runtime auth uses session cookie/token
   data: {
-    '6AL':   { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
-    '95EB':  { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
-    '446BB': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
-    '731WO': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
-    '4781MC': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null }
+    '6AL':   { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null, moveInPurchases: null },
+    '95EB':  { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null, moveInPurchases: null },
+    '446BB': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null, moveInPurchases: null },
+    '731WO': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null, moveInPurchases: null },
+    '4781MC': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null, moveInPurchases: null }
   },
   pendingDefaultPrompt: null,  // { category, amount } after a save
   pendingMaintPrompt: null,    // { date, amount, description, category } after expense save
@@ -2031,13 +2033,14 @@ async function ensureLoaded(property, key) {
     defaults:     'get_defaults',
     depreciation: 'get_depreciation',
     maintenance:  'get_maintenance',
-    investment:   'get_investment'
+    investment:   'get_investment',
+    moveInPurchases: 'get_move_in_purchases'
   };
 
   const result = await callApi({ action: actionMap[key], property });
   if (key === 'depreciation' || key === 'investment') {
     state.data[property][key] = result.config || null; // null means not configured
-  } else if (key === 'maintenance') {
+  } else if (key === 'maintenance' || key === 'moveInPurchases') {
     state.data[property][key] = result.entries || [];
   } else {
     state.data[property][key] = result[key] || (key === 'transactions' ? [] : {});
@@ -2146,21 +2149,34 @@ function onSaleClosingCostInput(code) {
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 
+function isViewAvailableForProperty(prop, view) {
+  if (view === 'move-in-purchases') return prop === MOVE_IN_PURCHASE_PROPERTY;
+  if (view === 'portfolio') return true;
+  if (PRIMARY_PROPERTIES.has(prop)) return PRIMARY_VIEWS.has(view);
+  return true;
+}
+
+function defaultViewForProperty(prop) {
+  return PRIMARY_PROPERTIES.has(prop) ? 'investment-return' : 'current-year';
+}
+
+function updateViewTabAvailability(prop) {
+  document.querySelectorAll('.view-btn').forEach(b => {
+    b.style.display = isViewAvailableForProperty(prop, b.dataset.view) ? '' : 'none';
+  });
+}
+
 function switchProperty(prop) {
   state.currentProperty = prop;
   document.querySelectorAll('.prop-tab').forEach(b => {
     b.classList.toggle('active', b.dataset.prop === prop);
   });
-  // Show/hide view tabs based on property type
-  const isPrimary = PRIMARY_PROPERTIES.has(prop);
-  document.querySelectorAll('.view-btn').forEach(b => {
-    b.style.display = (isPrimary && !PRIMARY_VIEWS.has(b.dataset.view)) ? 'none' : '';
-  });
+  updateViewTabAvailability(prop);
   // Redirect to a valid view if current one isn't available for this property
-  if (isPrimary && !PRIMARY_VIEWS.has(state.currentView)) {
-    state.currentView = 'investment-return';
+  if (!isViewAvailableForProperty(prop, state.currentView)) {
+    state.currentView = defaultViewForProperty(prop);
     document.querySelectorAll('.view-btn').forEach(b => {
-      b.classList.toggle('active', b.dataset.view === 'investment-return');
+      b.classList.toggle('active', b.dataset.view === state.currentView);
     });
   }
   renderView();
@@ -2212,6 +2228,7 @@ async function renderView() {
       case 'investment-return': await renderInvestmentReturn(); break;
       case 'historical':    await renderHistorical();   break;
       case 'maintenance':   await renderMaintenance();  break;
+      case 'move-in-purchases': await renderMoveInPurchases(); break;
       case 'add-entry':     await renderAddEntry();     break;
       case 'portfolio':     await renderPortfolio();    break;
       case 'tax-planning':  await renderTaxPlanning();   break;
@@ -3191,6 +3208,232 @@ async function seedMaintData(prop) {
   } catch (e) {
     alert('Load failed: ' + e.message);
   }
+}
+
+// ── View: Move-In Purchases ───────────────────────────────────────────────────
+
+async function renderMoveInPurchases() {
+  const prop = state.currentProperty;
+  if (prop !== MOVE_IN_PURCHASE_PROPERTY) {
+    state.currentView = defaultViewForProperty(prop);
+    await renderView();
+    return;
+  }
+  await ensureLoaded(prop, 'moveInPurchases');
+  document.getElementById('app').innerHTML = renderMoveInPurchasesSection(prop);
+}
+
+function renderMoveInPurchasesSection(prop) {
+  const entries = (state.data[prop].moveInPurchases || []).slice().sort((a, b) => {
+    if (!!a.purchased !== !!b.purchased) return a.purchased ? 1 : -1;
+    return String(b.date || '').localeCompare(String(a.date || ''));
+  });
+  const total = entries.reduce((s, e) => s + (Number(e.estimatedPrice) || 0), 0);
+  const purchasedEntries = entries.filter(e => e.purchased);
+  const purchasedTotal = purchasedEntries.reduce((s, e) => s + (Number(e.estimatedPrice) || 0), 0);
+  const remainingTotal = total - purchasedTotal;
+
+  const rows = entries.map(e => `
+    <tr${e.purchased ? ' style="opacity:.62"' : ''}>
+      <td class="no-print" style="width:44px;text-align:center;padding:.4rem .5rem">
+        <input type="checkbox" ${e.purchased ? 'checked' : ''} onchange="toggleMoveInPurchase('${escAttr(e.id)}', this.checked)" aria-label="Mark purchased">
+      </td>
+      <td style="padding:.4rem .5rem">
+        <strong${e.purchased ? ' style="text-decoration:line-through"' : ''}>${escHtml(e.item)}</strong>
+        ${e.notes ? `<div style="font-size:.8rem;color:var(--text-muted);margin-top:.2rem">${escHtml(e.notes)}</div>` : ''}
+      </td>
+      <td style="white-space:nowrap;padding:.4rem .5rem;color:var(--text-muted);font-size:.85rem">${e.date ? fmtDate(e.date) : '—'}</td>
+      <td class="text-right" style="white-space:nowrap;padding:.4rem .5rem">${fmt(e.estimatedPrice || 0)}</td>
+      <td class="text-right no-print" style="padding:.4rem .5rem;white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" style="padding:.15rem .4rem" onclick="editMoveInPurchase('${escAttr(e.id)}')">Edit</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger);padding:.15rem .4rem" onclick="deleteMoveInPurchase('${escAttr(e.id)}')">×</button>
+      </td>
+    </tr>
+  `).join('');
+
+  return `
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-label">Estimated Total</div><div class="stat-value">${fmt(total)}</div></div>
+      <div class="stat-card"><div class="stat-label">Still Needed</div><div class="stat-value" style="color:var(--warning)">${fmt(remainingTotal)}</div></div>
+      <div class="stat-card"><div class="stat-label">Purchased</div><div class="stat-value" style="color:var(--success)">${fmt(purchasedTotal)}</div></div>
+    </div>
+
+    <div class="card mt-2">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Move in Purchases — 4781 MC</div>
+          <div style="font-size:.8rem;color:var(--text-muted);margin-top:.1rem">
+            Track new-construction move-in items, estimated prices, notes, and purchase status.
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm no-print" onclick="openAddMoveInPurchase()">+ Add Purchase</button>
+      </div>
+      ${entries.length === 0
+        ? `<div class="card-body"><div class="empty-state" style="padding:1.5rem;text-align:center">No move-in purchases yet. Click "+ Add Purchase" to start the list.</div></div>`
+        : `<div class="table-wrap"><table class="hist-table">
+            <thead><tr>
+              <th class="no-print"></th>
+              <th>Item</th>
+              <th>Target / Added</th>
+              <th class="text-right">Estimated Price</th>
+              <th class="no-print"></th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table></div>`}
+    </div>
+
+    <div class="card mt-2 hidden" id="movein-form-card">
+      <div class="card-header">
+        <div class="card-title" id="movein-form-title">Add Move-in Purchase</div>
+        <button class="btn btn-ghost btn-sm" onclick="closeMoveInPurchaseForm()">Cancel</button>
+      </div>
+      <div class="card-body">
+        <input type="hidden" id="mip-edit-id">
+        <div class="year-form-grid">
+          <div class="form-group" style="grid-column:1/-1">
+            <label>Item</label>
+            <input type="text" id="mip-item" placeholder="Washer, blinds, garage shelves, couch...">
+          </div>
+          <div class="form-group">
+            <label>Target / Added Date</label>
+            <input type="date" id="mip-date" value="${appTodayIso()}">
+          </div>
+          <div class="form-group">
+            <label>Estimated Price ($)</label>
+            <input type="number" id="mip-estimated-price" step="0.01" min="0" placeholder="0.00">
+          </div>
+          <div class="form-group" style="align-self:end">
+            <label style="display:flex;gap:.45rem;align-items:center;font-weight:600;text-transform:none;letter-spacing:0;color:var(--text)">
+              <input type="checkbox" id="mip-purchased"> Purchased
+            </label>
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label>Notes</label>
+            <textarea id="mip-notes" rows="3" placeholder="Optional — size, model, store, link, priority, room, etc."
+                      style="resize:vertical;font-family:inherit;font-size:.875rem;padding:.4rem .6rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);width:100%;box-sizing:border-box"></textarea>
+          </div>
+        </div>
+        <div class="form-actions mt-2">
+          <button class="btn btn-primary" id="movein-form-submit" onclick="saveMoveInPurchase()">Save Purchase</button>
+          <button class="btn btn-ghost" onclick="closeMoveInPurchaseForm()">Cancel</button>
+        </div>
+        <div id="movein-form-error" class="error-msg mt-1 hidden"></div>
+      </div>
+    </div>`;
+}
+
+function openAddMoveInPurchase() {
+  const card = document.getElementById('movein-form-card');
+  if (card) {
+    card.classList.remove('hidden');
+    document.getElementById('mip-item').focus();
+  }
+}
+
+function closeMoveInPurchaseForm() {
+  const card = document.getElementById('movein-form-card');
+  if (card) card.classList.add('hidden');
+  const editId = document.getElementById('mip-edit-id');
+  if (editId) editId.value = '';
+  const item = document.getElementById('mip-item');
+  if (item) item.value = '';
+  const date = document.getElementById('mip-date');
+  if (date) date.value = appTodayIso();
+  const price = document.getElementById('mip-estimated-price');
+  if (price) price.value = '';
+  const notes = document.getElementById('mip-notes');
+  if (notes) notes.value = '';
+  const purchased = document.getElementById('mip-purchased');
+  if (purchased) purchased.checked = false;
+  const title = document.getElementById('movein-form-title');
+  if (title) title.textContent = 'Add Move-in Purchase';
+  const submit = document.getElementById('movein-form-submit');
+  if (submit) submit.textContent = 'Save Purchase';
+  const err = document.getElementById('movein-form-error');
+  if (err) err.classList.add('hidden');
+}
+
+function editMoveInPurchase(id) {
+  const entry = (state.data[MOVE_IN_PURCHASE_PROPERTY].moveInPurchases || []).find(e => e.id === id);
+  if (!entry) return;
+  document.getElementById('mip-edit-id').value = id;
+  document.getElementById('mip-item').value = entry.item || '';
+  document.getElementById('mip-date').value = entry.date || appTodayIso();
+  document.getElementById('mip-estimated-price').value = entry.estimatedPrice || 0;
+  document.getElementById('mip-notes').value = entry.notes || '';
+  document.getElementById('mip-purchased').checked = !!entry.purchased;
+  document.getElementById('movein-form-title').textContent = 'Edit Move-in Purchase';
+  document.getElementById('movein-form-submit').textContent = 'Update Purchase';
+  openAddMoveInPurchase();
+  document.getElementById('movein-form-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function saveMoveInPurchase() {
+  const prop = MOVE_IN_PURCHASE_PROPERTY;
+  const editId = document.getElementById('mip-edit-id').value;
+  const item = document.getElementById('mip-item').value.trim();
+  const date = document.getElementById('mip-date').value;
+  const estimatedPrice = parseFloat(document.getElementById('mip-estimated-price').value) || 0;
+  const notes = document.getElementById('mip-notes').value.trim();
+  const purchased = document.getElementById('mip-purchased').checked;
+  const errEl = document.getElementById('movein-form-error');
+
+  if (!item) { errEl.textContent = 'Item is required.'; errEl.classList.remove('hidden'); return; }
+
+  try {
+    if (editId) {
+      const result = await callApi({ action: 'update_move_in_purchase', property: prop, id: editId, entry: { item, date, estimatedPrice, notes, purchased } });
+      const idx = state.data[prop].moveInPurchases.findIndex(e => e.id === editId);
+      if (idx !== -1) state.data[prop].moveInPurchases[idx] = result.entry;
+    } else {
+      const result = await callApi({ action: 'add_move_in_purchase', property: prop, entry: { item, date, estimatedPrice, notes, purchased } });
+      state.data[prop].moveInPurchases.push(result.entry);
+    }
+    closeMoveInPurchaseForm();
+    renderMoveInPurchases();
+  } catch (e) {
+    errEl.textContent = 'Save failed: ' + e.message;
+    errEl.classList.remove('hidden');
+  }
+}
+
+async function toggleMoveInPurchase(id, purchased) {
+  const prop = MOVE_IN_PURCHASE_PROPERTY;
+  const entries = state.data[prop].moveInPurchases || [];
+  const entry = entries.find(e => e.id === id);
+  if (!entry) return;
+  try {
+    const result = await callApi({ action: 'update_move_in_purchase', property: prop, id, entry: { ...entry, purchased } });
+    const idx = entries.findIndex(e => e.id === id);
+    if (idx !== -1) state.data[prop].moveInPurchases[idx] = result.entry;
+    renderMoveInPurchases();
+  } catch (err) {
+    alert(`Failed to update: ${err.message}`);
+    renderMoveInPurchases();
+  }
+}
+
+async function deleteMoveInPurchase(id) {
+  const prop = MOVE_IN_PURCHASE_PROPERTY;
+  const entry = (state.data[prop].moveInPurchases || []).find(e => e.id === id);
+  const detail = entry
+    ? `${entry.item || 'Purchase'} — ${fmt(entry.estimatedPrice || 0)}${entry.notes ? ` · ${entry.notes}` : ''}`
+    : 'This purchase item will be permanently removed.';
+  showBrandedNotice({
+    title: 'Delete Move-in Purchase',
+    type: 'danger',
+    message: detail,
+    confirmLabel: 'Yes, Delete',
+    onConfirm: async () => {
+      try {
+        await callApi({ action: 'delete_move_in_purchase', property: prop, id });
+        state.data[prop].moveInPurchases = state.data[prop].moveInPurchases.filter(e => e.id !== id);
+        renderMoveInPurchases();
+      } catch (e) {
+        alert('Delete failed: ' + e.message);
+      }
+    }
+  });
 }
 
 // ── View: Tax Summary ─────────────────────────────────────────────────────────
@@ -8634,6 +8877,7 @@ async function submitPassword() {
       if (data.sessionToken) sessionStorage.setItem('rentals_session_token', data.sessionToken);
       state.password = '';
       document.querySelector('.app-header').style.display = '';
+      updateViewTabAvailability(state.currentProperty);
       renderView();
     } else {
       errEl.classList.remove('hidden');
@@ -8736,6 +8980,12 @@ window.tpToggleSection         = tpToggleSection;
 window.tpApplyPropertySale     = tpApplyPropertySale;
 window.tpClearPropertySale     = tpClearPropertySale;
 window.toggleMaintImprovement  = toggleMaintImprovement;
+window.openAddMoveInPurchase   = openAddMoveInPurchase;
+window.closeMoveInPurchaseForm = closeMoveInPurchaseForm;
+window.editMoveInPurchase      = editMoveInPurchase;
+window.saveMoveInPurchase      = saveMoveInPurchase;
+window.toggleMoveInPurchase    = toggleMoveInPurchase;
+window.deleteMoveInPurchase    = deleteMoveInPurchase;
 window.saveInvestmentConfig    = saveInvestmentConfig;
 window.closeOutInvestmentSale  = closeOutInvestmentSale;
 window.syncSaleClosingCosts    = syncSaleClosingCosts;
@@ -8796,6 +9046,7 @@ document.addEventListener('keydown', e => {
 
 // Start: show gate or app
 if (isAuthed()) {
+  updateViewTabAvailability(state.currentProperty);
   renderView();
 } else {
   showPasswordGate();

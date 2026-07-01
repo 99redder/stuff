@@ -3,6 +3,7 @@
 // KV keys: transactions:{property}, summaries:{property}, defaults:{property}, depreciation:{property}
 
 const VALID_PROPERTIES = ['6AL', '95EB', '446BB', '731WO', '4781MC'];
+const MOVE_IN_PURCHASE_PROPERTY = '4781MC';
 
 const VALID_CATEGORIES = [
   'rent', 'deposit', 'late_fee', 'other_income',
@@ -123,7 +124,8 @@ async function handleDataApi(request, env) {
     'add_transaction', 'add_transactions', 'delete_transaction',
     'save_summary', 'delete_summary',
     'save_defaults', 'save_depreciation',
-    'save_maintenance', 'add_maintenance_entry', 'update_maintenance_entry', 'delete_maintenance_entry'
+    'save_maintenance', 'add_maintenance_entry', 'update_maintenance_entry', 'delete_maintenance_entry',
+    'save_move_in_purchases', 'add_move_in_purchase', 'update_move_in_purchase', 'delete_move_in_purchase'
   ]);
   if (readOnlyWhenSold.has(action) && await isPropertySold(env, property)) {
     return jsonResponse({ error: 'Property is sold/closed. Records are historical and read-only.' }, 409);
@@ -177,6 +179,21 @@ async function handleDataApi(request, env) {
 
     case 'delete_maintenance_entry':
       return handleDeleteMaintenanceEntry(env, property, body.id);
+
+    case 'get_move_in_purchases':
+      return handleGetMoveInPurchases(env, property);
+
+    case 'save_move_in_purchases':
+      return handleSaveMoveInPurchases(env, property, body.entries);
+
+    case 'add_move_in_purchase':
+      return handleAddMoveInPurchase(env, property, body.entry);
+
+    case 'update_move_in_purchase':
+      return handleUpdateMoveInPurchase(env, property, body.id, body.entry);
+
+    case 'delete_move_in_purchase':
+      return handleDeleteMoveInPurchase(env, property, body.id);
 
     case 'get_investment':
       return handleGetInvestment(env, property);
@@ -568,6 +585,88 @@ async function handleDeleteMaintenanceEntry(env, property, id) {
   const filtered = entries.filter(e => e.id !== id);
   if (filtered.length === entries.length) return jsonResponse({ error: 'Entry not found' }, 404);
   await env.RENTALS.put(`maintenance:${property}`, JSON.stringify(filtered));
+  return jsonResponse({ success: true });
+}
+
+// ── Move-In Purchases ─────────────────────────────────────────────────────────
+
+function requireMoveInPurchaseProperty(property) {
+  return property === MOVE_IN_PURCHASE_PROPERTY
+    ? null
+    : jsonResponse({ error: 'Move-in purchases are only available for 4781MC' }, 400);
+}
+
+function normalizeMoveInPurchase(entry) {
+  return {
+    id: entry.id || crypto.randomUUID(),
+    date: typeof entry.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entry.date) ? entry.date : '',
+    item: String(entry.item || '').trim(),
+    estimatedPrice: typeof entry.estimatedPrice === 'number' && isFinite(entry.estimatedPrice) && entry.estimatedPrice >= 0
+      ? entry.estimatedPrice
+      : 0,
+    notes: String(entry.notes || '').trim(),
+    purchased: !!entry.purchased,
+  };
+}
+
+async function handleGetMoveInPurchases(env, property) {
+  const propertyError = requireMoveInPurchaseProperty(property);
+  if (propertyError) return propertyError;
+  const entries = await env.RENTALS.get(`move_in_purchases:${property}`, 'json') || [];
+  return jsonResponse({ entries });
+}
+
+async function handleSaveMoveInPurchases(env, property, entries) {
+  const propertyError = requireMoveInPurchaseProperty(property);
+  if (propertyError) return propertyError;
+  if (!Array.isArray(entries)) {
+    return jsonResponse({ error: 'entries must be an array' }, 400);
+  }
+  const saved = entries.map(e => normalizeMoveInPurchase({ ...e, id: e.id || crypto.randomUUID() }));
+  await env.RENTALS.put(`move_in_purchases:${property}`, JSON.stringify(saved));
+  return jsonResponse({ entries: saved });
+}
+
+async function handleAddMoveInPurchase(env, property, entry) {
+  const propertyError = requireMoveInPurchaseProperty(property);
+  if (propertyError) return propertyError;
+  if (!entry || typeof entry !== 'object') {
+    return jsonResponse({ error: 'Missing entry object' }, 400);
+  }
+  const newEntry = normalizeMoveInPurchase({ ...entry, id: crypto.randomUUID() });
+  if (!newEntry.item) return jsonResponse({ error: 'Item is required' }, 400);
+  const entries = await env.RENTALS.get(`move_in_purchases:${property}`, 'json') || [];
+  entries.push(newEntry);
+  await env.RENTALS.put(`move_in_purchases:${property}`, JSON.stringify(entries));
+  return jsonResponse({ entry: newEntry });
+}
+
+async function handleUpdateMoveInPurchase(env, property, id, entry) {
+  const propertyError = requireMoveInPurchaseProperty(property);
+  if (propertyError) return propertyError;
+  if (!id) return jsonResponse({ error: 'Missing id' }, 400);
+  if (!entry || typeof entry !== 'object') return jsonResponse({ error: 'Missing entry' }, 400);
+  const entries = await env.RENTALS.get(`move_in_purchases:${property}`, 'json') || [];
+  const idx = entries.findIndex(e => e.id === id);
+  if (idx === -1) return jsonResponse({ error: 'Entry not found' }, 404);
+  entries[idx] = normalizeMoveInPurchase({
+    ...entries[idx],
+    ...entry,
+    id,
+  });
+  if (!entries[idx].item) return jsonResponse({ error: 'Item is required' }, 400);
+  await env.RENTALS.put(`move_in_purchases:${property}`, JSON.stringify(entries));
+  return jsonResponse({ entry: entries[idx] });
+}
+
+async function handleDeleteMoveInPurchase(env, property, id) {
+  const propertyError = requireMoveInPurchaseProperty(property);
+  if (propertyError) return propertyError;
+  if (!id) return jsonResponse({ error: 'Missing id' }, 400);
+  const entries = await env.RENTALS.get(`move_in_purchases:${property}`, 'json') || [];
+  const filtered = entries.filter(e => e.id !== id);
+  if (filtered.length === entries.length) return jsonResponse({ error: 'Entry not found' }, 404);
+  await env.RENTALS.put(`move_in_purchases:${property}`, JSON.stringify(filtered));
   return jsonResponse({ success: true });
 }
 
