@@ -1519,6 +1519,7 @@ const PROPERTIES = ['6AL', '95EB', '446BB', '731WO', '4781MC'];
 const PRIMARY_PROPERTIES = new Set(['731WO', '4781MC']); // primary residences: Investment Return + Maintenance only
 const MAINTENANCE_BASIS_PROPERTIES = new Set(['6AL', '95EB', ...PRIMARY_PROPERTIES]); // Maintenance entries marked Improvement increase Investment Return basis
 const MOVE_IN_PURCHASE_PROPERTY = '4781MC';
+const MOVE_IN_PURCHASE_DEFAULT_DATE = '2027-02-01';
 const PRIMARY_VIEWS = new Set(['investment-return', 'maintenance']);
 const APP_TIME_ZONE = 'America/New_York';
 function appTodayParts(date = new Date()) {
@@ -3296,7 +3297,7 @@ function renderMoveInPurchasesSection(prop) {
           </div>
           <div class="form-group">
             <label>Target / Added Date</label>
-            <input type="date" id="mip-date" value="${appTodayIso()}">
+            <input type="date" id="mip-date" value="${MOVE_IN_PURCHASE_DEFAULT_DATE}">
           </div>
           <div class="form-group">
             <label>Estimated Price ($)</label>
@@ -3338,7 +3339,7 @@ function closeMoveInPurchaseForm() {
   const item = document.getElementById('mip-item');
   if (item) item.value = '';
   const date = document.getElementById('mip-date');
-  if (date) date.value = appTodayIso();
+  if (date) date.value = MOVE_IN_PURCHASE_DEFAULT_DATE;
   const price = document.getElementById('mip-estimated-price');
   if (price) price.value = '';
   const notes = document.getElementById('mip-notes');
@@ -3358,7 +3359,7 @@ function editMoveInPurchase(id) {
   if (!entry) return;
   document.getElementById('mip-edit-id').value = id;
   document.getElementById('mip-item').value = entry.item || '';
-  document.getElementById('mip-date').value = entry.date || appTodayIso();
+  document.getElementById('mip-date').value = entry.date || MOVE_IN_PURCHASE_DEFAULT_DATE;
   document.getElementById('mip-estimated-price').value = entry.estimatedPrice || 0;
   document.getElementById('mip-notes').value = entry.notes || '';
   document.getElementById('mip-purchased').checked = !!entry.purchased;
