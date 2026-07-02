@@ -3234,7 +3234,9 @@ function renderMoveInPurchasesSection(prop) {
   const purchasedTotal = purchasedEntries.reduce((s, e) => s + (Number(e.estimatedPrice) || 0), 0);
   const remainingTotal = total - purchasedTotal;
 
-  const rows = entries.map(e => `
+  const rows = entries.map(e => {
+    const productLink = normalizePurchaseLink(e.productLink);
+    return `
     <tr${e.purchased ? ' style="opacity:.62"' : ''}>
       <td class="no-print" style="width:44px;text-align:center;padding:.4rem .5rem">
         <input type="checkbox" ${e.purchased ? 'checked' : ''} onchange="toggleMoveInPurchase('${escAttr(e.id)}', this.checked)" aria-label="Mark purchased">
@@ -3242,6 +3244,7 @@ function renderMoveInPurchasesSection(prop) {
       <td style="padding:.4rem .5rem">
         <strong${e.purchased ? ' style="text-decoration:line-through"' : ''}>${escHtml(e.item)}</strong>
         ${e.notes ? `<div style="font-size:.8rem;color:var(--text-muted);margin-top:.2rem">${escHtml(e.notes)}</div>` : ''}
+        ${productLink ? `<div style="font-size:.8rem;margin-top:.25rem"><a href="${escAttr(productLink)}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:600;text-decoration:none">Open Link</a></div>` : ''}
       </td>
       <td style="white-space:nowrap;padding:.4rem .5rem;color:var(--text-muted);font-size:.85rem">${e.date ? fmtDate(e.date) : '—'}</td>
       <td class="text-right" style="white-space:nowrap;padding:.4rem .5rem">${fmt(e.estimatedPrice || 0)}</td>
@@ -3250,7 +3253,8 @@ function renderMoveInPurchasesSection(prop) {
         <button class="btn btn-ghost btn-sm" style="color:var(--danger);padding:.15rem .4rem" onclick="deleteMoveInPurchase('${escAttr(e.id)}')">×</button>
       </td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 
   return `
     <div class="stats-row">
@@ -3309,8 +3313,12 @@ function renderMoveInPurchasesSection(prop) {
             </label>
           </div>
           <div class="form-group" style="grid-column:1/-1">
+            <label>Product Link</label>
+            <input type="url" id="mip-product-link" placeholder="https://...">
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
             <label>Notes</label>
-            <textarea id="mip-notes" rows="3" placeholder="Optional — size, model, store, link, priority, room, etc."
+            <textarea id="mip-notes" rows="3" placeholder="Optional — size, model, store, priority, room, etc."
                       style="resize:vertical;font-family:inherit;font-size:.875rem;padding:.4rem .6rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);width:100%;box-sizing:border-box"></textarea>
           </div>
         </div>
@@ -3342,6 +3350,8 @@ function closeMoveInPurchaseForm() {
   if (date) date.value = MOVE_IN_PURCHASE_DEFAULT_DATE;
   const price = document.getElementById('mip-estimated-price');
   if (price) price.value = '';
+  const productLink = document.getElementById('mip-product-link');
+  if (productLink) productLink.value = '';
   const notes = document.getElementById('mip-notes');
   if (notes) notes.value = '';
   const purchased = document.getElementById('mip-purchased');
@@ -3361,6 +3371,7 @@ function editMoveInPurchase(id) {
   document.getElementById('mip-item').value = entry.item || '';
   document.getElementById('mip-date').value = entry.date || MOVE_IN_PURCHASE_DEFAULT_DATE;
   document.getElementById('mip-estimated-price').value = entry.estimatedPrice || 0;
+  document.getElementById('mip-product-link').value = entry.productLink || '';
   document.getElementById('mip-notes').value = entry.notes || '';
   document.getElementById('mip-purchased').checked = !!entry.purchased;
   document.getElementById('movein-form-title').textContent = 'Edit Move-in Purchase';
@@ -3369,12 +3380,18 @@ function editMoveInPurchase(id) {
   document.getElementById('movein-form-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+function normalizePurchaseLink(value) {
+  const link = String(value || '').trim();
+  return /^https?:\/\//i.test(link) ? link : '';
+}
+
 async function saveMoveInPurchase() {
   const prop = MOVE_IN_PURCHASE_PROPERTY;
   const editId = document.getElementById('mip-edit-id').value;
   const item = document.getElementById('mip-item').value.trim();
   const date = document.getElementById('mip-date').value;
   const estimatedPrice = parseFloat(document.getElementById('mip-estimated-price').value) || 0;
+  const productLink = normalizePurchaseLink(document.getElementById('mip-product-link').value);
   const notes = document.getElementById('mip-notes').value.trim();
   const purchased = document.getElementById('mip-purchased').checked;
   const errEl = document.getElementById('movein-form-error');
@@ -3383,11 +3400,11 @@ async function saveMoveInPurchase() {
 
   try {
     if (editId) {
-      const result = await callApi({ action: 'update_move_in_purchase', property: prop, id: editId, entry: { item, date, estimatedPrice, notes, purchased } });
+      const result = await callApi({ action: 'update_move_in_purchase', property: prop, id: editId, entry: { item, date, estimatedPrice, productLink, notes, purchased } });
       const idx = state.data[prop].moveInPurchases.findIndex(e => e.id === editId);
       if (idx !== -1) state.data[prop].moveInPurchases[idx] = result.entry;
     } else {
-      const result = await callApi({ action: 'add_move_in_purchase', property: prop, entry: { item, date, estimatedPrice, notes, purchased } });
+      const result = await callApi({ action: 'add_move_in_purchase', property: prop, entry: { item, date, estimatedPrice, productLink, notes, purchased } });
       state.data[prop].moveInPurchases.push(result.entry);
     }
     closeMoveInPurchaseForm();

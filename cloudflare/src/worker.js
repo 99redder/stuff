@@ -604,9 +604,15 @@ function normalizeMoveInPurchase(entry) {
     estimatedPrice: typeof entry.estimatedPrice === 'number' && isFinite(entry.estimatedPrice) && entry.estimatedPrice >= 0
       ? entry.estimatedPrice
       : 0,
+    productLink: normalizeMoveInPurchaseLink(entry.productLink),
     notes: String(entry.notes || '').trim(),
     purchased: !!entry.purchased,
   };
+}
+
+function normalizeMoveInPurchaseLink(value) {
+  const link = String(value || '').trim();
+  return /^https?:\/\//i.test(link) ? link : '';
 }
 
 async function handleGetMoveInPurchases(env, property) {
