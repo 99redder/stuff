@@ -8290,11 +8290,13 @@ function fsNormalize(raw) {
 
 // USDA Official Food Plans: Cost of Food at Home — Liberal Plan, female 71+,
 // $377.00/mo (Jan 2025 report) × 0.95 (USDA's 5–6 person household adjustment)
-// ≈ $358. The Liberal tier leaves headroom for her share of household
-// consumables (paper goods, cleaning, toiletries) that also flow through the
-// weekly bucket. Update the amount + label annually from the latest report.
-const FS_USDA_DEFAULT_AMOUNT = 358;
-const FS_USDA_DEFAULT_SOURCE = 'USDA Liberal Food Plan, female 71+ — Jan 2025 report ($377.00/mo, −5% household-size adj.)';
+// = $358, plus an explicit $67/mo allowance for her share of household
+// consumables (toiletries, paper goods, cleaning supplies) that also flow
+// through the weekly bucket. Update the amount + label annually from the
+// latest report. Gas is deliberately excluded — she doesn't drive; rides for
+// her benefit are family support (or a mileage log if she insists).
+const FS_USDA_DEFAULT_AMOUNT = 425;
+const FS_USDA_DEFAULT_SOURCE = 'USDA Liberal Food Plan, female 71+ — Jan 2025 report ($377.00/mo, −5% household-size adj. = $358) + $67/mo household-supplies allowance (toiletries, paper goods, cleaning)';
 const USDA_FOOD_COST_URL = 'https://www.fns.usda.gov/cnpp/usda-food-plans-cost-food-monthly-reports';
 
 // The budget expense item the food benchmark applies to: the explicitly chosen
@@ -8853,12 +8855,13 @@ function fsAgreementDocHtml() {
         family purchases. Because that pool includes spending that does not benefit Resident, an
         equal per-capita split (${fmt(u.fullAmount)} &divide; ${usdaRow.participants} =
         ${fmt(u.perCapita)}) would overstate Resident's consumption. Resident's share of this
-        expense is therefore valued at <strong>${fmt(u.amount)} per month</strong> using the
-        USDA <em>Official Food Plans: Cost of Food at Home</em> benchmark &mdash;
-        ${escHtml(u.sourceLabel)} &mdash; a government-published, age- and sex-specific figure
-        for all meals and snacks prepared at home, with USDA's published adjustment for
-        household size. The benchmark is refreshed from the then-current USDA monthly report
-        each time this agreement is regenerated.</p>
+        expense is therefore valued at <strong>${fmt(u.amount)} per month</strong>, composed as:
+        ${escHtml(u.sourceLabel)}. The food component is the USDA <em>Official Food Plans: Cost
+        of Food at Home</em> benchmark &mdash; a government-published, age- and sex-specific
+        figure for all meals and snacks prepared at home, with USDA's published adjustment for
+        household size &mdash; supplemented by a stated allowance for Resident's share of
+        household supplies purchased through the same pooled spending. The figure is refreshed
+        from the then-current USDA monthly report each time this agreement is regenerated.</p>
       </div>`;
   }
 
@@ -8894,10 +8897,11 @@ function fsAgreementDocHtml() {
       Homeowners' equity rather than covering a cost of the shared household &mdash; the
       principal portion is excluded from the shared amount before allocation, as detailed
       in Exhibit&nbsp;A.` : ''}${rows.some(r => r.usda) ? `
-      Resident's share of pooled food and household-supplies spending is valued at the
+      Resident's share of pooled food and household-supplies spending is valued using the
       published USDA Cost of Food benchmark for Resident's age and sex &mdash; an
-      independently published figure updated monthly by USDA &mdash; rather than a
-      per-capita fraction of mixed family spending, as detailed in Exhibit&nbsp;A.` : ''}</li>
+      independently published figure updated monthly by USDA &mdash; plus a stated
+      allowance for Resident's share of household supplies, rather than a per-capita
+      fraction of mixed family spending, as detailed in Exhibit&nbsp;A.` : ''}</li>
 
       <li><strong>Monthly contribution.</strong> Based on current costs, Resident's contribution
       is <strong>${fmt(c.herShare)} per month</strong>${fs.roundDollar ? ' (rounded to the nearest whole dollar)' : ''},
