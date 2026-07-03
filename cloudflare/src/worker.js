@@ -91,6 +91,7 @@ async function handleDataApi(request, env) {
   if (action === 'fetch_fmg_tax_summary') return handleFetchFmgTaxSummary(body);
   if (action === 'get_budget') return handleGetBudget(env);
   if (action === 'save_budget') return handleSaveBudget(env, body.data);
+  if (action === 'refresh_usda_food_benchmark') return handleRefreshUsdaFoodBenchmark();
   if (action === 'get_mom_budget') return handleGetMomBudget(env);
   if (action === 'save_mom_budget') return handleSaveMomBudget(env, body.data);
 
@@ -710,6 +711,127 @@ async function handleSaveBudget(env, data) {
   }
   await env.RENTALS.put('budget', JSON.stringify(data));
   return jsonResponse({ success: true });
+}
+
+// ── USDA Cost of Food report fetch + parse ────────────────────────────────────
+// Fetches the latest monthly "Official USDA Food Plans: Cost of Food at Home"
+// PDF and extracts the female 71+ Liberal Plan monthly figure for the Fair
+// Share food benchmark. USDA only hosts the most recent month at this URL
+// pattern, so we probe backwards from the current month.
+
+const USDA_PDF_URL_BASE = 'https://fns-prod.azureedge.us/sites/default/files/resource-files/cnpp-costfood-3levels-';
+const USDA_MONTHS = ['january', 'february', 'march', 'april', 'may', 'june',
+  'july', 'august', 'september', 'october', 'november', 'december'];
+
+async function handleRefreshUsdaFoodBenchmark() {
+  const now = new Date();
+  for (let back = 0; back < 15; back++) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1));
+    const url = `${USDA_PDF_URL_BASE}${USDA_MONTHS[d.getUTCMonth()]}${d.getUTCFullYear()}.pdf`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      if (bytes[0] !== 0x25 || bytes[1] !== 0x50) continue;  // not %PDF (404 page)
+      const parsed = await parseUsdaCostOfFoodPdf(bytes);
+      if (parsed) return jsonResponse({ ...parsed, url });
+    } catch (_) { /* try the previous month */ }
+  }
+  return jsonResponse({ error: 'Could not locate or parse a recent USDA Cost of Food report' }, 502);
+}
+
+async function inflateBytes(bytes) {
+  // PDF stream data usually carries a trailing EOL before `endstream`, which
+  // DecompressionStream rejects as trailing junk — trim whitespace first, and
+  // keep whatever inflated cleanly if an error still fires at the tail.
+  let end = bytes.length;
+  while (end > 0 && (bytes[end - 1] === 0x0a || bytes[end - 1] === 0x0d || bytes[end - 1] === 0x20 || bytes[end - 1] === 0x09)) end--;
+  const reader = new Blob([bytes.slice(0, end)]).stream()
+    .pipeThrough(new DecompressionStream('deflate')).getReader();
+  const chunks = [];
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+  } catch (_) { /* partial output is fine for text extraction */ }
+  let len = 0;
+  for (const c of chunks) len += c.length;
+  const out = new Uint8Array(len);
+  let o = 0;
+  for (const c of chunks) { out.set(c, o); o += c.length; }
+  return out;
+}
+
+// Text extraction for the USDA PDF: inflate the FlateDecode streams, build a
+// glyph→unicode map from the embedded ToUnicode CMaps, decode the Tj/TJ text
+// operators, then read the first (female) "71+ years" row — six currency
+// figures whose last is the Liberal Plan monthly cost.
+async function parseUsdaCostOfFoodPdf(bytes) {
+  const latin = new TextDecoder('latin1').decode(bytes);  // single-byte: indexes match bytes
+  const parts = [];
+  let idx = 0;
+  while (true) {
+    const s = latin.indexOf('stream', idx);
+    if (s === -1) break;
+    if (latin.slice(s - 3, s) === 'end') { idx = s + 6; continue; }
+    let start = s + 6;
+    if (latin[start] === '\r') start++;
+    if (latin[start] === '\n') start++;
+    const e = latin.indexOf('endstream', start);
+    if (e === -1) break;
+    try { parts.push(new TextDecoder('latin1').decode(await inflateBytes(bytes.slice(start, e)))); }
+    catch (_) { parts.push(''); }
+    idx = e + 9;
+  }
+
+  const glyphMap = {};
+  for (const p of parts) {
+    for (const m of p.matchAll(/beginbfchar([\s\S]*?)endbfchar/g)) {
+      for (const pair of m[1].matchAll(/<([0-9A-Fa-f]{4})>\s*<([0-9A-Fa-f]{4,8})>/g)) {
+        glyphMap[parseInt(pair[1], 16)] = String.fromCharCode(parseInt(pair[2].slice(0, 4), 16));
+      }
+    }
+    for (const m of p.matchAll(/beginbfrange([\s\S]*?)endbfrange/g)) {
+      for (const t of m[1].matchAll(/<([0-9A-Fa-f]{4})>\s*<([0-9A-Fa-f]{4})>\s*<([0-9A-Fa-f]{4})>/g)) {
+        const lo = parseInt(t[1], 16), hi = parseInt(t[2], 16), dst = parseInt(t[3], 16);
+        for (let g = lo; g <= hi; g++) glyphMap[g] = String.fromCharCode(dst + (g - lo));
+      }
+    }
+  }
+
+  const decHex = hex => {
+    let s = '';
+    for (let i = 0; i + 4 <= hex.length; i += 4) s += glyphMap[parseInt(hex.slice(i, i + 4), 16)] ?? '';
+    return s;
+  };
+  const isTextStream = p => {
+    if ((p.match(/\bT[jJf]\b|BDC|Tm/g) || []).length < 5) return false;
+    const sample = p.slice(0, 2000);
+    return ((sample.match(/[\x20-\x7e\r\n]/g) || []).length / sample.length) > 0.9;
+  };
+  const decodeContent = p => {
+    let out = '';
+    for (const m of p.matchAll(/<([0-9A-Fa-f]+)>\s*Tj|\(((?:[^()\\]|\\.)*)\)\s*Tj|\[((?:[^\]\\]|\\.)*)\]\s*TJ|(Td|TD|Tm|T\*)/g)) {
+      if (m[1]) out += decHex(m[1]);
+      else if (m[2] !== undefined) out += m[2].replace(/\\([()\\])/g, '$1');
+      else if (m[3] !== undefined) {
+        for (const el of m[3].matchAll(/<([0-9A-Fa-f]+)>|\(((?:[^()\\]|\\.)*)\)/g)) {
+          out += el[1] ? decHex(el[1]) : el[2].replace(/\\([()\\])/g, '$1');
+        }
+      } else out += ' ';
+    }
+    return out;
+  };
+
+  const text = parts.filter(isTextStream).map(decodeContent).join(' ').replace(/\s+/g, ' ');
+  const title = text.match(/U\.S\.\s*Average,?\s*([A-Z][a-z]+\s+\d{4})/);
+  const row = text.match(/71\+\s*years\s*((?:\$[\d,]+\.\d{2}\s*){6})/);  // first hit = Female section
+  if (!title || !row) return null;
+  const nums = row[1].match(/[\d,]+\.\d{2}/g).map(n => parseFloat(n.replace(/,/g, '')));
+  if (nums.length !== 6 || !(nums[5] > 100) || !(nums[5] < 2000)) return null;
+  return { reportLabel: title[1].replace(/\s+/g, ' '), liberalMonthly: nums[5] };
 }
 
 // ── Mom Budget ───────────────────────────────────────────────────────────────

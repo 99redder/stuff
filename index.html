@@ -8284,6 +8284,7 @@ function fsNormalize(raw) {
       itemId:      typeof raw.foodBenchmark?.itemId === 'string' ? raw.foodBenchmark.itemId : '',
       amount:      (Number(raw.foodBenchmark?.amount) > 0) ? Number(raw.foodBenchmark.amount) : FS_USDA_DEFAULT_AMOUNT,
       sourceLabel: (typeof raw.foodBenchmark?.sourceLabel === 'string' && raw.foodBenchmark.sourceLabel.trim()) ? raw.foodBenchmark.sourceLabel : FS_USDA_DEFAULT_SOURCE,
+      suppliesAllowance: (Number(raw.foodBenchmark?.suppliesAllowance) >= 0 && Number.isFinite(Number(raw.foodBenchmark?.suppliesAllowance))) ? Number(raw.foodBenchmark.suppliesAllowance) : FS_USDA_DEFAULT_SUPPLIES,
     },
   };
 }
@@ -8296,7 +8297,47 @@ function fsNormalize(raw) {
 // latest report. Gas is deliberately excluded — she doesn't drive; rides for
 // her benefit are family support (or a mileage log if she insists).
 const FS_USDA_DEFAULT_AMOUNT = 442;
+const FS_USDA_DEFAULT_SUPPLIES = 67;
 const FS_USDA_DEFAULT_SOURCE = 'USDA Liberal Food Plan, female 71+ — May 2026 report ($394.40/mo, −5% household-size adj. = $375) + $67/mo household-supplies allowance (toiletries, paper goods, cleaning)';
+
+// Builds the benchmark source label from a report's Liberal figure + the
+// supplies allowance. Same format as FS_USDA_DEFAULT_SOURCE.
+function fsUsdaSourceLabel(reportLabel, liberalMonthly, foodComponent, allowance) {
+  const base = `USDA Liberal Food Plan, female 71+ — ${reportLabel} report ($${liberalMonthly.toFixed(2)}/mo, −5% household-size adj. = $${foodComponent})`;
+  return allowance > 0 ? `${base} + $${allowance}/mo household-supplies allowance (toiletries, paper goods, cleaning)` : base;
+}
+
+// One-click refresh: the worker fetches + parses the latest USDA monthly PDF
+// and returns { reportLabel, liberalMonthly }; her portion recomputes as
+// round(liberal × 0.95) + supplies allowance and saves.
+async function fsRefreshUsdaBenchmark(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Fetching latest USDA report…'; }
+  try {
+    const res = await callApi({ action: 'refresh_usda_food_benchmark' });
+    const fb = state.budget.fairShare.foodBenchmark;
+    const liberal = Number(res.liberalMonthly);
+    if (!(liberal > 0)) throw new Error('Bad figure');
+    const food = Math.round(liberal * 0.95);
+    const allowance = Number(fb.suppliesAllowance) || 0;
+    fb.amount = food + allowance;
+    fb.sourceLabel = fsUsdaSourceLabel(res.reportLabel, liberal, food, allowance);
+    fsSyncBudgetIncome();
+    await _saveBudget();
+    _renderBudgetHtml();
+    showBrandedNotice({
+      title: 'USDA Benchmark Updated',
+      message: `${res.reportLabel} report — Liberal Plan, female 71+: $${liberal.toFixed(2)}/mo\nFood component (× 0.95 household adj.): $${food}\nHousehold-supplies allowance: $${allowance}\n\nHer portion is now $${food + allowance}/mo.`,
+      confirmLabel: 'OK'
+    });
+  } catch (e) {
+    _renderBudgetHtml();
+    showBrandedNotice({
+      title: 'USDA Update Failed',
+      message: 'Could not fetch or parse the latest USDA Cost of Food report. Try again later, or update the amount manually from the USDA reports page (link in the card).',
+      confirmLabel: 'OK'
+    });
+  }
+}
 const USDA_FOOD_COST_URL = 'https://www.fns.usda.gov/cnpp/usda-food-plans-cost-food-monthly-reports';
 
 // The budget expense item the food benchmark applies to: the explicitly chosen
@@ -8547,14 +8588,22 @@ function fsRenderCard() {
           <input class="form-input" style="width:100%;font-size:.85rem" type="number" min="1" step="1" value="${escAttr(String(fb.amount))}"
                  onchange="fsUpdateFoodBenchmark('amount', this.value)">
         </div>
+        <div style="flex:1;min-width:110px">
+          <label style="display:block;font-size:.66rem;font-weight:600;color:var(--text-muted);margin-bottom:.2rem">Supplies allowance</label>
+          <input class="form-input" style="width:100%;font-size:.85rem" type="number" min="0" step="1" value="${escAttr(String(fb.suppliesAllowance))}"
+                 onchange="fsUpdateFoodBenchmark('suppliesAllowance', this.value)">
+        </div>
         <div style="flex:3;min-width:220px">
-          <label style="display:block;font-size:.66rem;font-weight:600;color:var(--text-muted);margin-bottom:.2rem">Benchmark source (update annually)</label>
+          <label style="display:block;font-size:.66rem;font-weight:600;color:var(--text-muted);margin-bottom:.2rem">Benchmark source</label>
           <input class="form-input" style="width:100%;font-size:.85rem" type="text" value="${escAttr(fb.sourceLabel)}"
                  onchange="fsUpdateFoodBenchmark('sourceLabel', this.value)">
         </div>
       </div>
       ${fbMath}
-      <div style="font-size:.66rem;color:var(--text-muted);margin-top:.4rem">Current figures: <a href="${USDA_FOOD_COST_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">USDA Cost of Food monthly reports ↗</a> — use the female 71+ row, then apply USDA's −5% adjustment for 5–6 person households.</div>`;
+      <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;margin-top:.55rem">
+        <button type="button" class="btn btn-primary" style="font-size:.78rem;padding:.4rem .8rem" onclick="fsRefreshUsdaBenchmark(this)">↻ Update from latest USDA report</button>
+        <div style="font-size:.66rem;color:var(--text-muted);flex:1;min-width:220px">Fetches the newest monthly <a href="${USDA_FOOD_COST_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">USDA Cost of Food report ↗</a>, reads the female 71+ Liberal figure, applies the −5% household-size adjustment, adds the supplies allowance, and saves.</div>
+      </div>`;
   }
   const foodBox = `
     <div style="border:1px solid var(--border);border-radius:var(--radius);padding:.7rem .8rem;margin-bottom:.9rem;background:var(--surface)">
@@ -8746,6 +8795,9 @@ async function fsUpdateFoodBenchmark(key, value) {
   } else if (key === 'amount') {
     const v = parseFloat(value);
     if (isFinite(v) && v > 0) fb.amount = v;
+  } else if (key === 'suppliesAllowance') {
+    const v = parseFloat(value);
+    if (isFinite(v) && v >= 0) fb.suppliesAllowance = v;
   }
   fsSyncBudgetIncome();
   await _saveBudget();
