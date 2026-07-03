@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mom-budget-phone-v8';
+const CACHE_NAME = 'mom-budget-phone-v9';
 const STATIC_ASSETS = [
   './mom-budget-phone.html',
   './mom-budget-manifest.webmanifest',

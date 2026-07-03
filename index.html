@@ -4924,10 +4924,13 @@ async function ensureBudgetLoaded() {
   for (const cat of BUDGET_EXPENSE_CATS) {
     state.budget.expenses[cat] = raw.expenses?.[cat] || [];
   }
+  // One-time cleanup: the separate monthly family gift was removed (Medicaid
+  // 5-year lookback exposure) — strip its saved income line and fairShare amount.
   if (
-    (fairShare.giftAmount300Migrated && raw.fairShare?.giftAmount300Migrated !== true) ||
-    (fairShare.giftAmount400Migrated && raw.fairShare?.giftAmount400Migrated !== true)
+    raw.fairShare?.giftAmount !== undefined ||
+    state.budget.income.some(i => i.id === FS_GIFT_INCOME_ID)
   ) {
+    state.budget.income = state.budget.income.filter(i => i.id !== FS_GIFT_INCOME_ID);
     await _saveBudget();
   }
 }
@@ -4939,7 +4942,7 @@ async function renderBudget() {
 
 function _renderBudgetHtml() {
   const b = state.budget;
-  fsSyncBudgetIncome();   // keep Mom's reimbursement and gift income lines in sync
+  fsSyncBudgetIncome();   // keep Mom's reimbursement income line in sync
   const totalIncome = b.income.reduce((s, i) => s + (i.amount || 0), 0);
   const catTotals = {};
   let totalExpenses = 0;
@@ -5035,12 +5038,10 @@ function _renderBudgetHtml() {
     </div>`;
 
   const incomeRows = sortedIncome.map(item => {
-    // Auto-synced Mom transfer lines — read-only, managed from the Fair Share card.
+    // Auto-synced Mom Fair Share line — read-only, managed from the Fair Share card.
     if (item.auto) {
       const incomeRowPct = totalIncome > 0 ? ((item.amount / totalIncome) * 100).toFixed(1) : '0.0';
-      const autoNote = item.autoType === 'gift' || item.id === FS_GIFT_INCOME_ID
-        ? '🎁 separate gift'
-        : '⚖️ from Fair Share';
+      const autoNote = '⚖️ from Fair Share';
       return `<div class="budget-item">
         <span class="budget-item-pct">${incomeRowPct}%</span>
         <span class="budget-item-name">${escHtml(item.name)} <span style="font-size:.7rem;color:var(--text-muted)">${autoNote}</span></span>
@@ -5436,7 +5437,7 @@ async function budgetSave(section, id) {
 }
 
 async function budgetDelete(section, id) {
-  if (section === 'income' && (id === FS_INCOME_ID || id === FS_GIFT_INCOME_ID)) return;
+  if (section === 'income' && id === FS_INCOME_ID) return;
   showBrandedNotice({
     title: 'Remove Item',
     message: 'Are you sure you want to remove this item?',
@@ -5469,7 +5470,6 @@ const MOM_BUDGET_DEFAULT = {
       // Auto-synced from the Monthly Budget Fair Share section — her household
       // contribution (rent/utilities/internet/food) now lives in this one line.
       { id: 'fair-share', name: 'Fair Share (household)', amount: 0, frequency: 'monthly', auto: true, locked: true },
-      { id: 'family-gift', name: 'Gift to Chris & Family', amount: 400, frequency: 'monthly', auto: true, locked: true },
       { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 }
     ],
     variable: { discretionary: 500 }
@@ -5481,9 +5481,6 @@ const MB_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 
 const MB_YEAR_STATS_OPEN_KEY = 'rentals_mom_budget_year_stats_open';
 const MB_VARIABLE_FIXED_BILL_IDS = new Set(['electric', 'water', 'gas-heat']);
 const IRS_CAREGIVER_GUIDANCE_URL = 'https://www.irs.gov/faqs/irs-procedures/for-caregivers';
-const IRS_GIFT_TAX_URL = 'https://www.irs.gov/businesses/small-businesses-self-employed/gift-tax';
-const IRS_GIFT_TAX_FAQ_URL = 'https://www.irs.gov/businesses/small-businesses-self-employed/frequently-asked-questions-on-gift-taxes';
-const IRS_GIFTS_INHERITANCES_URL = 'https://www.irs.gov/faqs/interest-dividends-other-types-of-income/gifts-inheritances';
 
 // IRS Uniform Lifetime Table (2022+) — distribution period (divisor) by the age
 // the account owner reaches during the distribution year. RMD = balance / factor.
@@ -5612,10 +5609,9 @@ function mbNormalize(raw) {
   if (!data.template.fixed.some(item => item.id === 'fair-share')) {
     data.template.fixed.unshift({ id: 'fair-share', name: 'Fair Share (household)', amount: 0, frequency: 'monthly', auto: true, locked: true });
   }
-  if (!data.template.fixed.some(item => item.id === 'family-gift')) {
-    const fairShareIndex = data.template.fixed.findIndex(item => item.id === 'fair-share');
-    data.template.fixed.splice(fairShareIndex + 1, 0, { id: 'family-gift', name: 'Gift to Chris & Family', amount: 400, frequency: 'monthly', auto: true, locked: true });
-  }
+  // The separate monthly family gift was removed (Medicaid 5-year lookback
+  // exposure) — drop the old auto-synced line from saved records.
+  data.template.fixed = data.template.fixed.filter(item => item.id !== 'family-gift');
   // One-time migration: drop the car (insurance/repairs/registration) and streaming
   // (Netflix/BritBox) bills she no longer tracks in Mom Budget.
   if (!data.template.carStreamingTrimmed) {
@@ -5659,6 +5655,8 @@ function mbNormalize(raw) {
       delete month.fixedPaid[gasFixedItem.id];
       if (month.fixedActual) delete month.fixedActual[gasFixedItem.id];
     }
+    delete month.fixedPaid['family-gift'];
+    delete month.fixedActual['family-gift'];
     month.discretionary = Array.isArray(month.discretionary) ? month.discretionary : [];
     month.otherExpenses = Array.isArray(month.otherExpenses) ? month.otherExpenses : [];
   });
@@ -5670,8 +5668,7 @@ async function renderMomBudget() {
     const result = await callApi({ action: 'get_mom_budget' });
     state.momBudget = mbNormalize(result.data || {});
   }
-  // Household reimbursement and the separate family gift are auto-valued from
-  // Monthly Budget so the two types of transfer remain distinct.
+  // Household reimbursement is auto-valued from Monthly Budget.
   try { await ensureBudgetLoaded(); } catch { /* offline — keep last synced value */ }
   mbSyncHouseholdTransfers();
   if (!state.momBudget.months[_mbMonth]) state.momBudget.months[_mbMonth] = mbBlankMonth();
@@ -5682,7 +5679,6 @@ async function renderMomBudget() {
 // auto-synced fixed bill so Mom Budget never needs its own copy of those bills.
 function mbSyncHouseholdTransfers() {
   const fairShareItem = state.momBudget?.template?.fixed?.find(i => i.id === 'fair-share');
-  const giftItem = state.momBudget?.template?.fixed?.find(i => i.id === 'family-gift');
   let herShare = 0;
   try { if (state.budget && state.budget.fairShare) herShare = fsCalc().herShare || 0; } catch { herShare = 0; }
   if (fairShareItem) {
@@ -5690,13 +5686,6 @@ function mbSyncHouseholdTransfers() {
     fairShareItem.paymentAmount = herShare;
     fairShareItem.frequency = 'monthly';
     fairShareItem.auto = true;
-  }
-  if (giftItem) {
-    const giftAmount = Number(state.budget?.fairShare?.giftAmount) || 0;
-    giftItem.amount = giftAmount;
-    giftItem.paymentAmount = giftAmount;
-    giftItem.frequency = 'monthly';
-    giftItem.auto = true;
   }
 }
 
@@ -5817,7 +5806,7 @@ function mbBillIcon(item) {
   const id = String(item.id || '').toLowerCase();
   const name = String(item.name || '').toLowerCase();
   if (id === 'fair-share' || name.includes('fair share')) return '⚖️';
-  if (id === 'family-gift' || name.includes('gift')) return '🎁';
+  if (name.includes('gift')) return '🎁';
   if (id.includes('rent') || name.includes('rent')) return '🏠';
   if (id.includes('internet') || name.includes('internet')) return '🌐';
   if (id.includes('cell') || name.includes('phone')) return '📱';
@@ -6107,12 +6096,8 @@ function mbFixedTemplateRow(item, index = 0) {
   // Auto-synced Fair Share line: read-only amount, no lock/delete — its value
   // comes from the Monthly Budget shared-cost split.
   if (item.auto) {
-    const autoSubtitle = item.id === 'family-gift'
-      ? 'Separate voluntary gift · Auto-synced from Monthly Budget'
-      : 'Auto-synced from Monthly Budget → Fair Share';
-    const autoSource = item.id === 'family-gift'
-      ? `<a href="${IRS_GIFTS_INHERITANCES_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">IRS gift rules ↗</a>`
-      : `<a href="${IRS_CAREGIVER_GUIDANCE_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">IRS caregiver guidance ↗</a>`;
+    const autoSubtitle = 'Auto-synced from Monthly Budget → Fair Share';
+    const autoSource = `<a href="${IRS_CAREGIVER_GUIDANCE_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">IRS caregiver guidance ↗</a>`;
     return `<div class="mb-fixed-template-row${index % 2 ? ' is-alt' : ''}">
       <div class="mb-fixed-template-row-header">
         <span class="mb-fixed-template-row-header-icon" aria-hidden="true">${mbBillIcon(item)}</span>
@@ -8242,20 +8227,15 @@ const FS_SHARED_CAT_DEFAULTS = {
 };
 
 let _fsOpen = (localStorage.getItem('rentals_budget_fairshare_open') === '1');
-const FS_GIFT_ANNUAL_MAX = 4800;
-const FS_GIFT_MONTHLY_MAX = FS_GIFT_ANNUAL_MAX / 12;
-const FS_GIFT_MONTHLY_DEFAULT = 400;
 
+// The separate monthly family gift was removed — recurring gifts to family are
+// uncompensated transfers under Medicaid's 5-year lookback. fsNormalize simply
+// drops any saved giftAmount/migration flags from older records.
 function fsNormalize(raw) {
   raw = (raw && typeof raw === 'object') ? raw : {};
-  const shouldMigrateLegacyGift = Number(raw.giftAmount) === 200 && raw.giftAmount300Migrated !== true;
-  const shouldMigrateGiftTo400 = Number(raw.giftAmount) === 300 && raw.giftAmount400Migrated !== true;
   return {
     householdSize: (typeof raw.householdSize === 'number' && raw.householdSize >= 1) ? Math.round(raw.householdSize) : 5,
     roundDollar:   (raw.roundDollar !== undefined) ? !!raw.roundDollar : (raw.roundUp !== false),
-    giftAmount:    (shouldMigrateLegacyGift || shouldMigrateGiftTo400) ? FS_GIFT_MONTHLY_DEFAULT : Math.min(FS_GIFT_MONTHLY_MAX, Math.max(0, Number(raw.giftAmount ?? FS_GIFT_MONTHLY_DEFAULT) || 0)),
-    giftAmount300Migrated: !!raw.giftAmount300Migrated || shouldMigrateLegacyGift,
-    giftAmount400Migrated: !!raw.giftAmount400Migrated || shouldMigrateGiftTo400,
     shared:        (raw.shared && typeof raw.shared === 'object') ? { ...raw.shared } : {},
     participants:  (raw.participants && typeof raw.participants === 'object') ? { ...raw.participants } : {},
   };
@@ -8306,31 +8286,28 @@ function fsCalc() {
   return { size, totalAll, totalShared, herShareExact, herShare };
 }
 
-// Keep separate auto-synced income lines for Mom's expense reimbursement and
-// voluntary gift. Both are read-only in Income and managed from this section.
+// Keep an auto-synced income line for Mom's expense reimbursement. It is
+// read-only in Income and managed from this section.
 const FS_INCOME_ID = 'mom-fair-share';
-const FS_GIFT_INCOME_ID = 'mom-family-gift';
+const FS_GIFT_INCOME_ID = 'mom-family-gift';  // legacy — removed from saved records on load
 function fsSyncBudgetIncome() {
   const b = state.budget;
   if (!b) return;
   if (!Array.isArray(b.income)) b.income = [];
+  b.income = b.income.filter(i => i.id !== FS_GIFT_INCOME_ID);
   let herShare = 0;
   try { if (b.fairShare) herShare = fsCalc().herShare || 0; } catch { herShare = 0; }
-  const syncItem = (id, name, amount, autoType) => {
-    let item = b.income.find(i => i.id === id);
-    if (!item) {
-      item = { id, name, amount, auto: true, autoType, locked: true };
-      b.income.push(item);
-    } else {
-      item.name = name;
-      item.amount = amount;
-      item.auto = true;
-      item.autoType = autoType;
-      item.locked = true;
-    }
-  };
-  syncItem(FS_INCOME_ID, "Mom's Fair Share", herShare, 'fair-share');
-  syncItem(FS_GIFT_INCOME_ID, "Mom's Family Gift", Number(b.fairShare?.giftAmount) || 0, 'gift');
+  let item = b.income.find(i => i.id === FS_INCOME_ID);
+  if (!item) {
+    item = { id: FS_INCOME_ID, name: "Mom's Fair Share", amount: herShare, auto: true, autoType: 'fair-share', locked: true };
+    b.income.push(item);
+  } else {
+    item.name = "Mom's Fair Share";
+    item.amount = herShare;
+    item.auto = true;
+    item.autoType = 'fair-share';
+    item.locked = true;
+  }
 }
 
 // Returns the collapsible Fair Share card injected into the budget layout.
@@ -8387,15 +8364,6 @@ function fsRenderCard() {
                 ${fs.roundDollar ? '✓ Nearest $1' : 'Off — exact cents'}
               </button>
             </div>
-            <div style="flex:1;min-width:170px">
-              <label style="display:block;font-size:.72rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Separate Monthly Gift</label>
-              <div style="position:relative">
-                <span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:700">$</span>
-                <input type="number" class="form-input" min="0" max="${FS_GIFT_MONTHLY_MAX}" step="1" value="${escAttr(String(fs.giftAmount))}"
-                       onchange="fsUpdateSetting('giftAmount', this.value)" style="width:100%;padding-left:1.4rem;font-size:1.05rem;font-weight:600">
-              </div>
-              <div style="font-size:.66rem;color:var(--text-muted);margin-top:.2rem">${fmt(fs.giftAmount * 12)} / year · personal cap ${fmt(FS_GIFT_ANNUAL_MAX)}</div>
-            </div>
           </div>
           <div style="font-size:.74rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.3rem">Which bills are shared, and by whom?</div>
           <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.6rem">Mark each bill <strong>Shared</strong> or <strong>Personal</strong>, then set how many people actually benefit from each shared expense. Phone service and car insurance default to the three adults; household-wide expenses default to all ${fs.householdSize} residents. If Mom's exact incremental cost is known, use that instead of an equal split.</div>
@@ -8413,15 +8381,12 @@ function fsRenderCard() {
           </div>
           <div style="font-size:.74rem;color:var(--text-muted);line-height:1.5">
             <p style="margin:0 0 .5rem"><strong>Fair share</strong> = the sum of Mom's portion of each shared bill${fs.roundDollar ? `: ${fmt(c.herShareExact)} → ${fmt(c.herShare)}` : `: ${fmt(c.herShare)}`}.</p>
-            <p style="margin:0 0 .5rem">Fair Share and the separate ${fmt(fs.giftAmount)} monthly gift are added as distinct read-only lines in Monthly Budget income and Mom Budget fixed expenses.</p>
-            <p style="margin:0 0 .5rem"><strong>Gift:</strong> voluntary and separate from rent, caregiving, or services. Record transfers as “gift,” not as Fair Share reimbursement.</p>
+            <p style="margin:0 0 .5rem">Fair Share is added as a read-only line in Monthly Budget income and Mom Budget fixed expenses.</p>
+            <p style="margin:0 0 .5rem"><strong>No gifts:</strong> transfers beyond her share of actual costs are uncompensated transfers under Medicaid's 5-year lookback and can create an eligibility penalty. Keep her payments to expense reimbursement only.</p>
             <p style="margin:0;font-size:.72rem">Keep the underlying bills and allocation method with your records. Her payments count as support she provides for herself, which matters if either of you claims her as a dependent. General information, not tax advice; confirm your specific setup with your CPA.</p>
             <div style="margin-top:.7rem;padding-top:.6rem;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:.35rem .85rem;font-size:.72rem">
               <strong style="color:var(--text)">Official IRS references:</strong>
               <a href="${IRS_CAREGIVER_GUIDANCE_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">Parent expense reimbursements ↗</a>
-              <a href="${IRS_GIFT_TAX_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">What qualifies as a gift ↗</a>
-              <a href="${IRS_GIFT_TAX_FAQ_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">Gift-tax exclusions ↗</a>
-              <a href="${IRS_GIFTS_INHERITANCES_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">Form 709 guidance ↗</a>
             </div>
           </div>
         </div>
@@ -8480,9 +8445,6 @@ async function fsUpdateSetting(key, value) {
   } else if (key === 'householdSize') {
     const v = parseFloat(value);
     fs.householdSize = (isFinite(v) && v >= 1) ? Math.round(v) : 1;
-  } else if (key === 'giftAmount') {
-    const v = parseFloat(value);
-    fs.giftAmount = (isFinite(v) && v >= 0) ? Math.min(FS_GIFT_MONTHLY_MAX, v) : 0;
   }
   fsSyncBudgetIncome();
   await _saveBudget();

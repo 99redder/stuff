@@ -380,7 +380,7 @@ A collapsible **section inside the Monthly Budget view** — not a standalone ta
 - Collapse: `fsToggleSection()` (open state in `localStorage` key `rentals_budget_fairshare_open`)
 - Mutators: `fsToggleShared(itemId)`, `fsUpdateSetting(key, value)` — both persist via `_saveBudget()`
 - **Income line:** `fsSyncBudgetIncome()` (called at the top of `_renderBudgetHtml`) keeps an auto, read-only income item `id: 'mom-fair-share'` ("Mom's Fair Share") in `budget.income`, valued at `fsCalc().herShare`, so her contribution counts as household income. It renders read-only (⚖️ "from Fair Share", no edit/lock/delete); `budgetDelete`/`budgetToggleLock` early-return for `FS_INCOME_ID`. It persists in the budget record but its amount is re-synced every render.
-- **Separate family gift:** `giftAmount` defaults to `$400/mo` and is capped by `FS_GIFT_ANNUAL_MAX` (`$4,800/year`). `fsNormalize()` migrates the old `$200/mo` value once via `giftAmount300Migrated` and the old `$300/mo` value once via `giftAmount400Migrated`; the Worker mirror uses the same `$400/mo` cap/default for the public Mom Budget phone summary.
+- **Separate family gift — REMOVED (2026-07-03):** the recurring `$400/mo` gift was dropped because recurring gifts are uncompensated transfers under Medicaid's 5-year lookback and could create an eligibility penalty for her. `fsNormalize()` drops any saved `giftAmount`/migration flags; `ensureBudgetLoaded` strips the legacy `mom-family-gift` income line (id kept as `FS_GIFT_INCOME_ID` for cleanup); `mbNormalize`/worker `normalizeMomBudget` filter the `family-gift` fixed line out of saved `mom_budget` records; the phone PWA's Family Gift card and the worker's `month.giftAmount` field are gone. Her payments are Fair Share expense reimbursement only.
 
 **Data shape (`state.budget.fairShare`):**
 ```javascript
@@ -643,6 +643,12 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-07-03 — Removed the $400/mo family gift (Medicaid lookback)
+
+- **The recurring "Gift to Chris & Family" transfer was removed everywhere.** Recurring gifts to family are uncompensated transfers under Medicaid's 5-year lookback (Maryland penalty divisor ≈ $11–12k/mo of nursing-home cost), so a sustained $400/mo gift could create a ~2-month eligibility penalty if she ever needs long-term-care Medicaid. Her payments are now limited to Fair Share expense reimbursement (payment for value — not a gift).
+- **Frontend:** Fair Share card's "Separate Monthly Gift" input, `FS_GIFT_*` consts, the `giftAmount` branch of `fsUpdateSetting`, the "Mom's Family Gift" auto income line (`fsSyncBudgetIncome` now filters `FS_GIFT_INCOME_ID` out; `ensureBudgetLoaded` does a one-time KV cleanup save), the `family-gift` Mom Budget fixed line (`MOM_BUDGET_DEFAULT` + `mbNormalize` now filter it out of saved records), and the gift-specific IRS links are all gone. The Fair Share explainer now carries a "No gifts" Medicaid-lookback warning instead.
+- **Worker + phone PWA:** `giftAmountFromBudget()`/`FAMILY_GIFT_*` removed; `syncMomHouseholdTransfers` syncs only `fair-share`; `normalizeMomBudget` filters `family-gift`; the public summary no longer returns `month.giftAmount`. `mom-budget-phone.html` drops the Family Gift card; `mom-budget-sw.js` `CACHE_NAME` → `v9`.
 
 ### 2026-06-18 — Mom Budget: 401(k) RMD calculator
 

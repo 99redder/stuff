@@ -774,16 +774,6 @@ function calcFairShareFromBudget(budget) {
   return roundDollar ? Math.round(herShare) : herShare;
 }
 
-const FAMILY_GIFT_MONTHLY_MAX = 400;
-const FAMILY_GIFT_MONTHLY_DEFAULT = 400;
-
-function giftAmountFromBudget(budget) {
-  const amount = Number(budget?.fairShare?.giftAmount);
-  if (amount === 200 && budget?.fairShare?.giftAmount300Migrated !== true) return FAMILY_GIFT_MONTHLY_DEFAULT;
-  if (amount === 300 && budget?.fairShare?.giftAmount400Migrated !== true) return FAMILY_GIFT_MONTHLY_DEFAULT;
-  return Number.isFinite(amount) ? Math.min(FAMILY_GIFT_MONTHLY_MAX, Math.max(0, amount)) : FAMILY_GIFT_MONTHLY_DEFAULT;
-}
-
 const MOM_BUDGET_DEFAULT = {
   template: {
     income: [
@@ -793,7 +783,6 @@ const MOM_BUDGET_DEFAULT = {
     fixed: [
       // Household bills wrapped into one auto-synced Fair Share line (she lives with family).
       { id: 'fair-share', name: 'Fair Share (household)', amount: 0, frequency: 'monthly', auto: true, locked: true },
-      { id: 'family-gift', name: 'Gift to Chris & Family', amount: 400, frequency: 'monthly', auto: true, locked: true },
       { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 }
     ],
     variable: { discretionary: 500 },
@@ -852,14 +841,13 @@ async function handleGetMomBudgetPublicSummary(request, env, requestedMonth) {
   if (cached) return cached;
 
   const year = monthKey.slice(0, 4);
-  // Compute both transfers live from the family budget, the same source the main
-  // app uses, rather than relying on possibly-stale copies in mom_budget.
+  // Compute the Fair Share transfer live from the family budget, the same source
+  // the main app uses, rather than relying on a possibly-stale copy in mom_budget.
   const budgetRaw = await env.RENTALS.get('budget', 'json') || {};
   const fairShare = calcFairShareFromBudget(budgetRaw);
-  const giftAmount = giftAmountFromBudget(budgetRaw);
   const raw = await env.RENTALS.get('mom_budget', 'json') || {};
   const data = normalizeMomBudget(raw);
-  syncMomHouseholdTransfers(data, fairShare, giftAmount);
+  syncMomHouseholdTransfers(data, fairShare);
   const month = calcMomBudgetMonth(data, monthKey);
   const yearSummary = calcMomBudgetYear(data, year);
 
@@ -873,8 +861,7 @@ async function handleGetMomBudgetPublicSummary(request, env, requestedMonth) {
       otherOverages: month.otherOverages,
       discretionarySpent: month.discretionarySpent,
       discretionaryAdjusted: month.discretionaryAdjusted,
-      fairShare,
-      giftAmount
+      fairShare
     },
     year: yearSummary
   }), {
@@ -960,10 +947,9 @@ function normalizeMomBudget(raw) {
   if (!data.template.fixed.some(item => item.id === 'fair-share')) {
     data.template.fixed.unshift(cloneJson(defaults.template.fixed.find(item => item.id === 'fair-share')));
   }
-  if (!data.template.fixed.some(item => item.id === 'family-gift')) {
-    const fairShareIndex = data.template.fixed.findIndex(item => item.id === 'fair-share');
-    data.template.fixed.splice(fairShareIndex + 1, 0, cloneJson(defaults.template.fixed.find(item => item.id === 'family-gift')));
-  }
+  // The separate monthly family gift was removed (Medicaid 5-year lookback
+  // exposure) — drop the old auto-synced line from saved records.
+  data.template.fixed = data.template.fixed.filter(item => item.id !== 'family-gift');
 
   const gasFixedItem = data.template.fixed.find(item => item.id === 'gas' || String(item.name || '').trim().toLowerCase() === 'gas');
   data.template.fixed.forEach(item => {
@@ -990,24 +976,22 @@ function normalizeMomBudget(raw) {
       delete month.fixedPaid[gasFixedItem.id];
       if (month.fixedActual) delete month.fixedActual[gasFixedItem.id];
     }
+    delete month.fixedPaid['family-gift'];
+    delete month.fixedActual['family-gift'];
     month.discretionary = Array.isArray(month.discretionary) ? month.discretionary : [];
     month.otherExpenses = Array.isArray(month.otherExpenses) ? month.otherExpenses : [];
   });
   return data;
 }
 
-function syncMomHouseholdTransfers(data, fairShare, giftAmount) {
-  const sync = (id, amount) => {
-    const item = data.template.fixed.find(entry => entry.id === id);
-    if (!item) return;
-    item.amount = amount;
-    item.paymentAmount = amount;
-    item.frequency = 'monthly';
-    item.auto = true;
-    item.locked = true;
-  };
-  sync('fair-share', fairShare);
-  sync('family-gift', giftAmount);
+function syncMomHouseholdTransfers(data, fairShare) {
+  const item = data.template.fixed.find(entry => entry.id === 'fair-share');
+  if (!item) return;
+  item.amount = fairShare;
+  item.paymentAmount = fairShare;
+  item.frequency = 'monthly';
+  item.auto = true;
+  item.locked = true;
 }
 
 function momBudgetTemplateTotals(data) {
