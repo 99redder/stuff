@@ -9317,10 +9317,10 @@ function tpClearPropertySale(saleNum) {
 
 // ── Tax Planning: AGI threshold warnings ──────────────────────────────────────
 // Watches the live estimate against 2026 MFJ phase-out thresholds. Each item is
-// flagged Triggered (over the line), Approaching (within TP_WARN_NEAR below it),
-// or Note (informational), with the dollar impact where computable and a source
-// link. "Modeled" means the estimate above already reflects it; "not modeled"
-// means the real bill differs from this tab's estimate.
+// flagged Warning (past the threshold), Caution (approaching — within
+// TP_WARN_NEAR below it), or Note (informational), with the dollar impact where
+// computable and a source link. "Modeled" means the estimate above already
+// reflects it; "not modeled" means the real bill differs from this tab's estimate.
 function tpAgiWarningsHtml(r, tp) {
   const agi = r.agi;
   const items = [];
@@ -9407,12 +9407,20 @@ function tpAgiWarningsHtml(r, tp) {
     add('hit', 'Additional Medicare Tax (0.9%)',
       `Wages + self-employment compensation of ${fmt(medicareComp)} exceed the ${fmt(TP_ADDL_MEDICARE)} MFJ threshold — 0.9% applies to the excess (not modeled in this estimate). Pension income and capital gains don't count toward this one.`,
       [['IRS: Additional Medicare Tax', 'https://www.irs.gov/taxtopics/tc560']]);
+  } else if (near(TP_ADDL_MEDICARE, medicareComp)) {
+    add('near', 'Additional Medicare Tax (0.9%)',
+      `Wages + self-employment compensation of ${fmt(medicareComp)} are within ${fmt(TP_ADDL_MEDICARE - medicareComp)} of the ${fmt(TP_ADDL_MEDICARE)} threshold where 0.9% applies to the excess (pension and gains don't count).`,
+      [['IRS: Additional Medicare Tax', 'https://www.irs.gov/taxtopics/tc560']]);
   }
 
   // Maryland exemption phase-out — modeled in the MD estimate
   if (agi > TP_MD_EXEMPT_PHASEOUT) {
-    add('info', 'Maryland personal exemptions eliminated',
+    add('hit', 'Maryland personal exemptions eliminated',
       `Federal AGI above ${fmt(TP_MD_EXEMPT_PHASEOUT)} phases MD personal exemptions to $0 (from $3,200 each) — reflected in the Maryland estimate below.`,
+      [['Comptroller of Maryland: income tax', 'https://www.marylandtaxes.gov/individual/income/tax-info/index.php']]);
+  } else if (agi > 150000) {
+    add('near', 'Maryland personal exemptions reduced',
+      `MD exemptions step down with federal AGI (MFJ: $3,200 ≤$150k · $1,600 ≤$175k · $800 ≤$200k · $0 above) — the ${fmt(r.md.mdExemptAmt)} in the Maryland estimate reflects the ${fmt(agi <= 175000 ? 1600 : 800)}-per-person tier; they disappear entirely above ${fmt(TP_MD_EXEMPT_PHASEOUT)}.`,
       [['Comptroller of Maryland: income tax', 'https://www.marylandtaxes.gov/individual/income/tax-info/index.php']]);
   }
 
@@ -9438,9 +9446,9 @@ function tpAgiWarningsHtml(r, tp) {
   }
 
   const STYLES = {
-    hit:  { border: 'var(--danger)',  badge: 'Triggered',   badgeColor: 'var(--danger)' },
-    near: { border: '#d97706',        badge: 'Approaching', badgeColor: '#d97706' },
-    info: { border: 'var(--border)',  badge: 'Note',        badgeColor: 'var(--text-muted)' },
+    hit:  { border: 'var(--danger)',  badge: '⛔ Warning', badgeColor: 'var(--danger)' },
+    near: { border: '#d97706',        badge: '⚠️ Caution', badgeColor: '#d97706' },
+    info: { border: 'var(--border)',  badge: 'Note',       badgeColor: 'var(--text-muted)' },
   };
   const order = { hit: 0, near: 1, info: 2 };
   items.sort((a, b) => order[a.level] - order[b.level]);
@@ -9462,10 +9470,10 @@ function tpAgiWarningsHtml(r, tp) {
   }).join('');
 
   const headline = hits > 0
-    ? `<span style="color:var(--danger);font-weight:800">${hits} triggered</span>${nears ? ` · <span style="color:#d97706;font-weight:700">${nears} approaching</span>` : ''}`
+    ? `<span style="color:var(--danger);font-weight:800">${hits} warning${hits === 1 ? '' : 's'}</span>${nears ? ` · <span style="color:#d97706;font-weight:700">${nears} caution${nears === 1 ? '' : 's'}</span>` : ''}`
     : nears > 0
-      ? `<span style="color:#d97706;font-weight:700">${nears} approaching</span>`
-      : `<span style="color:var(--success);font-weight:700">none triggered</span>`;
+      ? `<span style="color:#d97706;font-weight:700">${nears} caution${nears === 1 ? '' : 's'}</span>`
+      : `<span style="color:var(--success);font-weight:700">no warnings</span>`;
 
   return `
     <div class="card-header" style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;flex-wrap:wrap">
