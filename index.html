@@ -8260,9 +8260,9 @@ function fsNormalize(raw) {
     shared:        (raw.shared && typeof raw.shared === 'object') ? { ...raw.shared } : {},
     participants:  (raw.participants && typeof raw.participants === 'object') ? { ...raw.participants } : {},
     agreement: {
-      residentName:    typeof raw.agreement?.residentName === 'string' ? raw.agreement.residentName : '',
-      ownerNames:      typeof raw.agreement?.ownerNames === 'string' ? raw.agreement.ownerNames : '',
-      propertyAddress: typeof raw.agreement?.propertyAddress === 'string' ? raw.agreement.propertyAddress : '',
+      residentName:    (typeof raw.agreement?.residentName === 'string' && raw.agreement.residentName.trim()) ? raw.agreement.residentName : 'Nancy Gorham',
+      ownerNames:      (typeof raw.agreement?.ownerNames === 'string' && raw.agreement.ownerNames.trim()) ? raw.agreement.ownerNames : 'Christopher Gorham and Megan Gorham',
+      propertyAddress: (typeof raw.agreement?.propertyAddress === 'string' && raw.agreement.propertyAddress.trim()) ? raw.agreement.propertyAddress : '4781 Mohegan Court, Salisbury, MD 21804',
     },
     // Mortgage principal exclusion — the budget keeps the real full payment,
     // but Fair Share subtracts the estimated principal portion (owner equity,
@@ -8857,9 +8857,9 @@ function _renderFsAgreementBody() {
     </div>`;
   document.getElementById('fs-agreement-body').innerHTML = `
     <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:.9rem">
-      ${field('residentName', "Resident (Mom's full legal name)", 'e.g. Florence Mae Gorham')}
-      ${field('ownerNames', 'Homeowner name(s)', 'e.g. Chris Gorham and Megan Gorham')}
-      ${field('propertyAddress', 'Residence address', 'Street, City, MD ZIP')}
+      ${field('residentName', "Resident (Mom's full legal name)", 'Nancy Gorham')}
+      ${field('ownerNames', 'Homeowner name(s)', 'Christopher Gorham and Megan Gorham')}
+      ${field('propertyAddress', 'Residence address', '4781 Mohegan Court, Salisbury, MD 21804')}
     </div>
     <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.6rem">
       The letter below regenerates from the current Fair Share data every time it's opened —
