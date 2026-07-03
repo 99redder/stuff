@@ -391,7 +391,8 @@ A collapsible **section inside the Monthly Budget view** — not a standalone ta
   shared: { [budgetExpenseItemId]: bool },  // per-item OVERRIDES of the category default
   participants: { [itemId]: number },       // per-item divisor override (who benefits)
   agreement: { residentName, ownerNames, propertyAddress },  // cost-sharing agreement parties
-  mortgage: { enabled, itemId, loanAmount, ratePct, termYears, firstPayment }  // principal exclusion (see below)
+  mortgage: { enabled, itemId, loanAmount, ratePct, termYears, firstPayment },  // principal exclusion (see below)
+  foodBenchmark: { enabled, itemId, amount, sourceLabel }  // USDA food benchmark for the Weekly Spending item (see below)
 }
 ```
 There is **no separate bills list** — the bills are the budget's expense items. An item counts as shared if `fairShare.shared[item.id]` is set (explicit override), else it falls back to `FS_SHARED_CAT_DEFAULTS[category]`. Toggling the Shared/Personal pill writes an explicit override.
@@ -647,6 +648,13 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-07-03 — Fair Share: USDA food benchmark for Weekly Spending
+
+- **New `🍎 USDA Food Benchmark` sub-card** in the Fair Share section. The Weekly Spending bucket is mixed family spending (groceries + dining + kids' items), so an equal per-capita split overstates Mom's consumption. When enabled, her portion of that one item is a **fixed amount pegged to the USDA Official Food Plans: Cost of Food at Home** figure for her age/sex instead of `amount ÷ participants`. Defaults: `FS_USDA_DEFAULT_AMOUNT = 358` (Liberal Plan female 71+ $377.00/mo, Jan 2025 report, × 0.95 USDA 5–6-person household adjustment — Liberal tier chosen to leave headroom for her share of household consumables) and `FS_USDA_DEFAULT_SOURCE` label. Amount + source label are editable inputs, refreshed annually from the latest USDA monthly report (`USDA_FOOD_COST_URL`).
+- Config in `fairShare.foodBenchmark` (`itemId` empty = auto-detect the first Weekly Spending item). Helpers `fsFoodBenchmark()`/`fsFoodBenchmarkItem()`, mutator `fsUpdateFoodBenchmark()`. In `fsCalc` the item still counts fully in `totalShared` but contributes the fixed benchmark to `herShareExact` (returned as `foodAdj`). The shared-bills row shows a `USDA = $X` badge in place of the ÷N input.
+- **Agreement:** Method clause gains a conditional USDA-valuation sentence; the Exhibit A row is marked `†` with the Divided-Among column reading `USDA †`; a boxed `† USDA food benchmark` write-up explains the mixed-bucket reasoning (per-capita figure shown for comparison) and cites the source label; the References clause adds the USDA Cost of Food reports with URL. Card references row links both IRS + USDA.
+- **Worker mirrored** (`fairShareFoodBenchmark` inside `calcFairShareFromBudget`) so the phone PWA matches.
 
 ### 2026-07-03 — Fair Share: mortgage principal exclusion
 

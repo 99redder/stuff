@@ -780,6 +780,20 @@ function fairShareMortgageExclusion(fs, expenses) {
   return itemId ? { itemId, principal } : null;
 }
 
+// Mirror of the frontend fsFoodBenchmark — her portion of the mixed weekly
+// spending item is the published USDA Cost of Food figure, not a per-capita
+// split. Returns { itemId, amount } or null.
+function fairShareFoodBenchmark(fs, expenses) {
+  const fb = fs.foodBenchmark;
+  if (!fb || !fb.enabled || !(Number(fb.amount) > 0)) return null;
+  let itemId = typeof fb.itemId === 'string' ? fb.itemId : '';
+  if (!itemId) {
+    const items = Array.isArray(expenses['Weekly Spending']) ? expenses['Weekly Spending'] : [];
+    itemId = items.length ? items[0].id : '';
+  }
+  return itemId ? { itemId, amount: Number(fb.amount) } : null;
+}
+
 // Her monthly Fair Share = the sum of her portion of each shared expense.
 function calcFairShareFromBudget(budget) {
   if (!budget || typeof budget !== 'object') return 0;
@@ -789,6 +803,7 @@ function calcFairShareFromBudget(budget) {
   const shared = (fs.shared && typeof fs.shared === 'object') ? fs.shared : {};
   const expenses = (budget.expenses && typeof budget.expenses === 'object') ? budget.expenses : {};
   const mAdj = fairShareMortgageExclusion(fs, expenses);
+  const fbAdj = fairShareFoodBenchmark(fs, expenses);
   let herShare = 0;
   for (const cat of Object.keys(expenses)) {
     const items = Array.isArray(expenses[cat]) ? expenses[cat] : [];
@@ -800,7 +815,9 @@ function calcFairShareFromBudget(budget) {
         const participants = fairShareItemParticipants(item, cat, fs, householdSize);
         const amt = Number(item.amount) || 0;
         const effAmt = (mAdj && item.id === mAdj.itemId) ? Math.max(0, amt - mAdj.principal) : amt;
-        herShare += effAmt / participants;
+        herShare += (fbAdj && item.id === fbAdj.itemId)
+          ? fbAdj.amount
+          : effAmt / participants;
       }
     }
   }

@@ -8275,7 +8275,51 @@ function fsNormalize(raw) {
       termYears:    (Number(raw.mortgage?.termYears) > 0) ? Number(raw.mortgage.termYears) : 30,
       firstPayment: typeof raw.mortgage?.firstPayment === 'string' ? raw.mortgage.firstPayment : '',
     },
+    // USDA food benchmark — the Weekly Spending bucket is mixed family spending
+    // (groceries + dining + kids' items), so an equal per-capita split overstates
+    // Mom's consumption. Instead her portion of that one item is pegged to the
+    // published USDA Cost of Food figure for her age/sex, updated annually.
+    foodBenchmark: {
+      enabled:     !!raw.foodBenchmark?.enabled,
+      itemId:      typeof raw.foodBenchmark?.itemId === 'string' ? raw.foodBenchmark.itemId : '',
+      amount:      (Number(raw.foodBenchmark?.amount) > 0) ? Number(raw.foodBenchmark.amount) : FS_USDA_DEFAULT_AMOUNT,
+      sourceLabel: (typeof raw.foodBenchmark?.sourceLabel === 'string' && raw.foodBenchmark.sourceLabel.trim()) ? raw.foodBenchmark.sourceLabel : FS_USDA_DEFAULT_SOURCE,
+    },
   };
+}
+
+// USDA Official Food Plans: Cost of Food at Home — Liberal Plan, female 71+,
+// $377.00/mo (Jan 2025 report) × 0.95 (USDA's 5–6 person household adjustment)
+// ≈ $358. The Liberal tier leaves headroom for her share of household
+// consumables (paper goods, cleaning, toiletries) that also flow through the
+// weekly bucket. Update the amount + label annually from the latest report.
+const FS_USDA_DEFAULT_AMOUNT = 358;
+const FS_USDA_DEFAULT_SOURCE = 'USDA Liberal Food Plan, female 71+ — Jan 2025 report ($377.00/mo, −5% household-size adj.)';
+const USDA_FOOD_COST_URL = 'https://www.fns.usda.gov/cnpp/usda-food-plans-cost-food-monthly-reports';
+
+// The budget expense item the food benchmark applies to: the explicitly chosen
+// one, else the first item in the Weekly Spending category.
+function fsFoodBenchmarkItem() {
+  const b = state.budget;
+  const id = b.fairShare.foodBenchmark?.itemId;
+  if (id) {
+    for (const cat of BUDGET_EXPENSE_CATS) {
+      const item = (b.expenses[cat] || []).find(i => i.id === id);
+      if (item) return { item, cat };
+    }
+    return null;
+  }
+  const item = (b.expenses['Weekly Spending'] || [])[0];
+  return item ? { item, cat: 'Weekly Spending' } : null;
+}
+
+// null, or { itemId, item, cat, amount, sourceLabel } when the benchmark is active.
+function fsFoodBenchmark() {
+  const fb = state.budget.fairShare.foodBenchmark;
+  if (!fb || !fb.enabled || !(Number(fb.amount) > 0)) return null;
+  const target = fsFoodBenchmarkItem();
+  if (!target) return null;
+  return { itemId: target.item.id, item: target.item, cat: target.cat, amount: Number(fb.amount), sourceLabel: fb.sourceLabel };
 }
 
 // Standard fixed-rate amortization for the current month's payment.
@@ -8361,6 +8405,7 @@ function fsCalc() {
   const fs = b.fairShare;
   const size = Math.max(1, fs.householdSize || 1);
   const mAdj = fsMortgageAdjustment();
+  const fbAdj = fsFoodBenchmark();
   let totalAll = 0, totalShared = 0, herShareExact = 0;
   for (const cat of BUDGET_EXPENSE_CATS) {
     for (const item of (b.expenses[cat] || [])) {
@@ -8369,12 +8414,15 @@ function fsCalc() {
       if (fsItemShared(item, cat, fs)) {
         const effAmt = (mAdj && item.id === mAdj.itemId) ? Math.max(0, amt - mAdj.principal) : amt;
         totalShared += effAmt;
-        herShareExact += effAmt / fsItemParticipants(item, cat, fs);
+        // Food-benchmark item: her portion is the published USDA figure, not a per-capita split.
+        herShareExact += (fbAdj && item.id === fbAdj.itemId)
+          ? fbAdj.amount
+          : effAmt / fsItemParticipants(item, cat, fs);
       }
     }
   }
   const herShare = fs.roundDollar ? Math.round(herShareExact) : herShareExact;
-  return { size, totalAll, totalShared, herShareExact, herShare, mortgageAdj: mAdj };
+  return { size, totalAll, totalShared, herShareExact, herShare, mortgageAdj: mAdj, foodAdj: fbAdj };
 }
 
 // Keep an auto-synced income line for Mom's expense reimbursement. It is
@@ -8465,6 +8513,62 @@ function fsRenderCard() {
       ${mBody}
     </div>`;
 
+  // ── USDA food benchmark sub-card ───────────────────────────────────────
+  const fb = fs.foodBenchmark;
+  const fbAdj = c.foodAdj;
+  let fbBody = '';
+  if (fb.enabled) {
+    const fbTarget = fsFoodBenchmarkItem();
+    const fbOptions = (b.expenses['Weekly Spending'] || []).map(i =>
+      `<option value="${escAttr(i.id)}" ${fbTarget && fbTarget.item.id === i.id ? 'selected' : ''}>${escHtml(i.name)} — ${fmt(i.amount || 0)}/mo</option>`).join('');
+    let fbMath;
+    if (fbAdj) {
+      const amt = Number(fbAdj.item.amount) || 0;
+      const perCapita = amt / fsItemParticipants(fbAdj.item, fbAdj.cat, fs);
+      fbMath = `
+        <div style="font-size:.72rem;color:var(--text-muted);font-variant-numeric:tabular-nums;line-height:1.7;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:.5rem .65rem;margin-top:.55rem">
+          <div>&ldquo;${escHtml(fbAdj.item.name)}&rdquo; is mixed family spending (groceries + dining + kids' items) — an equal per-capita split (${fmt(amt)} ÷ ${fsItemParticipants(fbAdj.item, fbAdj.cat, fs)} = ${fmt(perCapita)}) would bill Mom for spending she doesn't consume.</div>
+          <div>Instead her food &amp; household-supplies portion = <strong>${fmt(fbAdj.amount)}</strong>/mo, pegged to the published benchmark: <em>${escHtml(fbAdj.sourceLabel)}</em>.</div>
+          <div>Her share of this item: ${fmt(perCapita)} → <strong>${fmt(fbAdj.amount)}</strong> (${fmt(perCapita - fbAdj.amount)} less than the per-capita split).</div>
+        </div>`;
+    } else {
+      fbMath = `<div style="font-size:.72rem;color:var(--danger);margin-top:.55rem">No Weekly Spending budget item found — add one or pick the item this applies to.</div>`;
+    }
+    fbBody = `
+      <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.6rem">
+        <div style="flex:2;min-width:180px">
+          <label style="display:block;font-size:.66rem;font-weight:600;color:var(--text-muted);margin-bottom:.2rem">Budget item</label>
+          <select class="form-input" style="width:100%;font-size:.85rem" onchange="fsUpdateFoodBenchmark('itemId', this.value)">${fbOptions || '<option value="">— none in Weekly Spending —</option>'}</select>
+        </div>
+        <div style="flex:1;min-width:110px">
+          <label style="display:block;font-size:.66rem;font-weight:600;color:var(--text-muted);margin-bottom:.2rem">Her portion / mo</label>
+          <input class="form-input" style="width:100%;font-size:.85rem" type="number" min="1" step="1" value="${escAttr(String(fb.amount))}"
+                 onchange="fsUpdateFoodBenchmark('amount', this.value)">
+        </div>
+        <div style="flex:3;min-width:220px">
+          <label style="display:block;font-size:.66rem;font-weight:600;color:var(--text-muted);margin-bottom:.2rem">Benchmark source (update annually)</label>
+          <input class="form-input" style="width:100%;font-size:.85rem" type="text" value="${escAttr(fb.sourceLabel)}"
+                 onchange="fsUpdateFoodBenchmark('sourceLabel', this.value)">
+        </div>
+      </div>
+      ${fbMath}
+      <div style="font-size:.66rem;color:var(--text-muted);margin-top:.4rem">Current figures: <a href="${USDA_FOOD_COST_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">USDA Cost of Food monthly reports ↗</a> — use the female 71+ row, then apply USDA's −5% adjustment for 5–6 person households.</div>`;
+  }
+  const foodBox = `
+    <div style="border:1px solid var(--border);border-radius:var(--radius);padding:.7rem .8rem;margin-bottom:.9rem;background:var(--surface)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap">
+        <div style="flex:1;min-width:220px">
+          <div style="font-size:.74rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">🍎 USDA Food Benchmark</div>
+          <div style="font-size:.68rem;color:var(--text-muted)">Her portion of the mixed weekly-spending bucket is set to the government-published Cost of Food figure for her age/sex instead of an equal per-capita split.</div>
+        </div>
+        <button type="button" onclick="fsUpdateFoodBenchmark('enabled', ${fb.enabled ? 'false' : 'true'})"
+                style="min-width:76px;padding:.35rem .7rem;border-radius:var(--radius);border:1px solid ${fb.enabled ? 'rgba(16,185,129,.4)' : 'var(--border)'};cursor:pointer;font-weight:700;font-size:.8rem;background:${fb.enabled ? 'rgba(16,185,129,.14)' : 'var(--surface)'};color:${fb.enabled ? 'var(--success)' : 'var(--text-muted)'}">
+          ${fb.enabled ? '✓ On' : 'Off'}
+        </button>
+      </div>
+      ${fbBody}
+    </div>`;
+
   // Per-item Shared/Personal toggles grouped by category (only cats with items)
   let itemSections = '';
   for (const cat of BUDGET_EXPENSE_CATS) {
@@ -8474,20 +8578,24 @@ function fsRenderCard() {
       const isShared = fsItemShared(item, cat, fs);
       const participants = fsItemParticipants(item, cat, fs);
       const isAdj = isShared && c.mortgageAdj && c.mortgageAdj.itemId === item.id;
+      const isFb = isShared && c.foodAdj && c.foodAdj.itemId === item.id;
       const effAmt = isAdj ? Math.max(0, (Number(item.amount) || 0) - c.mortgageAdj.principal) : (Number(item.amount) || 0);
-      const momPortion = isShared ? effAmt / participants : 0;
+      const momPortion = isShared ? (isFb ? c.foodAdj.amount : effAmt / participants) : 0;
       const amtCell = isAdj
         ? `<s style="opacity:.6">${fmt(item.amount || 0)}</s> ${fmt(effAmt)}/mo <span title="Estimated loan principal excluded — see the mortgage adjustment above" style="font-size:.66rem;color:var(--primary);font-weight:700">− principal</span>`
         : `${fmt(item.amount || 0)}/mo`;
-      return `<div style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;border-bottom:1px solid var(--border)">
-        <span style="flex:1;min-width:0;${isShared ? '' : 'opacity:.55'}">${escHtml(item.name)}</span>
-        <span style="font-variant-numeric:tabular-nums;color:var(--text-muted);font-size:.85rem;${isShared ? '' : 'opacity:.55'}">${amtCell}</span>
-        ${isShared ? `<label title="Number of people who benefit from this expense" style="display:flex;align-items:center;gap:.25rem;font-size:.68rem;color:var(--text-muted);white-space:nowrap">
+      const portionCell = isFb
+        ? `<span title="${escAttr(c.foodAdj.sourceLabel)} — see the USDA food benchmark above" style="display:flex;align-items:center;gap:.25rem;font-size:.68rem;color:var(--primary);font-weight:700;white-space:nowrap">USDA = ${fmt(momPortion)}</span>`
+        : `<label title="Number of people who benefit from this expense" style="display:flex;align-items:center;gap:.25rem;font-size:.68rem;color:var(--text-muted);white-space:nowrap">
           ÷ <input type="number" min="1" max="${fs.householdSize}" step="1" value="${participants}"
                    onchange="fsUpdateParticipants('${escAttr(item.id)}', this.value)"
                    style="width:3.25rem;padding:.16rem .3rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);font-size:.75rem;text-align:center">
           = ${fmt(momPortion)}
-        </label>` : ''}
+        </label>`;
+      return `<div style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;border-bottom:1px solid var(--border)">
+        <span style="flex:1;min-width:0;${isShared ? '' : 'opacity:.55'}">${escHtml(item.name)}</span>
+        <span style="font-variant-numeric:tabular-nums;color:var(--text-muted);font-size:.85rem;${isShared ? '' : 'opacity:.55'}">${amtCell}</span>
+        ${isShared ? portionCell : ''}
         <button type="button" onclick="fsToggleShared('${escAttr(item.id)}')" title="Toggle shared (split across the household) vs personal (excluded from her share)"
                 style="min-width:74px;padding:.16rem .5rem;border-radius:999px;font-size:.68rem;font-weight:750;cursor:pointer;border:1px solid ${isShared ? 'rgba(16,185,129,.4)' : 'var(--border)'};background:${isShared ? 'rgba(16,185,129,.12)' : 'var(--surface)'};color:${isShared ? 'var(--success)' : 'var(--text-muted)'}">
           ${isShared ? 'Shared' : 'Personal'}
@@ -8520,6 +8628,7 @@ function fsRenderCard() {
             </div>
           </div>
           ${mortgageBox}
+          ${foodBox}
           <div style="font-size:.74rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.3rem">Which bills are shared, and by whom?</div>
           <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.6rem">Mark each bill <strong>Shared</strong> or <strong>Personal</strong>, then set how many people actually benefit from each shared expense. Phone service and car insurance default to the three adults; household-wide expenses default to all ${fs.householdSize} residents. If Mom's exact incremental cost is known, use that instead of an equal split.</div>
           ${itemSections || `<div style="color:var(--text-muted);font-size:.85rem;padding:1rem 0">No budget expenses yet — add bills in the budget below and they'll appear here.</div>`}
@@ -8540,8 +8649,9 @@ function fsRenderCard() {
             <p style="margin:0 0 .5rem"><strong>No gifts:</strong> transfers beyond her share of actual costs are uncompensated transfers under Medicaid's 5-year lookback and can create an eligibility penalty. Keep her payments to expense reimbursement only.</p>
             <p style="margin:0;font-size:.72rem">Keep the underlying bills and allocation method with your records. Her payments count as support she provides for herself, which matters if either of you claims her as a dependent. General information, not tax advice; confirm your specific setup with your CPA.</p>
             <div style="margin-top:.7rem;padding-top:.6rem;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:.35rem .85rem;font-size:.72rem">
-              <strong style="color:var(--text)">Official IRS references:</strong>
-              <a href="${IRS_CAREGIVER_GUIDANCE_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">Parent expense reimbursements ↗</a>
+              <strong style="color:var(--text)">Official references:</strong>
+              <a href="${IRS_CAREGIVER_GUIDANCE_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">IRS: parent expense reimbursements ↗</a>
+              <a href="${USDA_FOOD_COST_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">USDA: Cost of Food reports ↗</a>
             </div>
             <button class="btn btn-primary" style="width:100%;margin-top:.85rem" onclick="fsOpenAgreementModal()">📄 Generate Cost-Sharing Agreement</button>
             <div style="font-size:.66rem;color:var(--text-muted);margin-top:.3rem;text-align:center">Print-ready agreement + Exhibit A built from the shared bills above</div>
@@ -8623,6 +8733,23 @@ async function fsUpdateMortgage(key, value) {
   _renderBudgetHtml();
 }
 
+async function fsUpdateFoodBenchmark(key, value) {
+  const fb = state.budget.fairShare.foodBenchmark;
+  if (key === 'enabled') {
+    fb.enabled = (value === true || value === 'true');
+  } else if (key === 'itemId') {
+    fb.itemId = String(value || '');
+  } else if (key === 'sourceLabel') {
+    fb.sourceLabel = String(value ?? '').trim() || FS_USDA_DEFAULT_SOURCE;
+  } else if (key === 'amount') {
+    const v = parseFloat(value);
+    if (isFinite(v) && v > 0) fb.amount = v;
+  }
+  fsSyncBudgetIncome();
+  await _saveBudget();
+  _renderBudgetHtml();
+}
+
 // ── Fair Share: cost-sharing agreement generator ─────────────────────────────
 // Builds a print-ready Household Cost-Sharing Agreement from the live budget:
 // the shared expense items, their per-item participant counts, and herShare.
@@ -8633,6 +8760,7 @@ function fsAgreementRows() {
   const b = state.budget;
   const fs = b.fairShare;
   const mAdj = fsMortgageAdjustment();
+  const fbAdj = fsFoodBenchmark();
   const rows = [];
   for (const cat of BUDGET_EXPENSE_CATS) {
     for (const item of (b.expenses[cat] || [])) {
@@ -8640,10 +8768,13 @@ function fsAgreementRows() {
       const participants = fsItemParticipants(item, cat, fs);
       const amt = Number(item.amount) || 0;
       const isAdj = mAdj && item.id === mAdj.itemId;
+      const isFb = fbAdj && item.id === fbAdj.itemId;
       const eff = isAdj ? Math.max(0, amt - mAdj.principal) : amt;
       rows.push({
-        name: item.name, cat, amount: eff, participants, portion: eff / participants,
-        adjusted: isAdj ? { original: amt, principal: mAdj.principal, k: mAdj.k, n: mAdj.n, ratePct: fs.mortgage.ratePct } : null
+        name: item.name, cat, amount: eff, participants,
+        portion: isFb ? fbAdj.amount : eff / participants,
+        adjusted: isAdj ? { original: amt, principal: mAdj.principal, k: mAdj.k, n: mAdj.n, ratePct: fs.mortgage.ratePct } : null,
+        usda: isFb ? { amount: fbAdj.amount, sourceLabel: fbAdj.sourceLabel, fullAmount: amt, perCapita: eff / participants } : null
       });
     }
   }
@@ -8669,10 +8800,10 @@ function fsAgreementDocHtml() {
 
   const exhibitRows = rows.map(r => `
     <tr>
-      <td>${escHtml(r.name)}${r.adjusted ? '&nbsp;*' : ''}</td>
+      <td>${escHtml(r.name)}${r.adjusted ? '&nbsp;*' : ''}${r.usda ? '&nbsp;&dagger;' : ''}</td>
       <td>${escHtml(r.cat)}</td>
       <td class="num">${fmt(r.amount)}</td>
-      <td class="num">${r.participants}</td>
+      <td class="num">${r.usda ? 'USDA&nbsp;&dagger;' : r.participants}</td>
       <td class="num">${fmt(r.portion)}</td>
     </tr>`).join('');
 
@@ -8708,6 +8839,29 @@ function fsAgreementDocHtml() {
       </div>`;
   }
 
+  // USDA food benchmark write-up for Exhibit A — mirrors the reasoning shown
+  // in the Fair Share card.
+  const usdaRow = rows.find(r => r.usda);
+  let usdaBlock = '';
+  if (usdaRow) {
+    const u = usdaRow.usda;
+    usdaBlock = `
+      <div class="fs-doc-mortgage">
+        <h3>&dagger; USDA food benchmark</h3>
+        <p>The &ldquo;${escHtml(usdaRow.name)}&rdquo; expense above is the household's pooled weekly
+        spending of ${fmt(u.fullAmount)} per month, covering groceries, dining, and other mixed
+        family purchases. Because that pool includes spending that does not benefit Resident, an
+        equal per-capita split (${fmt(u.fullAmount)} &divide; ${usdaRow.participants} =
+        ${fmt(u.perCapita)}) would overstate Resident's consumption. Resident's share of this
+        expense is therefore valued at <strong>${fmt(u.amount)} per month</strong> using the
+        USDA <em>Official Food Plans: Cost of Food at Home</em> benchmark &mdash;
+        ${escHtml(u.sourceLabel)} &mdash; a government-published, age- and sex-specific figure
+        for all meals and snacks prepared at home, with USDA's published adjustment for
+        household size. The benchmark is refreshed from the then-current USDA monthly report
+        each time this agreement is regenerated.</p>
+      </div>`;
+  }
+
   return `
   <div class="fs-doc">
     <h1>Household Cost-Sharing Agreement</h1>
@@ -8739,7 +8893,11 @@ function fsAgreementDocHtml() {
       Where a shared expense includes repayment of loan principal &mdash; which builds
       Homeowners' equity rather than covering a cost of the shared household &mdash; the
       principal portion is excluded from the shared amount before allocation, as detailed
-      in Exhibit&nbsp;A.` : ''}</li>
+      in Exhibit&nbsp;A.` : ''}${rows.some(r => r.usda) ? `
+      Resident's share of pooled food and household-supplies spending is valued at the
+      published USDA Cost of Food benchmark for Resident's age and sex &mdash; an
+      independently published figure updated monthly by USDA &mdash; rather than a
+      per-capita fraction of mixed family spending, as detailed in Exhibit&nbsp;A.` : ''}</li>
 
       <li><strong>Monthly contribution.</strong> Based on current costs, Resident's contribution
       is <strong>${fmt(c.herShare)} per month</strong>${fs.roundDollar ? ' (rounded to the nearest whole dollar)' : ''},
@@ -8775,7 +8933,11 @@ function fsAgreementDocHtml() {
           Rental Property</em> &mdash; a home occupied by the owner's family member at less than
           fair rental value remains the owner's personal-use dwelling; this arrangement creates
           no rental activity.
-          <span class="fs-doc-url">${IRS_PUB_527_URL}</span></li>
+          <span class="fs-doc-url">${IRS_PUB_527_URL}</span></li>${rows.some(r => r.usda) ? `
+          <li>USDA <em>Official Food Plans: Cost of Food at Home</em> (monthly reports) &mdash;
+          the government-published, age- and sex-specific food cost benchmark used to value
+          Resident's share of pooled food and household-supplies spending in Exhibit&nbsp;A.
+          <span class="fs-doc-url">${USDA_FOOD_COST_URL}</span></li>` : ''}
         </ul>
       </li>
     </ol>
@@ -8800,6 +8962,7 @@ function fsAgreementDocHtml() {
         </tfoot>
       </table>
       ${adjBlock}
+      ${usdaBlock}
       <p class="fs-doc-foot">Exact sum of itemized shares: ${fmt(c.herShareExact)}. Amounts are drawn from the
       household budget records as of the date above; expenses classified as personal are omitted.
       Prepared from the household budget maintained by Homeowners. Template for family
