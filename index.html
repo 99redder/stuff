@@ -5500,6 +5500,8 @@ const MB_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 
 const MB_YEAR_STATS_OPEN_KEY = 'rentals_mom_budget_year_stats_open';
 const MB_VARIABLE_FIXED_BILL_IDS = new Set(['electric', 'water', 'gas-heat']);
 const IRS_CAREGIVER_GUIDANCE_URL = 'https://www.irs.gov/faqs/irs-procedures/for-caregivers';
+const IRS_PUB_501_URL = 'https://www.irs.gov/publications/p501';
+const IRS_PUB_527_URL = 'https://www.irs.gov/publications/p527';
 
 // IRS Uniform Lifetime Table (2022+) — distribution period (divisor) by the age
 // the account owner reaches during the distribution year. RMD = balance / factor.
@@ -8538,13 +8540,18 @@ function fsAgreementDocHtml() {
       This agreement documents Resident's proportional contribution to the actual, documented
       costs of operating the shared household. It is a cost-sharing arrangement among family
       members: it is not a lease, it creates no landlord&ndash;tenant relationship, and payments
-      under it are reimbursement of shared expenses, not rent. No amount paid under this
-      agreement includes any profit or markup to Homeowners.</li>
+      under it are reimbursement of shared expenses, not rent (see IRS &ldquo;For
+      Caregivers&rdquo; FAQs, which treat a parent's payments toward household expenses as the
+      parent's own support contribution rather than income to the family). No amount paid under
+      this agreement includes any profit or markup to Homeowners.</li>
 
       <li><strong>Method.</strong> The shared household expenses and the allocation method are
       listed in Exhibit&nbsp;A. Each expense is divided equally among the household members who
       actually benefit from it (the household currently numbers ${c.size} persons; certain
-      expenses are divided among fewer members to reflect actual use). Expenses that benefit
+      expenses are divided among fewer members to reflect actual use). This is the same
+      allocation method the IRS uses to value each household member's share of lodging and
+      household expenses in the support worksheet of Publication&nbsp;501 (total household
+      expenses divided equally among the members of the household). Expenses that benefit
       only Homeowners or other family members are excluded from Resident's share.</li>
 
       <li><strong>Monthly contribution.</strong> Based on current costs, Resident's contribution
@@ -8566,6 +8573,24 @@ function fsAgreementDocHtml() {
 
       <li><strong>Other support.</strong> Any amounts Homeowners pay for Resident's benefit are
       voluntary family support and are not consideration under this agreement.</li>
+
+      <li><strong>References.</strong> The parties rely on the following IRS guidance in
+      structuring this arrangement:
+        <ul class="fs-doc-refs">
+          <li>IRS FAQs, <em>For Caregivers</em> &mdash; a parent's payments toward household
+          expenses are the parent's support contribution, not income to the caregiver family.
+          <span class="fs-doc-url">${IRS_CAREGIVER_GUIDANCE_URL}</span></li>
+          <li>IRS Publication&nbsp;501, <em>Dependents, Standard Deduction, and Filing
+          Information</em> &mdash; support worksheet allocating total household expenses equally
+          among household members, the method used in Exhibit&nbsp;A.
+          <span class="fs-doc-url">${IRS_PUB_501_URL}</span></li>
+          <li>26&nbsp;U.S.C. &sect;280A(d)(2) and IRS Publication&nbsp;527, <em>Residential
+          Rental Property</em> &mdash; a home occupied by the owner's family member at less than
+          fair rental value remains the owner's personal-use dwelling; this arrangement creates
+          no rental activity.
+          <span class="fs-doc-url">${IRS_PUB_527_URL}</span></li>
+        </ul>
+      </li>
     </ol>
 
     <div class="fs-doc-sigs">
@@ -8614,6 +8639,9 @@ const FS_DOC_CSS = `
   .fs-doc .num { text-align: right; font-variant-numeric: tabular-nums; }
   .fs-doc tfoot td { border-top: 2px solid #111; }
   .fs-doc-foot { font-size: .78rem; color: #444; margin-top: .8rem; }
+  .fs-doc-refs { font-size: .9rem; padding-left: 1.1rem; margin: .4rem 0 0; }
+  .fs-doc-refs li { margin-bottom: .45rem; }
+  .fs-doc-url { display: block; font-size: .78rem; color: #444; word-break: break-all; }
 `;
 
 function fsOpenAgreementModal() {
