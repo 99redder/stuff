@@ -263,7 +263,9 @@ async function handleFetchFmgTaxSummary(body) {
 
   if (!loginRes.ok) {
     const err = await loginRes.json().catch(() => ({}));
-    return jsonResponse({ error: err.error || `FMG login failed (${loginRes.status})` }, loginRes.status === 429 ? 429 : 401);
+    // Never relay upstream auth failures as 401 — the frontend treats a 401
+    // from this API as an expired rentals session and forces a logout.
+    return jsonResponse({ error: err.error || `FMG login failed (${loginRes.status})` }, loginRes.status === 429 ? 429 : 502);
   }
 
   const setCookie = loginRes.headers.get('Set-Cookie') || '';
@@ -275,7 +277,7 @@ async function handleFetchFmgTaxSummary(body) {
   const data = await txRes.json().catch(() => ({}));
 
   if (!txRes.ok) {
-    return jsonResponse({ error: data.error || `FMG tax fetch failed (${txRes.status})` }, txRes.status === 401 ? 401 : 502);
+    return jsonResponse({ error: data.error || `FMG tax fetch failed (${txRes.status})` }, 502);
   }
 
   const incomeCents = Array.isArray(data.income)
