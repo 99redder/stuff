@@ -8289,14 +8289,14 @@ function fsNormalize(raw) {
 }
 
 // USDA Official Food Plans: Cost of Food at Home — Liberal Plan, female 71+,
-// $377.00/mo (Jan 2025 report) × 0.95 (USDA's 5–6 person household adjustment)
-// = $358, plus an explicit $67/mo allowance for her share of household
+// $394.40/mo (May 2026 report) × 0.95 (USDA's 5–6 person household adjustment)
+// = $375, plus an explicit $67/mo allowance for her share of household
 // consumables (toiletries, paper goods, cleaning supplies) that also flow
 // through the weekly bucket. Update the amount + label annually from the
 // latest report. Gas is deliberately excluded — she doesn't drive; rides for
 // her benefit are family support (or a mileage log if she insists).
-const FS_USDA_DEFAULT_AMOUNT = 425;
-const FS_USDA_DEFAULT_SOURCE = 'USDA Liberal Food Plan, female 71+ — Jan 2025 report ($377.00/mo, −5% household-size adj. = $358) + $67/mo household-supplies allowance (toiletries, paper goods, cleaning)';
+const FS_USDA_DEFAULT_AMOUNT = 442;
+const FS_USDA_DEFAULT_SOURCE = 'USDA Liberal Food Plan, female 71+ — May 2026 report ($394.40/mo, −5% household-size adj. = $375) + $67/mo household-supplies allowance (toiletries, paper goods, cleaning)';
 const USDA_FOOD_COST_URL = 'https://www.fns.usda.gov/cnpp/usda-food-plans-cost-food-monthly-reports';
 
 // The budget expense item the food benchmark applies to: the explicitly chosen
