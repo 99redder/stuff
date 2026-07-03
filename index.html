@@ -1659,8 +1659,23 @@ const TP_SE_SS_BASE = 176100;      // 2025 SS wage base
 const TP_NIIT_THRESHOLD = 250000;  // MFJ NIIT threshold
 const TP_STD_DEDUCTION = 30000;    // 2025 MFJ standard deduction
 const TP_IRA_LIMIT = 15000; // MFJ: 2 spouses × $7,500 each (2026 limit)
-const TP_CTC_PER_CHILD = 2000;
+const TP_CTC_PER_CHILD = 2200;     // 2026 (OBBBA)
 const TP_CTC_PHASEOUT = 400000;    // MFJ phase-out start
+
+// ── AGI/income thresholds watched by the Tax Planning warnings card (2026, MFJ) ──
+const TP_WARN_NEAR           = 25000;    // flag "approaching" within this margin below a threshold
+const TP_ROTH_PHASEOUT_START = 242000;   // Roth IRA MAGI phase-out band (IRS, 2026)
+const TP_ROTH_PHASEOUT_END   = 252000;
+const TP_SALT_CAP            = 40400;    // OBBBA SALT cap (2026)
+const TP_SALT_PHASEDOWN      = 500000;   // cap shrinks 30¢ per $ of MAGI over this…
+const TP_SALT_CAP_FLOOR      = 10000;    // …but never below this
+const TP_QBI_THRESHOLD       = 403500;   // §199A W-2/UBIA limits phase in above this taxable income (Rev. Proc. 2025-32)
+const TP_QBI_PHASEIN_END     = 553500;
+const TP_ADDL_MEDICARE       = 250000;   // 0.9% Additional Medicare Tax on wages/SE comp over this
+const TP_MD_EXEMPT_PHASEOUT  = 200000;   // MD personal exemptions reach $0 above this federal AGI (MFJ)
+const TP_SAFE_HARBOR_AGI     = 150000;   // above this, the estimated-tax safe harbor is 110% of prior-year tax
+const TP_IRMAA_FIRST_TIER    = 218000;   // ≈ first 2026 Medicare IRMAA tier (MFJ) — SSA sets final figure
+const TP_CHARITY_FLOOR_PCT   = 0.005;    // 2026+: itemized charitable gifts deductible only above 0.5% of AGI
 
 // ── Maryland Tax Constants (2025) ─────────────────────────────────────────────
 const MD_BRACKETS_MFJ = [
@@ -1699,8 +1714,10 @@ function calcMarylandTax(tp, agi) {
   const mdAgi = Math.max(0, agi - navyExempt - md529);
   // Standard deduction: 15% of MD AGI, clamped to min/max
   const mdStdDed = Math.min(MD_STD_DED_MAX, Math.max(MD_STD_DED_MIN, mdAgi * 0.15));
-  // Personal exemptions: MFJ (2) + 2 dependents = 4 × $3,200
-  const mdExemptAmt = 4 * MD_EXEMPTION;
+  // Personal exemptions: MFJ (2) + 2 dependents, phased down by federal AGI
+  // (MD Form 502 exemption chart, MFJ: $3,200 ≤$150k · $1,600 ≤$175k · $800 ≤$200k · $0 above)
+  const mdPerExemption = agi <= 150000 ? MD_EXEMPTION : agi <= 175000 ? 1600 : agi <= 200000 ? 800 : 0;
+  const mdExemptAmt = 4 * mdPerExemption;
   const mdTaxInc = Math.max(0, mdAgi - mdStdDed - mdExemptAmt);
   // State tax
   let stateTax = 0, prev = 0;
@@ -4795,7 +4812,7 @@ function tpCalc(tp, rentalRows) {
     propertySaleDepRecapture, depRecaptureTaxable, depRecaptureTax,
     seTax, halfSeTax, grossIncome, iraAdj, adjustments, agi,
     stdDed, qbiDed, totDed, taxInc, ordinaryTaxable, ltcgTaxable,
-    ordTax, ltcgTax, niit, grossFedTax, ctc, netFedTax,
+    ordTax, ltcgTax, nii, niit, grossFedTax, ctcRaw, ctcPhaseout, ctc, netFedTax,
     fedWithheld, estPmts, totFedPaid, fedOwed, md
   };
 }
@@ -7431,6 +7448,7 @@ async function renderTaxPlanning() {
 
   <!-- ── Right Column: Results ── -->
   <div class="tp-sticky">
+    <div class="card" id="tp-warnings" style="margin-bottom:1rem"></div>
     <div class="card" id="tp-results"></div>
   </div>
 
@@ -9297,9 +9315,175 @@ function tpClearPropertySale(saleNum) {
   renderTaxPlanning();
 }
 
+// ── Tax Planning: AGI threshold warnings ──────────────────────────────────────
+// Watches the live estimate against 2026 MFJ phase-out thresholds. Each item is
+// flagged Triggered (over the line), Approaching (within TP_WARN_NEAR below it),
+// or Note (informational), with the dollar impact where computable and a source
+// link. "Modeled" means the estimate above already reflects it; "not modeled"
+// means the real bill differs from this tab's estimate.
+function tpAgiWarningsHtml(r, tp) {
+  const agi = r.agi;
+  const items = [];
+  const add = (level, title, detail, sources) => items.push({ level, title, detail, sources });
+  const near = (threshold, value) => value > threshold - TP_WARN_NEAR && value <= threshold;
+
+  // NIIT — modeled
+  if (agi > TP_NIIT_THRESHOLD) {
+    add('hit', 'Net Investment Income Tax (3.8%)',
+      `AGI is ${fmt(agi - TP_NIIT_THRESHOLD)} over the ${fmt(TP_NIIT_THRESHOLD)} MFJ threshold — <strong>${fmt(r.niit)}</strong> of NIIT on investment income is included in this estimate.`,
+      [['IRS: Net Investment Income Tax', 'https://www.irs.gov/individuals/net-investment-income-tax']]);
+  } else if (near(TP_NIIT_THRESHOLD, agi)) {
+    add('near', 'Net Investment Income Tax (3.8%)',
+      `AGI is within ${fmt(TP_NIIT_THRESHOLD - agi)} of the ${fmt(TP_NIIT_THRESHOLD)} threshold — investment income above it draws 3.8% NIIT.`,
+      [['IRS: Net Investment Income Tax', 'https://www.irs.gov/individuals/net-investment-income-tax']]);
+  }
+
+  // Child Tax Credit clawback — modeled
+  if (agi > TP_CTC_PHASEOUT) {
+    add('hit', 'Child Tax Credit phase-out',
+      r.ctc <= 0
+        ? `AGI is far enough over ${fmt(TP_CTC_PHASEOUT)} that the credit is fully phased out (was ${fmt(r.ctcRaw)}) — reflected in this estimate.`
+        : `Credit reduced by <strong>${fmt(r.ctcPhaseout)}</strong> (5% of AGI over ${fmt(TP_CTC_PHASEOUT)}, in $1,000 steps) — reflected in this estimate. Every $1,000 of AGI in this zone costs $50 of credit, so AGI reducers (IRA deductions, loss harvesting) earn an extra 5% here.`,
+      [['IRS: Child Tax Credit', 'https://www.irs.gov/credits-deductions/individuals/child-tax-credit']]);
+  } else if (near(TP_CTC_PHASEOUT, agi)) {
+    add('near', 'Child Tax Credit phase-out',
+      `AGI is within ${fmt(TP_CTC_PHASEOUT - agi)} of the ${fmt(TP_CTC_PHASEOUT)} start of the CTC clawback (5% of the excess).`,
+      [['IRS: Child Tax Credit', 'https://www.irs.gov/credits-deductions/individuals/child-tax-credit']]);
+  }
+
+  // Roth IRA eligibility — not modeled (contribution-side rule)
+  if (agi >= TP_ROTH_PHASEOUT_END) {
+    add('hit', 'Roth IRA — ineligible to contribute',
+      `MAGI exceeds the ${fmt(TP_ROTH_PHASEOUT_END)} MFJ ceiling. Any ${CURRENT_YEAR} Roth contributions already made are excess contributions (6% excise per year) — recharacterize them to a traditional IRA or withdraw them (with earnings) by the filing deadline.`,
+      [['IRS: 2026 IRA limits', 'https://www.irs.gov/newsroom/401k-limit-increases-to-24500-for-2026-ira-limit-increases-to-7500']]);
+  } else if (agi >= TP_ROTH_PHASEOUT_START) {
+    add('hit', 'Roth IRA — reduced contribution limit',
+      `MAGI is inside the ${fmt(TP_ROTH_PHASEOUT_START)}–${fmt(TP_ROTH_PHASEOUT_END)} phase-out band — only a reduced Roth contribution is allowed this year.`,
+      [['IRS: 2026 IRA limits', 'https://www.irs.gov/newsroom/401k-limit-increases-to-24500-for-2026-ira-limit-increases-to-7500']]);
+  } else if (near(TP_ROTH_PHASEOUT_START, agi)) {
+    add('near', 'Roth IRA phase-out',
+      `AGI is within ${fmt(TP_ROTH_PHASEOUT_START - agi)} of the ${fmt(TP_ROTH_PHASEOUT_START)} start of the Roth contribution phase-out.`,
+      [['IRS: 2026 IRA limits', 'https://www.irs.gov/newsroom/401k-limit-increases-to-24500-for-2026-ira-limit-increases-to-7500']]);
+  }
+
+  // SALT cap phase-down — not modeled (estimate uses the standard deduction)
+  if (agi > TP_SALT_PHASEDOWN) {
+    const reducedCap = Math.max(TP_SALT_CAP_FLOOR, TP_SALT_CAP - 0.30 * (agi - TP_SALT_PHASEDOWN));
+    add('hit', 'SALT cap phase-down (if itemizing)',
+      `MAGI over ${fmt(TP_SALT_PHASEDOWN)} shrinks the ${fmt(TP_SALT_CAP)} SALT cap by 30¢ per excess dollar — down to <strong>${fmt(reducedCap)}</strong> at this AGI (floor ${fmt(TP_SALT_CAP_FLOOR)}). Not modeled here (this estimate uses the standard deduction).`,
+      [['U.S. Bank: 2026 brackets & SALT', 'https://www.usbank.com/wealth-management/financial-perspectives/financial-planning/tax-brackets.html']]);
+  } else if (near(TP_SALT_PHASEDOWN, agi)) {
+    add('near', 'SALT cap phase-down',
+      `AGI is within ${fmt(TP_SALT_PHASEDOWN - agi)} of the ${fmt(TP_SALT_PHASEDOWN)} threshold where the ${fmt(TP_SALT_CAP)} SALT cap starts shrinking (30¢ per excess dollar, an extra ~10.5% effective marginal rate while it phases down).`,
+      [['U.S. Bank: 2026 brackets & SALT', 'https://www.usbank.com/wealth-management/financial-perspectives/financial-planning/tax-brackets.html']]);
+  }
+
+  // QBI W-2/UBIA limits — estimate applies the full 20% without them
+  if (r.qbiDed > 0 && r.taxInc > TP_QBI_THRESHOLD) {
+    add('hit', 'QBI deduction limits (§199A)',
+      `Taxable income exceeds ${fmt(TP_QBI_THRESHOLD)}, so the W-2-wage/property limits phase in through ${fmt(TP_QBI_PHASEIN_END)}. This estimate applies the full 20% QBI deduction (${fmt(r.qbiDed)}) without those limits — the real deduction may be smaller.`,
+      [['IRS: QBI deduction', 'https://www.irs.gov/newsroom/qualified-business-income-deduction'], ['Rev. Proc. 2025-32 analysis', 'https://www.currentfederaltaxdevelopments.com/blog/2025/10/9/2026-inflation-adjustments-for-tax-professionals-revenue-procedure-2025-32-analysis']]);
+  } else if (r.qbiDed > 0 && near(TP_QBI_THRESHOLD, r.taxInc)) {
+    add('near', 'QBI deduction limits (§199A)',
+      `Taxable income is within ${fmt(TP_QBI_THRESHOLD - r.taxInc)} of the ${fmt(TP_QBI_THRESHOLD)} threshold where W-2-wage/property limits start phasing into the QBI deduction.`,
+      [['IRS: QBI deduction', 'https://www.irs.gov/newsroom/qualified-business-income-deduction']]);
+  }
+
+  // 20% LTCG bracket — modeled via TP_LTCG_MFJ
+  const ltcg20Start = TP_LTCG_MFJ[1].limit;
+  if (r.ltcgTaxable > 0 && r.taxInc > ltcg20Start) {
+    add('hit', '20% capital-gains bracket',
+      `Taxable income exceeds ${fmt(ltcg20Start)} — long-term gains stacked above that point are taxed at 20% instead of 15% (reflected in this estimate).`,
+      [['IRS: capital gains rates', 'https://www.irs.gov/taxtopics/tc409']]);
+  } else if (r.ltcgTaxable > 0 && near(ltcg20Start, r.taxInc)) {
+    add('near', '20% capital-gains bracket',
+      `Taxable income is within ${fmt(ltcg20Start - r.taxInc)} of the ${fmt(ltcg20Start)} breakpoint where long-term gains shift from 15% to 20%.`,
+      [['IRS: capital gains rates', 'https://www.irs.gov/taxtopics/tc409']]);
+  }
+
+  // Additional Medicare Tax — wages/SE comp only (pension & gains don't count) — not modeled
+  const medicareComp = tpN(tp.wife_gross) + Math.max(0, r.businessInc);
+  if (medicareComp > TP_ADDL_MEDICARE) {
+    add('hit', 'Additional Medicare Tax (0.9%)',
+      `Wages + self-employment compensation of ${fmt(medicareComp)} exceed the ${fmt(TP_ADDL_MEDICARE)} MFJ threshold — 0.9% applies to the excess (not modeled in this estimate). Pension income and capital gains don't count toward this one.`,
+      [['IRS: Additional Medicare Tax', 'https://www.irs.gov/taxtopics/tc560']]);
+  }
+
+  // Maryland exemption phase-out — modeled in the MD estimate
+  if (agi > TP_MD_EXEMPT_PHASEOUT) {
+    add('info', 'Maryland personal exemptions eliminated',
+      `Federal AGI above ${fmt(TP_MD_EXEMPT_PHASEOUT)} phases MD personal exemptions to $0 (from $3,200 each) — reflected in the Maryland estimate below.`,
+      [['Comptroller of Maryland: income tax', 'https://www.marylandtaxes.gov/individual/income/tax-info/index.php']]);
+  }
+
+  // 2026 charitable floor — informational (only matters if itemizing)
+  if (agi > 0) {
+    add('info', 'Charitable deduction floor (new 2026)',
+      `If you itemize, the first 0.5% of AGI (${fmt(agi * TP_CHARITY_FLOOR_PCT)}) of charitable gifts is not deductible — bunching gifts into one year beats spreading them.`,
+      [['Journal of Accountancy: 2026 changes', 'https://www.journalofaccountancy.com/issues/2026/jan/get-ready-for-tax-season/']]);
+  }
+
+  // Estimated-tax safe harbor — informational
+  if (agi > TP_SAFE_HARBOR_AGI) {
+    add('info', 'Estimated-tax safe harbor is 110%',
+      `Above ${fmt(TP_SAFE_HARBOR_AGI)} AGI, avoiding underpayment penalties requires paying in 110% of last year's total tax (or 90% of this year's) through withholding/estimates — pay an estimate in the quarter of any property sale.`,
+      [['IRS: underpayment penalty', 'https://www.irs.gov/taxtopics/tc306']]);
+  }
+
+  // Medicare IRMAA lookback — informational
+  if (agi > TP_IRMAA_FIRST_TIER) {
+    add('info', `Medicare IRMAA (${CURRENT_YEAR + 2} premiums)`,
+      `If either spouse is on Medicare in ${CURRENT_YEAR + 2}, this year's MAGI sets premium surcharges via the 2-year lookback (first MFJ tier ≈ ${fmt(TP_IRMAA_FIRST_TIER)}; SSA sets the final figure). Ignore if you're both years from 65.`,
+      [['SSA: Medicare premiums & IRMAA', 'https://www.ssa.gov/benefits/medicare/medicare-premiums.html']]);
+  }
+
+  const STYLES = {
+    hit:  { border: 'var(--danger)',  badge: 'Triggered',   badgeColor: 'var(--danger)' },
+    near: { border: '#d97706',        badge: 'Approaching', badgeColor: '#d97706' },
+    info: { border: 'var(--border)',  badge: 'Note',        badgeColor: 'var(--text-muted)' },
+  };
+  const order = { hit: 0, near: 1, info: 2 };
+  items.sort((a, b) => order[a.level] - order[b.level]);
+  const hits = items.filter(i => i.level === 'hit').length;
+  const nears = items.filter(i => i.level === 'near').length;
+
+  const rows = items.map(i => {
+    const s = STYLES[i.level];
+    const links = i.sources.map(([label, url]) =>
+      `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">${escHtml(label)} ↗</a>`).join(' · ');
+    return `<div style="border-left:3px solid ${s.border};padding:.45rem .65rem;margin-bottom:.45rem;background:var(--surface);border-radius:0 var(--radius) var(--radius) 0">
+      <div style="display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap">
+        <span style="font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:${s.badgeColor}">${s.badge}</span>
+        <strong style="font-size:.8rem">${escHtml(i.title)}</strong>
+      </div>
+      <div style="font-size:.74rem;color:var(--text-muted);line-height:1.5;margin-top:.15rem">${i.detail}</div>
+      <div style="font-size:.66rem;margin-top:.2rem">${links}</div>
+    </div>`;
+  }).join('');
+
+  const headline = hits > 0
+    ? `<span style="color:var(--danger);font-weight:800">${hits} triggered</span>${nears ? ` · <span style="color:#d97706;font-weight:700">${nears} approaching</span>` : ''}`
+    : nears > 0
+      ? `<span style="color:#d97706;font-weight:700">${nears} approaching</span>`
+      : `<span style="color:var(--success);font-weight:700">none triggered</span>`;
+
+  return `
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;flex-wrap:wrap">
+      <div class="card-title">⚠️ AGI Threshold Watch</div>
+      <div style="font-size:.72rem">${headline}</div>
+    </div>
+    <div class="card-body" style="padding:0.75rem 1rem">
+      <div style="font-size:.68rem;color:var(--text-muted);margin-bottom:.55rem">Projected AGI <strong>${fmt(agi)}</strong> · taxable income <strong>${fmt(r.taxInc)}</strong> — checked against ${CURRENT_YEAR} MFJ phase-out thresholds.</div>
+      ${rows || '<div style="font-size:.78rem;color:var(--success);font-weight:600">✓ No AGI-based phase-outs triggered at this income.</div>'}
+    </div>`;
+}
+
 function tpUpdateResults(tp) {
   if (!tp) tp = tpReadForm();
   const r = tpCalc(tp, window._tpRentalRows || []);
+
+  const warnEl = document.getElementById('tp-warnings');
+  if (warnEl) warnEl.innerHTML = tpAgiWarningsHtml(r, tp);
 
   const hse = document.getElementById('tp-half-se');
   if (hse) hse.value = r.halfSeTax.toFixed(2);

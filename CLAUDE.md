@@ -73,7 +73,7 @@ Header buttons: [Deductions Tracker]  [Monthly Budget]  [Mom Budget]  [☀️ So
 | Monthly Budget | `budget` | Global monthly income/expense planner with property worksheets; includes the collapsible **Fair Share** section (Mom's cost-sharing contribution, derived from the budget's own expenses) |
 | Mom Budget | `mom-budget` | Global monthly assistance tracker with income template, fixed/reserve bills, groceries/gas/discretionary ledgers, and month math |
 | Solar ROI | `solar` | Solar panel ROI tracking + billing cycle calculator |
-| Tax Planning | `tax-planning` | Projected federal/MD/VA tax liability with live inputs |
+| Tax Planning | `tax-planning` | Projected federal/MD/VA tax liability with live inputs; includes the **AGI Threshold Watch** card (`#tp-warnings`, built by `tpAgiWarningsHtml()`) flagging 2026 MFJ phase-outs with source links |
 | Deductions Tracker | `deductions` | Global itemized deductions log for the current year |
 | Savings | `savings` | Account balances + annual obligations tracker with paid/unpaid checkboxes per year |
 
@@ -648,6 +648,12 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-07-03 — Tax Planning: AGI Threshold Watch card
+
+- **New `⚠️ AGI Threshold Watch` card** at the top of the Tax Planning results column (`#tp-warnings`, rendered by `tpAgiWarningsHtml(r, tp)` inside `tpUpdateResults` so it live-updates with every input). Checks the projected AGI/taxable income against 2026 MFJ thresholds and renders each as **Triggered** (red), **Approaching** (amber, within `TP_WARN_NEAR = $25k` below), or **Note** (informational), with computed dollar impacts and a source link per item. Items state whether the effect is already modeled in the estimate (NIIT, CTC clawback, 20% LTCG bracket, MD exemptions) or **not** modeled (Roth eligibility, SALT phase-down, QBI W-2/UBIA limits, Additional Medicare).
+- Monitored: NIIT $250k · CTC clawback $400k · Roth phase-out $242k–$252k · SALT cap $40,400 phase-down over $500k (floor $10k) · QBI §199A limits over $403,500 taxable (phase-in to $553,500, Rev. Proc. 2025-32) · 20% LTCG breakpoint (`TP_LTCG_MFJ`) · 0.9% Additional Medicare on wages/SE > $250k (pension/gains excluded) · MD exemption elimination > $200k · 2026 charitable 0.5%-of-AGI floor · 110% estimated-tax safe harbor > $150k · Medicare IRMAA 2-year lookback (≈ $218k first tier). Constants in the `TP_WARN_*`/`TP_ROTH_*`/`TP_SALT_*`/`TP_QBI_*` block next to the other TP constants.
+- **Accuracy fixes riding along:** `TP_CTC_PER_CHILD` 2000 → **2200** (2026 OBBBA), and `calcMarylandTax` now phases MD personal exemptions by federal AGI (MFJ: $3,200 ≤$150k / $1,600 ≤$175k / $800 ≤$200k / $0 above) instead of always deducting 4 × $3,200. `tpCalc` now returns `nii`, `ctcRaw`, `ctcPhaseout`.
 
 ### 2026-07-03 — Fair Share: USDA food benchmark for Weekly Spending
 
