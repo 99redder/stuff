@@ -390,7 +390,8 @@ A collapsible **section inside the Monthly Budget view** — not a standalone ta
   roundDollar,     // round her share to the NEAREST whole dollar (Math.round, neutral)
   shared: { [budgetExpenseItemId]: bool },  // per-item OVERRIDES of the category default
   participants: { [itemId]: number },       // per-item divisor override (who benefits)
-  agreement: { residentName, ownerNames, propertyAddress }  // cost-sharing agreement parties
+  agreement: { residentName, ownerNames, propertyAddress },  // cost-sharing agreement parties
+  mortgage: { enabled, itemId, loanAmount, ratePct, termYears, firstPayment }  // principal exclusion (see below)
 }
 ```
 There is **no separate bills list** — the bills are the budget's expense items. An item counts as shared if `fairShare.shared[item.id]` is set (explicit override), else it falls back to `FS_SHARED_CAT_DEFAULTS[category]`. Toggling the Shared/Personal pill writes an explicit override.
@@ -646,6 +647,12 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-07-03 — Fair Share: mortgage principal exclusion
+
+- **New `🏠 Mortgage Principal Exclusion` sub-card** in the Fair Share section. The budget keeps the real full mortgage payment, but Fair Share subtracts the current month's estimated loan-principal portion (owner equity, not a shared cost) from that one item before the ÷household split. Standard fixed-rate amortization (`fsMortgageCalc`): P&I = L·r/(1−(1+r)^−n); payment # derived from `firstPayment` (YYYY-MM, payment #1 assumed if unset); balance before payment k → interest → principal. All steps shown as visible math text in the card.
+- Config persists in `fairShare.mortgage` (`enabled` off by default, `itemId` empty = auto-detect the first /mortgage/i item in the Mortgage category, defaults $300k / 6.99% / 30yr). Mutator `fsUpdateMortgage()`. The shared-bills list shows the adjusted amount with a strikethrough original + "− principal" badge; Exhibit A in the agreement uses the adjusted amount with a `*` footnote explaining the exclusion.
+- **Worker mirrored** (`fairShareMortgageExclusion` inside `calcFairShareFromBudget`, month via `currentEasternMonthKey()`) so the phone PWA's Fair Share matches.
 
 ### 2026-07-03 — Fair Share: cost-sharing agreement generator
 

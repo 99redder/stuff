@@ -750,6 +750,36 @@ function fairShareItemParticipants(item, category, fairShare, householdSize) {
   return fairShareDefaultParticipants(item, category, householdSize);
 }
 
+// Mirror of the frontend fsMortgageCalc/fsMortgageItem — the estimated loan
+// principal (owner equity, not a shared cost) is subtracted from the mortgage
+// item before the split. Returns { itemId, principal } or null.
+function fairShareMortgageExclusion(fs, expenses) {
+  const m = fs.mortgage;
+  if (!m || !m.enabled) return null;
+  const L = Number(m.loanAmount), ratePct = Number(m.ratePct), years = Number(m.termYears);
+  if (!(L > 0) || !(ratePct > 0) || !(years > 0)) return null;
+  const r = ratePct / 100 / 12;
+  const n = Math.round(years * 12);
+  const pmt = L * r / (1 - Math.pow(1 + r, -n));
+  let k = 1;
+  if (typeof m.firstPayment === 'string' && /^\d{4}-\d{2}$/.test(m.firstPayment)) {
+    const [fy, fm] = m.firstPayment.split('-').map(Number);
+    const [cy, cm] = currentEasternMonthKey().split('-').map(Number);
+    k = (cy - fy) * 12 + (cm - fm) + 1;
+  }
+  k = Math.min(n, Math.max(1, k));
+  const grow = Math.pow(1 + r, k - 1);
+  const balance = L * grow - pmt * (grow - 1) / r;
+  const principal = pmt - balance * r;
+  let itemId = typeof m.itemId === 'string' ? m.itemId : '';
+  if (!itemId) {
+    const items = Array.isArray(expenses['Mortgage']) ? expenses['Mortgage'] : [];
+    const match = items.find(i => /mortgage/i.test(String(i.name || '')));
+    itemId = match ? match.id : '';
+  }
+  return itemId ? { itemId, principal } : null;
+}
+
 // Her monthly Fair Share = the sum of her portion of each shared expense.
 function calcFairShareFromBudget(budget) {
   if (!budget || typeof budget !== 'object') return 0;
@@ -758,6 +788,7 @@ function calcFairShareFromBudget(budget) {
   const roundDollar = (fs.roundDollar !== undefined) ? !!fs.roundDollar : (fs.roundUp !== false);
   const shared = (fs.shared && typeof fs.shared === 'object') ? fs.shared : {};
   const expenses = (budget.expenses && typeof budget.expenses === 'object') ? budget.expenses : {};
+  const mAdj = fairShareMortgageExclusion(fs, expenses);
   let herShare = 0;
   for (const cat of Object.keys(expenses)) {
     const items = Array.isArray(expenses[cat]) ? expenses[cat] : [];
@@ -767,7 +798,9 @@ function calcFairShareFromBudget(budget) {
         : !!FS_SHARED_CAT_DEFAULTS[cat];
       if (isShared) {
         const participants = fairShareItemParticipants(item, cat, fs, householdSize);
-        herShare += (Number(item.amount) || 0) / participants;
+        const amt = Number(item.amount) || 0;
+        const effAmt = (mAdj && item.id === mAdj.itemId) ? Math.max(0, amt - mAdj.principal) : amt;
+        herShare += effAmt / participants;
       }
     }
   }

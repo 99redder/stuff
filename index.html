@@ -8264,7 +8264,70 @@ function fsNormalize(raw) {
       ownerNames:      typeof raw.agreement?.ownerNames === 'string' ? raw.agreement.ownerNames : '',
       propertyAddress: typeof raw.agreement?.propertyAddress === 'string' ? raw.agreement.propertyAddress : '',
     },
+    // Mortgage principal exclusion — the budget keeps the real full payment,
+    // but Fair Share subtracts the estimated principal portion (owner equity,
+    // not a shared household cost) from that one item before dividing.
+    mortgage: {
+      enabled:      !!raw.mortgage?.enabled,
+      itemId:       typeof raw.mortgage?.itemId === 'string' ? raw.mortgage.itemId : '',
+      loanAmount:   (Number(raw.mortgage?.loanAmount) > 0) ? Number(raw.mortgage.loanAmount) : 300000,
+      ratePct:      (Number(raw.mortgage?.ratePct) > 0) ? Number(raw.mortgage.ratePct) : 6.99,
+      termYears:    (Number(raw.mortgage?.termYears) > 0) ? Number(raw.mortgage.termYears) : 30,
+      firstPayment: typeof raw.mortgage?.firstPayment === 'string' ? raw.mortgage.firstPayment : '',
+    },
   };
+}
+
+// Standard fixed-rate amortization for the current month's payment.
+// Returns null when the exclusion is off or the loan inputs are invalid.
+function fsMortgageCalc(fs) {
+  const m = fs.mortgage;
+  if (!m || !m.enabled) return null;
+  const L = Number(m.loanAmount), ratePct = Number(m.ratePct), years = Number(m.termYears);
+  if (!(L > 0) || !(ratePct > 0) || !(years > 0)) return null;
+  const r = ratePct / 100 / 12;
+  const n = Math.round(years * 12);
+  const pmt = L * r / (1 - Math.pow(1 + r, -n));
+  // Which payment number falls in the current month (payment #1 = firstPayment month).
+  let k = 1, assumed = true;
+  if (/^\d{4}-\d{2}$/.test(m.firstPayment || '')) {
+    const [fy, fm] = m.firstPayment.split('-').map(Number);
+    const now = new Date();
+    k = (now.getFullYear() - fy) * 12 + (now.getMonth() + 1 - fm) + 1;
+    assumed = false;
+  }
+  k = Math.min(n, Math.max(1, k));
+  const grow = Math.pow(1 + r, k - 1);
+  const balance = L * grow - pmt * (grow - 1) / r;   // balance before payment k
+  const interest = balance * r;
+  const principal = pmt - interest;
+  return { r, n, k, pmt, balance, interest, principal, assumed };
+}
+
+// The budget expense item the exclusion applies to: the explicitly chosen one,
+// else the first Mortgage-category item whose name mentions "mortgage".
+function fsMortgageItem() {
+  const b = state.budget;
+  const id = b.fairShare.mortgage?.itemId;
+  if (id) {
+    for (const cat of BUDGET_EXPENSE_CATS) {
+      const item = (b.expenses[cat] || []).find(i => i.id === id);
+      if (item) return { item, cat };
+    }
+    return null;
+  }
+  const item = (b.expenses['Mortgage'] || []).find(i => /mortgage/i.test(String(i.name || '')));
+  return item ? { item, cat: 'Mortgage' } : null;
+}
+
+// null, or { itemId, item, cat, ...amortization } when the exclusion is active.
+function fsMortgageAdjustment() {
+  const fs = state.budget.fairShare;
+  const calc = fsMortgageCalc(fs);
+  if (!calc) return null;
+  const target = fsMortgageItem();
+  if (!target) return null;
+  return { itemId: target.item.id, item: target.item, cat: target.cat, ...calc };
 }
 
 // Is a given budget expense item counted in Mom's shared split?
@@ -8297,19 +8360,21 @@ function fsCalc() {
   const b = state.budget;
   const fs = b.fairShare;
   const size = Math.max(1, fs.householdSize || 1);
+  const mAdj = fsMortgageAdjustment();
   let totalAll = 0, totalShared = 0, herShareExact = 0;
   for (const cat of BUDGET_EXPENSE_CATS) {
     for (const item of (b.expenses[cat] || [])) {
       const amt = item.amount || 0;
       totalAll += amt;
       if (fsItemShared(item, cat, fs)) {
-        totalShared += amt;
-        herShareExact += amt / fsItemParticipants(item, cat, fs);
+        const effAmt = (mAdj && item.id === mAdj.itemId) ? Math.max(0, amt - mAdj.principal) : amt;
+        totalShared += effAmt;
+        herShareExact += effAmt / fsItemParticipants(item, cat, fs);
       }
     }
   }
   const herShare = fs.roundDollar ? Math.round(herShareExact) : herShareExact;
-  return { size, totalAll, totalShared, herShareExact, herShare };
+  return { size, totalAll, totalShared, herShareExact, herShare, mortgageAdj: mAdj };
 }
 
 // Keep an auto-synced income line for Mom's expense reimbursement. It is
@@ -8342,6 +8407,64 @@ function fsRenderCard() {
   const fs = b.fairShare;
   const c = fsCalc();
 
+  // ── Mortgage principal exclusion sub-card ──────────────────────────────
+  const m = fs.mortgage;
+  const mCalc = fsMortgageCalc(fs);
+  const mTarget = fsMortgageItem();
+  const pct = v => `${v.toFixed(4)}%`;
+  let mBody = '';
+  if (m.enabled) {
+    const mortgageOptions = (b.expenses['Mortgage'] || []).map(i =>
+      `<option value="${escAttr(i.id)}" ${mTarget && mTarget.item.id === i.id ? 'selected' : ''}>${escHtml(i.name)} — ${fmt(i.amount || 0)}/mo</option>`).join('');
+    const mInput = (key, label, attrs) => `
+      <div style="flex:1;min-width:110px">
+        <label style="display:block;font-size:.66rem;font-weight:600;color:var(--text-muted);margin-bottom:.2rem">${label}</label>
+        <input class="form-input" style="width:100%;font-size:.85rem" ${attrs}
+               onchange="fsUpdateMortgage('${key}', this.value)">
+      </div>`;
+    let mMath;
+    if (mCalc && mTarget) {
+      const amt = Number(mTarget.item.amount) || 0;
+      const eff = Math.max(0, amt - mCalc.principal);
+      const parts = fsItemParticipants(mTarget.item, mTarget.cat, fs);
+      mMath = `
+        <div style="font-size:.72rem;color:var(--text-muted);font-variant-numeric:tabular-nums;line-height:1.7;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:.5rem .65rem;margin-top:.55rem">
+          <div>Monthly P&amp;I = ${fmt(m.loanAmount)} × ${pct(mCalc.r * 100)}/mo ÷ (1 − (1 + ${pct(mCalc.r * 100)})<sup>−${mCalc.n}</sup>) = <strong>${fmt(mCalc.pmt)}</strong></div>
+          <div>This month = payment #${mCalc.k} of ${mCalc.n}${mCalc.assumed ? ' <em>(assumed #1 — set the first-payment month below for accuracy)</em>' : ''} · balance before payment ≈ ${fmt(mCalc.balance)}</div>
+          <div>Interest = ${fmt(mCalc.balance)} × ${pct(mCalc.r * 100)} = ${fmt(mCalc.interest)} · Principal = ${fmt(mCalc.pmt)} − ${fmt(mCalc.interest)} = <strong>${fmt(mCalc.principal)}</strong> ← excluded</div>
+          <div>Shared amount for &ldquo;${escHtml(mTarget.item.name)}&rdquo; = ${fmt(amt)} − ${fmt(mCalc.principal)} = <strong>${fmt(eff)}</strong> → ÷ ${parts} = <strong>${fmt(eff / parts)}</strong>/mo of her share</div>
+        </div>`;
+    } else {
+      mMath = `<div style="font-size:.72rem;color:var(--danger);margin-top:.55rem">${mTarget ? 'Check the loan inputs — amount, rate, and term must all be positive.' : 'No mortgage budget item found — add one to the Mortgage category or pick it here.'}</div>`;
+    }
+    mBody = `
+      <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.6rem">
+        <div style="flex:2;min-width:180px">
+          <label style="display:block;font-size:.66rem;font-weight:600;color:var(--text-muted);margin-bottom:.2rem">Budget item</label>
+          <select class="form-input" style="width:100%;font-size:.85rem" onchange="fsUpdateMortgage('itemId', this.value)">${mortgageOptions || '<option value="">— none in Mortgage category —</option>'}</select>
+        </div>
+        ${mInput('loanAmount', 'Loan amount', `type="number" min="1" step="1000" value="${escAttr(String(m.loanAmount))}"`)}
+        ${mInput('ratePct', 'Rate % (fixed)', `type="number" min="0.01" step="0.01" value="${escAttr(String(m.ratePct))}"`)}
+        ${mInput('termYears', 'Term (yrs)', `type="number" min="1" step="1" value="${escAttr(String(m.termYears))}"`)}
+        ${mInput('firstPayment', 'First payment', `type="month" value="${escAttr(m.firstPayment)}"`)}
+      </div>
+      ${mMath}`;
+  }
+  const mortgageBox = `
+    <div style="border:1px solid var(--border);border-radius:var(--radius);padding:.7rem .8rem;margin-bottom:.9rem;background:var(--surface)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap">
+        <div style="flex:1;min-width:220px">
+          <div style="font-size:.74rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">🏠 Mortgage Principal Exclusion</div>
+          <div style="font-size:.68rem;color:var(--text-muted)">Loan principal builds the homeowners' equity, not a shared household cost — it's subtracted from the mortgage item before her split. The budget keeps the real payment.</div>
+        </div>
+        <button type="button" onclick="fsUpdateMortgage('enabled', ${m.enabled ? 'false' : 'true'})"
+                style="min-width:76px;padding:.35rem .7rem;border-radius:var(--radius);border:1px solid ${m.enabled ? 'rgba(16,185,129,.4)' : 'var(--border)'};cursor:pointer;font-weight:700;font-size:.8rem;background:${m.enabled ? 'rgba(16,185,129,.14)' : 'var(--surface)'};color:${m.enabled ? 'var(--success)' : 'var(--text-muted)'}">
+          ${m.enabled ? '✓ On' : 'Off'}
+        </button>
+      </div>
+      ${mBody}
+    </div>`;
+
   // Per-item Shared/Personal toggles grouped by category (only cats with items)
   let itemSections = '';
   for (const cat of BUDGET_EXPENSE_CATS) {
@@ -8350,10 +8473,15 @@ function fsRenderCard() {
     const rows = items.map(item => {
       const isShared = fsItemShared(item, cat, fs);
       const participants = fsItemParticipants(item, cat, fs);
-      const momPortion = isShared ? (Number(item.amount) || 0) / participants : 0;
+      const isAdj = isShared && c.mortgageAdj && c.mortgageAdj.itemId === item.id;
+      const effAmt = isAdj ? Math.max(0, (Number(item.amount) || 0) - c.mortgageAdj.principal) : (Number(item.amount) || 0);
+      const momPortion = isShared ? effAmt / participants : 0;
+      const amtCell = isAdj
+        ? `<s style="opacity:.6">${fmt(item.amount || 0)}</s> ${fmt(effAmt)}/mo <span title="Estimated loan principal excluded — see the mortgage adjustment above" style="font-size:.66rem;color:var(--primary);font-weight:700">− principal</span>`
+        : `${fmt(item.amount || 0)}/mo`;
       return `<div style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;border-bottom:1px solid var(--border)">
         <span style="flex:1;min-width:0;${isShared ? '' : 'opacity:.55'}">${escHtml(item.name)}</span>
-        <span style="font-variant-numeric:tabular-nums;color:var(--text-muted);font-size:.85rem;${isShared ? '' : 'opacity:.55'}">${fmt(item.amount || 0)}/mo</span>
+        <span style="font-variant-numeric:tabular-nums;color:var(--text-muted);font-size:.85rem;${isShared ? '' : 'opacity:.55'}">${amtCell}</span>
         ${isShared ? `<label title="Number of people who benefit from this expense" style="display:flex;align-items:center;gap:.25rem;font-size:.68rem;color:var(--text-muted);white-space:nowrap">
           ÷ <input type="number" min="1" max="${fs.householdSize}" step="1" value="${participants}"
                    onchange="fsUpdateParticipants('${escAttr(item.id)}', this.value)"
@@ -8391,6 +8519,7 @@ function fsRenderCard() {
               </button>
             </div>
           </div>
+          ${mortgageBox}
           <div style="font-size:.74rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.3rem">Which bills are shared, and by whom?</div>
           <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.6rem">Mark each bill <strong>Shared</strong> or <strong>Personal</strong>, then set how many people actually benefit from each shared expense. Phone service and car insurance default to the three adults; household-wide expenses default to all ${fs.householdSize} residents. If Mom's exact incremental cost is known, use that instead of an equal split.</div>
           ${itemSections || `<div style="color:var(--text-muted);font-size:.85rem;padding:1rem 0">No budget expenses yet — add bills in the budget below and they'll appear here.</div>`}
@@ -8479,6 +8608,21 @@ async function fsUpdateSetting(key, value) {
   _renderBudgetHtml();
 }
 
+async function fsUpdateMortgage(key, value) {
+  const m = state.budget.fairShare.mortgage;
+  if (key === 'enabled') {
+    m.enabled = (value === true || value === 'true');
+  } else if (key === 'itemId' || key === 'firstPayment') {
+    m[key] = String(value || '');
+  } else {
+    const v = parseFloat(value);
+    if (isFinite(v) && v > 0) m[key] = v;
+  }
+  fsSyncBudgetIncome();
+  await _saveBudget();
+  _renderBudgetHtml();
+}
+
 // ── Fair Share: cost-sharing agreement generator ─────────────────────────────
 // Builds a print-ready Household Cost-Sharing Agreement from the live budget:
 // the shared expense items, their per-item participant counts, and herShare.
@@ -8488,13 +8632,19 @@ async function fsUpdateSetting(key, value) {
 function fsAgreementRows() {
   const b = state.budget;
   const fs = b.fairShare;
+  const mAdj = fsMortgageAdjustment();
   const rows = [];
   for (const cat of BUDGET_EXPENSE_CATS) {
     for (const item of (b.expenses[cat] || [])) {
       if (!fsItemShared(item, cat, fs)) continue;
       const participants = fsItemParticipants(item, cat, fs);
       const amt = Number(item.amount) || 0;
-      rows.push({ name: item.name, cat, amount: amt, participants, portion: amt / participants });
+      const isAdj = mAdj && item.id === mAdj.itemId;
+      const eff = isAdj ? Math.max(0, amt - mAdj.principal) : amt;
+      rows.push({
+        name: item.name, cat, amount: eff, participants, portion: eff / participants,
+        adjusted: isAdj ? { original: amt, principal: mAdj.principal, k: mAdj.k, n: mAdj.n, ratePct: fs.mortgage.ratePct } : null
+      });
     }
   }
   return rows;
@@ -8518,12 +8668,18 @@ function fsAgreementDocHtml() {
 
   const exhibitRows = rows.map(r => `
     <tr>
-      <td>${escHtml(r.name)}</td>
+      <td>${escHtml(r.name)}${r.adjusted ? '&nbsp;*' : ''}</td>
       <td>${escHtml(r.cat)}</td>
       <td class="num">${fmt(r.amount)}</td>
       <td class="num">${r.participants}</td>
       <td class="num">${fmt(r.portion)}</td>
     </tr>`).join('');
+
+  const adjRow = rows.find(r => r.adjusted);
+  const adjNote = adjRow ? ` * The &ldquo;${escHtml(adjRow.name)}&rdquo; amount is the actual monthly payment of
+    ${fmt(adjRow.adjusted.original)} less the estimated loan-principal portion of ${fmt(adjRow.adjusted.principal)}
+    (payment ${adjRow.adjusted.k} of ${adjRow.adjusted.n} on a fixed-rate amortization at ${adjRow.adjusted.ratePct}%).
+    Loan principal builds Homeowners' equity and is therefore excluded from shared household costs.` : '';
 
   return `
   <div class="fs-doc">
@@ -8612,7 +8768,7 @@ function fsAgreementDocHtml() {
           <tr><td colspan="4"><strong>Resident's monthly contribution${fs.roundDollar ? ' (rounded to nearest dollar)' : ''}</strong></td><td class="num"><strong>${fmt(c.herShare)}</strong></td></tr>
         </tfoot>
       </table>
-      <p class="fs-doc-foot">Exact sum of itemized shares: ${fmt(c.herShareExact)}. Amounts are drawn from the
+      <p class="fs-doc-foot">Exact sum of itemized shares: ${fmt(c.herShareExact)}.${adjNote} Amounts are drawn from the
       household budget records as of the date above; expenses classified as personal are omitted.
       Prepared from the household budget maintained by Homeowners. Template for family
       documentation &mdash; review with an attorney or CPA before relying on it.</p>
