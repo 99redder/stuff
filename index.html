@@ -8661,6 +8661,7 @@ function fsAgreementDocHtml() {
   const a = fs.agreement;
   const c = fsCalc();
   const rows = fsAgreementRows();
+  const mAdj = fsMortgageAdjustment();
   const today = fsAgreementDate();
   const resident = a.residentName.trim() || '________________________';
   const owners = a.ownerNames.trim() || '________________________';
@@ -8675,11 +8676,37 @@ function fsAgreementDocHtml() {
       <td class="num">${fmt(r.portion)}</td>
     </tr>`).join('');
 
+  // Full mortgage principal exclusion write-up for Exhibit A — mirrors the
+  // math text shown in the Fair Share card.
   const adjRow = rows.find(r => r.adjusted);
-  const adjNote = adjRow ? ` * The &ldquo;${escHtml(adjRow.name)}&rdquo; amount is the actual monthly payment of
-    ${fmt(adjRow.adjusted.original)} less the estimated loan-principal portion of ${fmt(adjRow.adjusted.principal)}
-    (payment ${adjRow.adjusted.k} of ${adjRow.adjusted.n} on a fixed-rate amortization at ${adjRow.adjusted.ratePct}%).
-    Loan principal builds Homeowners' equity and is therefore excluded from shared household costs.` : '';
+  let adjBlock = '';
+  if (adjRow && mAdj) {
+    const monthlyRatePct = (mAdj.r * 100).toFixed(4);
+    const eff = adjRow.amount;
+    adjBlock = `
+      <div class="fs-doc-mortgage">
+        <h3>* Mortgage principal exclusion</h3>
+        <p>The &ldquo;${escHtml(adjRow.name)}&rdquo; amount above is the actual monthly payment of
+        <strong>${fmt(adjRow.adjusted.original)}</strong> less the estimated loan-principal portion of that
+        payment. Loan principal builds Homeowners' equity rather than covering a cost of the shared
+        household, so it is excluded from the costs Resident shares. The principal portion is estimated
+        by standard fixed-rate amortization of the underlying loan (original principal
+        ${fmt(fs.mortgage.loanAmount)}, ${fs.mortgage.ratePct}% fixed annual rate, ${fs.mortgage.termYears}-year term):</p>
+        <ul>
+          <li>Monthly principal &amp; interest = ${fmt(fs.mortgage.loanAmount)} &times; ${monthlyRatePct}%/mo
+          &divide; (1 &minus; (1 + ${monthlyRatePct}%)<sup>&minus;${mAdj.n}</sup>) = <strong>${fmt(mAdj.pmt)}</strong></li>
+          <li>The current month is payment #${mAdj.k} of ${mAdj.n}; remaining balance before this
+          payment &asymp; ${fmt(mAdj.balance)}</li>
+          <li>Interest this month = ${fmt(mAdj.balance)} &times; ${monthlyRatePct}% = ${fmt(mAdj.interest)}</li>
+          <li>Principal this month = ${fmt(mAdj.pmt)} &minus; ${fmt(mAdj.interest)} =
+          <strong>${fmt(mAdj.principal)}</strong> (excluded)</li>
+          <li>Shared housing cost = ${fmt(adjRow.adjusted.original)} &minus; ${fmt(mAdj.principal)} =
+          <strong>${fmt(eff)}</strong>, allocated as shown above</li>
+        </ul>
+        <p>The exclusion is recomputed each month as the loan amortizes, so the excluded principal
+        grows (and Resident's share of this expense falls) over the life of the loan.</p>
+      </div>`;
+  }
 
   return `
   <div class="fs-doc">
@@ -8708,7 +8735,11 @@ function fsAgreementDocHtml() {
       allocation method the IRS uses to value each household member's share of lodging and
       household expenses in the support worksheet of Publication&nbsp;501 (total household
       expenses divided equally among the members of the household). Expenses that benefit
-      only Homeowners or other family members are excluded from Resident's share.</li>
+      only Homeowners or other family members are excluded from Resident's share.${mAdj ? `
+      Where a shared expense includes repayment of loan principal &mdash; which builds
+      Homeowners' equity rather than covering a cost of the shared household &mdash; the
+      principal portion is excluded from the shared amount before allocation, as detailed
+      in Exhibit&nbsp;A.` : ''}</li>
 
       <li><strong>Monthly contribution.</strong> Based on current costs, Resident's contribution
       is <strong>${fmt(c.herShare)} per month</strong>${fs.roundDollar ? ' (rounded to the nearest whole dollar)' : ''},
@@ -8768,7 +8799,8 @@ function fsAgreementDocHtml() {
           <tr><td colspan="4"><strong>Resident's monthly contribution${fs.roundDollar ? ' (rounded to nearest dollar)' : ''}</strong></td><td class="num"><strong>${fmt(c.herShare)}</strong></td></tr>
         </tfoot>
       </table>
-      <p class="fs-doc-foot">Exact sum of itemized shares: ${fmt(c.herShareExact)}.${adjNote} Amounts are drawn from the
+      ${adjBlock}
+      <p class="fs-doc-foot">Exact sum of itemized shares: ${fmt(c.herShareExact)}. Amounts are drawn from the
       household budget records as of the date above; expenses classified as personal are omitted.
       Prepared from the household budget maintained by Homeowners. Template for family
       documentation &mdash; review with an attorney or CPA before relying on it.</p>
@@ -8798,6 +8830,11 @@ const FS_DOC_CSS = `
   .fs-doc-refs { font-size: .9rem; padding-left: 1.1rem; margin: .4rem 0 0; }
   .fs-doc-refs li { margin-bottom: .45rem; }
   .fs-doc-url { display: block; font-size: .78rem; color: #444; word-break: break-all; }
+  .fs-doc-mortgage { font-size: .88rem; margin-top: 1rem; padding: .7rem .9rem; border: 1px solid #999; }
+  .fs-doc-mortgage h3 { font-size: .95rem; margin: 0 0 .4rem; }
+  .fs-doc-mortgage ul { padding-left: 1.2rem; margin: .4rem 0; }
+  .fs-doc-mortgage li { margin-bottom: .3rem; font-variant-numeric: tabular-nums; }
+  .fs-doc-mortgage p { margin: .4rem 0; }
 `;
 
 function fsOpenAgreementModal() {
