@@ -1381,6 +1381,24 @@
   </div>
 </div>
 
+<!-- ── Fair Share Cost-Sharing Agreement Modal ── -->
+<div class="modal-overlay hidden" id="fs-agreement-modal" onclick="handleModalOverlayClick(event,'fs-agreement-modal')">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="fs-agreement-title" style="max-width:780px">
+    <div class="modal-header">
+      <div class="modal-icon primary">📄</div>
+      <div>
+        <div class="modal-title" id="fs-agreement-title">Household Cost-Sharing Agreement</div>
+        <div class="modal-subtitle">Generated live from the current Fair Share numbers</div>
+      </div>
+    </div>
+    <div class="modal-body" id="fs-agreement-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeFsAgreementModal()">Close</button>
+      <button class="btn btn-primary" onclick="fsPrintAgreement()">🖨️ Print / Save PDF</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Billing Cycle Calculator Modal ── -->
 <div class="modal-overlay hidden" id="solar-calc-modal" onclick="handleModalOverlayClick(event,'solar-calc-modal')">
   <div class="modal solar-calc-modal" role="dialog" aria-modal="true" aria-labelledby="solar-calc-title">
@@ -2424,6 +2442,7 @@ function handleModalOverlayClick(e, modalId) {
     if (modalId === 'mom-template-modal') closeMomTemplateModal();
     if (modalId === 'budget-worksheet-modal') closeBudgetWorksheetModal();
     if (modalId === 'solar-calc-modal') closeSolarCalcModal();
+    if (modalId === 'fs-agreement-modal') closeFsAgreementModal();
   }
 }
 
@@ -8238,6 +8257,11 @@ function fsNormalize(raw) {
     roundDollar:   (raw.roundDollar !== undefined) ? !!raw.roundDollar : (raw.roundUp !== false),
     shared:        (raw.shared && typeof raw.shared === 'object') ? { ...raw.shared } : {},
     participants:  (raw.participants && typeof raw.participants === 'object') ? { ...raw.participants } : {},
+    agreement: {
+      residentName:    typeof raw.agreement?.residentName === 'string' ? raw.agreement.residentName : '',
+      ownerNames:      typeof raw.agreement?.ownerNames === 'string' ? raw.agreement.ownerNames : '',
+      propertyAddress: typeof raw.agreement?.propertyAddress === 'string' ? raw.agreement.propertyAddress : '',
+    },
   };
 }
 
@@ -8388,6 +8412,8 @@ function fsRenderCard() {
               <strong style="color:var(--text)">Official IRS references:</strong>
               <a href="${IRS_CAREGIVER_GUIDANCE_URL}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:700">Parent expense reimbursements ↗</a>
             </div>
+            <button class="btn btn-primary" style="width:100%;margin-top:.85rem" onclick="fsOpenAgreementModal()">📄 Generate Cost-Sharing Agreement</button>
+            <div style="font-size:.66rem;color:var(--text-muted);margin-top:.3rem;text-align:center">Print-ready agreement + Exhibit A built from the shared bills above</div>
           </div>
         </div>
       </div>
@@ -8449,6 +8475,199 @@ async function fsUpdateSetting(key, value) {
   fsSyncBudgetIncome();
   await _saveBudget();
   _renderBudgetHtml();
+}
+
+// ── Fair Share: cost-sharing agreement generator ─────────────────────────────
+// Builds a print-ready Household Cost-Sharing Agreement from the live budget:
+// the shared expense items, their per-item participant counts, and herShare.
+// Party names/address persist in budget.fairShare.agreement.
+
+// One row per currently-shared expense item, in budget category order.
+function fsAgreementRows() {
+  const b = state.budget;
+  const fs = b.fairShare;
+  const rows = [];
+  for (const cat of BUDGET_EXPENSE_CATS) {
+    for (const item of (b.expenses[cat] || [])) {
+      if (!fsItemShared(item, cat, fs)) continue;
+      const participants = fsItemParticipants(item, cat, fs);
+      const amt = Number(item.amount) || 0;
+      rows.push({ name: item.name, cat, amount: amt, participants, portion: amt / participants });
+    }
+  }
+  return rows;
+}
+
+function fsAgreementDate() {
+  return new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+// The agreement document itself — self-contained HTML used for both the modal
+// preview and the print window.
+function fsAgreementDocHtml() {
+  const fs = state.budget.fairShare;
+  const a = fs.agreement;
+  const c = fsCalc();
+  const rows = fsAgreementRows();
+  const today = fsAgreementDate();
+  const resident = a.residentName.trim() || '________________________';
+  const owners = a.ownerNames.trim() || '________________________';
+  const address = a.propertyAddress.trim() || '________________________________________';
+
+  const exhibitRows = rows.map(r => `
+    <tr>
+      <td>${escHtml(r.name)}</td>
+      <td>${escHtml(r.cat)}</td>
+      <td class="num">${fmt(r.amount)}</td>
+      <td class="num">${r.participants}</td>
+      <td class="num">${fmt(r.portion)}</td>
+    </tr>`).join('');
+
+  return `
+  <div class="fs-doc">
+    <h1>Household Cost-Sharing Agreement</h1>
+    <p class="fs-doc-date">Effective as of ${escHtml(today)}</p>
+
+    <p>This agreement documents the sharing of actual household expenses between
+    <strong>${escHtml(resident)}</strong> (&ldquo;Resident&rdquo;) and
+    <strong>${escHtml(owners)}</strong> (&ldquo;Homeowners&rdquo;), all of whom reside together at
+    <strong>${escHtml(address)}</strong> (the &ldquo;Residence&rdquo;).</p>
+
+    <ol>
+      <li><strong>Purpose.</strong> Resident lives in the Residence as a member of the family.
+      This agreement documents Resident's proportional contribution to the actual, documented
+      costs of operating the shared household. It is a cost-sharing arrangement among family
+      members: it is not a lease, it creates no landlord&ndash;tenant relationship, and payments
+      under it are reimbursement of shared expenses, not rent. No amount paid under this
+      agreement includes any profit or markup to Homeowners.</li>
+
+      <li><strong>Method.</strong> The shared household expenses and the allocation method are
+      listed in Exhibit&nbsp;A. Each expense is divided equally among the household members who
+      actually benefit from it (the household currently numbers ${c.size} persons; certain
+      expenses are divided among fewer members to reflect actual use). Expenses that benefit
+      only Homeowners or other family members are excluded from Resident's share.</li>
+
+      <li><strong>Monthly contribution.</strong> Based on current costs, Resident's contribution
+      is <strong>${fmt(c.herShare)} per month</strong>${fs.roundDollar ? ' (rounded to the nearest whole dollar)' : ''},
+      as itemized in Exhibit&nbsp;A.</li>
+
+      <li><strong>Adjustments.</strong> The contribution is recalculated whenever the underlying
+      costs change materially, and Exhibit&nbsp;A is regenerated from household records at least
+      annually. The parties intend Resident's payment to track Resident's actual share of real
+      household costs at all times.</li>
+
+      <li><strong>Payment and records.</strong> Contributions are payable monthly. Homeowners
+      maintain records of the underlying bills and the allocation method used to compute
+      Resident's share.</li>
+
+      <li><strong>No tenancy; termination.</strong> This is a month-to-month family arrangement.
+      No security deposit is held. Either party may end the arrangement at any time, with
+      cost-sharing prorated through the final month of shared residence.</li>
+
+      <li><strong>Other support.</strong> Any amounts Homeowners pay for Resident's benefit are
+      voluntary family support and are not consideration under this agreement.</li>
+    </ol>
+
+    <div class="fs-doc-sigs">
+      <div class="fs-doc-sig"><div class="fs-doc-sigline"></div>Resident: ${escHtml(resident)}<span>Date</span></div>
+      <div class="fs-doc-sig"><div class="fs-doc-sigline"></div>Homeowner<span>Date</span></div>
+      <div class="fs-doc-sig"><div class="fs-doc-sigline"></div>Homeowner<span>Date</span></div>
+    </div>
+
+    <div class="fs-doc-exhibit">
+      <h2>Exhibit A &mdash; Shared Household Expenses (as of ${escHtml(today)})</h2>
+      <table>
+        <thead>
+          <tr><th>Expense</th><th>Category</th><th class="num">Monthly Cost</th><th class="num">Divided Among</th><th class="num">Resident's Share</th></tr>
+        </thead>
+        <tbody>
+          ${exhibitRows || '<tr><td colspan="5" style="text-align:center;font-style:italic">No expenses are currently marked shared.</td></tr>'}
+        </tbody>
+        <tfoot>
+          <tr><td colspan="4"><strong>Resident's monthly contribution${fs.roundDollar ? ' (rounded to nearest dollar)' : ''}</strong></td><td class="num"><strong>${fmt(c.herShare)}</strong></td></tr>
+        </tfoot>
+      </table>
+      <p class="fs-doc-foot">Exact sum of itemized shares: ${fmt(c.herShareExact)}. Amounts are drawn from the
+      household budget records as of the date above; expenses classified as personal are omitted.
+      Prepared from the household budget maintained by Homeowners. Template for family
+      documentation &mdash; review with an attorney or CPA before relying on it.</p>
+    </div>
+  </div>`;
+}
+
+// Styles shared by the modal preview and the print window.
+const FS_DOC_CSS = `
+  .fs-doc { font-family: Georgia, 'Times New Roman', serif; color: #111; background: #fff; padding: 2.2rem 2.4rem; line-height: 1.55; }
+  .fs-doc h1 { font-size: 1.25rem; text-align: center; letter-spacing: .04em; text-transform: uppercase; margin: 0 0 .2rem; }
+  .fs-doc .fs-doc-date { text-align: center; font-style: italic; margin: 0 0 1.2rem; }
+  .fs-doc ol { padding-left: 1.3rem; }
+  .fs-doc ol li { margin-bottom: .7rem; }
+  .fs-doc-sigs { margin-top: 2.2rem; }
+  .fs-doc-sig { display: flex; align-items: baseline; gap: .6rem; margin-top: 1.6rem; font-size: .95rem; }
+  .fs-doc-sigline { flex: 1; border-bottom: 1px solid #111; height: 1.1rem; max-width: 300px; }
+  .fs-doc-sig span { margin-left: auto; border-top: 1px solid #111; padding: 0 2.2rem; }
+  .fs-doc-exhibit { page-break-before: always; margin-top: 2.4rem; }
+  .fs-doc-exhibit h2 { font-size: 1.05rem; }
+  .fs-doc table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+  .fs-doc th, .fs-doc td { border: 1px solid #999; padding: .3rem .5rem; text-align: left; }
+  .fs-doc th { background: #eee; }
+  .fs-doc .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .fs-doc tfoot td { border-top: 2px solid #111; }
+  .fs-doc-foot { font-size: .78rem; color: #444; margin-top: .8rem; }
+`;
+
+function fsOpenAgreementModal() {
+  _renderFsAgreementBody();
+  document.getElementById('fs-agreement-modal').classList.remove('hidden');
+}
+
+function closeFsAgreementModal() {
+  const el = document.getElementById('fs-agreement-modal');
+  if (el) el.classList.add('hidden');
+}
+
+function _renderFsAgreementBody() {
+  const a = state.budget.fairShare.agreement;
+  const field = (key, label, placeholder) => `
+    <div style="flex:1;min-width:180px">
+      <label style="display:block;font-size:.72rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">${label}</label>
+      <input type="text" class="form-input" value="${escAttr(a[key])}" placeholder="${escAttr(placeholder)}"
+             onchange="fsUpdateAgreementField('${key}', this.value)" style="width:100%">
+    </div>`;
+  document.getElementById('fs-agreement-body').innerHTML = `
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:.9rem">
+      ${field('residentName', "Resident (Mom's full legal name)", 'e.g. Florence Mae Gorham')}
+      ${field('ownerNames', 'Homeowner name(s)', 'e.g. Chris Gorham and Megan Gorham')}
+      ${field('propertyAddress', 'Residence address', 'Street, City, MD ZIP')}
+    </div>
+    <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.6rem">
+      The letter below regenerates from the current Fair Share data every time it's opened —
+      reprint and re-sign it when the numbers change materially (or annually). Names and address are saved.
+    </div>
+    <style>${FS_DOC_CSS}</style>
+    <div style="border:1px solid var(--border);border-radius:var(--radius);max-height:46vh;overflow:auto;background:#fff">
+      ${fsAgreementDocHtml()}
+    </div>`;
+}
+
+async function fsUpdateAgreementField(key, value) {
+  state.budget.fairShare.agreement[key] = String(value ?? '').trim();
+  await _saveBudget();
+  _renderFsAgreementBody();
+}
+
+function fsPrintAgreement() {
+  const win = window.open('', '_blank');
+  if (!win) {
+    showBrandedNotice({ title: 'Popup Blocked', message: 'Allow popups for this site to print the agreement.', confirmLabel: 'OK' });
+    return;
+  }
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Household Cost-Sharing Agreement</title>
+    <style>body { margin: 0; } @page { margin: 1in; } ${FS_DOC_CSS} .fs-doc { padding: 0; }</style>
+    </head><body>${fsAgreementDocHtml()}</body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 300);
 }
 
 function tpReadForm() {
@@ -9021,6 +9240,7 @@ document.addEventListener('keydown', e => {
     closeMomTemplateModal();
     closeSolarCalcModal();
     closeDedDeleteModal();
+    closeFsAgreementModal();
   }
 });
 

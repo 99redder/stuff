@@ -142,6 +142,7 @@ Modals exist in the HTML (outside `<main>`):
 - **Deductions delete modal** (`#ded-delete-modal`) — dedicated detail-rich delete confirmation for deductions
 - **Edit modal** (`#edit-modal`) — pre-filled form for editing a transaction
 - **Property income worksheet** (`#budget-worksheet-modal`) — calculates net monthly income for 95EB/6AL/446BB; body rendered dynamically by `_renderBudgetWorksheetModal()`
+- **Fair Share agreement** (`#fs-agreement-modal`) — generates a print-ready Household Cost-Sharing Agreement from live Fair Share data; body rendered by `_renderFsAgreementBody()`, printed via `fsPrintAgreement()` (popup window + `print()`)
 - **Solar billing cycle calculator** (`#solar-calc-modal`) — estimates electricity cost without solar
 
 All modals close on Escape key or clicking the backdrop.
@@ -387,7 +388,9 @@ A collapsible **section inside the Monthly Budget view** — not a standalone ta
 {
   householdSize,   // divisor — everyone living in the home (incl. mother & children)
   roundDollar,     // round her share to the NEAREST whole dollar (Math.round, neutral)
-  shared: { [budgetExpenseItemId]: bool }   // per-item OVERRIDES of the category default
+  shared: { [budgetExpenseItemId]: bool },  // per-item OVERRIDES of the category default
+  participants: { [itemId]: number },       // per-item divisor override (who benefits)
+  agreement: { residentName, ownerNames, propertyAddress }  // cost-sharing agreement parties
 }
 ```
 There is **no separate bills list** — the bills are the budget's expense items. An item counts as shared if `fairShare.shared[item.id]` is set (explicit override), else it falls back to `FS_SHARED_CAT_DEFAULTS[category]`. Toggling the Shared/Personal pill writes an explicit override.
@@ -643,6 +646,11 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-07-03 — Fair Share: cost-sharing agreement generator
+
+- **New `📄 Generate Cost-Sharing Agreement` button** in the Fair Share card opens `#fs-agreement-modal` with a print-ready **Household Cost-Sharing Agreement** built live from the current Fair Share data: numbered terms (cost-sharing not rent/lease, allocation method, monthly contribution, adjustment/termination clauses) plus an **Exhibit A** table of every shared expense with its monthly cost, participant divisor, and Mom's portion, totaling `fsCalc().herShare`. Regenerates from live numbers on every open — reprint/re-sign annually or when bills change.
+- Party names/address persist in `budget.fairShare.agreement` (`residentName`, `ownerNames`, `propertyAddress`), normalized in `fsNormalize`, edited in the modal via `fsUpdateAgreementField()`. Printing opens a standalone popup document (`fsPrintAgreement()`, shared `FS_DOC_CSS`, Exhibit A on its own page via `page-break-before`). All user strings escaped with `escHtml`/`escAttr`.
 
 ### 2026-07-03 — Removed the $400/mo family gift (Medicaid lookback)
 
