@@ -73,7 +73,7 @@ Header buttons: [Deductions Tracker]  [Monthly Budget]  [Mom Budget]  [☀️ So
 | Monthly Budget | `budget` | Global monthly income/expense planner with property worksheets; includes the collapsible **Fair Share** section (Mom's cost-sharing contribution, derived from the budget's own expenses) |
 | Mom Budget | `mom-budget` | Global monthly assistance tracker with income template, fixed/reserve bills, groceries/gas/discretionary ledgers, and month math |
 | Solar ROI | `solar` | Solar panel ROI tracking + billing cycle calculator |
-| Tax Planning | `tax-planning` | Projected federal/MD/VA tax liability with live inputs; includes the **AGI Threshold Watch** card (`#tp-warnings`, built by `tpAgiWarningsHtml()`) flagging 2026 MFJ phase-outs with source links |
+| Tax Planning | `tax-planning` | Projected federal + Maryland state/local tax liability with live inputs; includes the **AGI Threshold Watch** card (`#tp-warnings`, built by `tpAgiWarningsHtml()`) flagging 2026 MFJ phase-outs with source links |
 | Deductions Tracker | `deductions` | Global itemized deductions log for the current year |
 | Savings | `savings` | Account balances + annual obligations tracker with paid/unpaid checkboxes per year |
 
@@ -648,6 +648,18 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-07-04 — Tax Planning audit: Maryland 2025 tax-law overhaul + LTCG stacking fix
+
+- **Maryland model updated for the Budget Reconciliation and Financing Act of 2025** (Ch. 604; Comptroller Tax Alert rev. 2025-12-22 + Technical Bulletin 58):
+  - `MD_BRACKETS_MFJ` previously held the **single-filer** Schedule I brackets ($100k/$125k/$150k/$250k breakpoints) and stopped at 5.75%. Replaced with the official **Schedule II (MFJ)**: 4.75% to $150k · 5% to $175k · 5.25% to $225k · 5.5% to $300k · 5.75% to $600k · **6.25% to $1.2M · 6.5% above** (new TY2025+ brackets). Verified against the Comptroller's Tax Computation Worksheet anchor amounts.
+  - **Standard deduction** is now the flat `MD_STD_DEDUCTION = 6700` (MFJ) — the 15%-of-AGI min/max formula was repealed for TY2025+ (COLA-indexed going forward).
+  - **New 2% capital gains surcharge** (`MD_CG_SURCHARGE_*` consts, `mdNetCapitalGain(tp)`): when federal AGI > $350k, Maryland adds 2% on net capital gain per IRC §1222(11) — net LT gains (including unrecaptured §1250 depreciation recapture) less any net ST loss; positive ST gains are excluded. Primary-residence sales under $1.5M are exempt (checked per imported property-sale slot via `PRIMARY_PROPERTIES` + sale price). Surcharge rides in `md.cgSurcharge`/`md.cgSurchargeBase`, is included in Total MD Tax, renders its own results row, and has a Warning/Caution pair in the AGI Threshold Watch (TB-58 source link).
+  - **County rates refreshed** for TY2026: Allegany 3.20 · Anne Arundel 2.94 (flat approx of its progressive brackets) · Baltimore County 3.20 · Calvert 3.20 · Cecil 2.74 · Dorchester 3.30 · Kent 3.30 · St. Mary's 3.20 · Washington 2.95 · Worcester 2.25. Wicomico (default) unchanged at 3.20.
+  - Results-panel exemption label is now dynamic (`4×$<tier>` instead of hardcoded `4×$3,200`) and the MD input-card notes were rewritten to match the new law.
+- **Federal LTCG stacking fix:** `tpCalcLTCGTax` is now called with `ordinaryTaxable + depRecaptureTaxable` as the stack base — unrecaptured §1250 gain occupies the preferential-rate stack *below* other LT gains (Schedule D worksheet), so remaining LTCG no longer incorrectly slides into the 0%/15% brackets when a rental sale includes large recapture.
+- **`TP_SALT_PHASEDOWN` 500000 → 505000** — OBBBA indexes the SALT phase-down MAGI threshold +1%/yr like the cap (2026 value).
+- Known simplifications (documented, not modeled): passive-activity-loss limits on net rental losses, capital-loss netting/$3k cap, IRA deductibility phase-out when covered by an employer plan, CTC ordering vs SE tax/NIIT, QBI taxable-income cap, and VA nonresident filing for 446BB rental income (MD credit for taxes paid to VA).
 
 ### 2026-07-03 — Tax Planning: AGI Threshold Watch card
 

@@ -1668,7 +1668,7 @@ const TP_WARN_NEAR           = 25000;    // flag "approaching" within this margi
 const TP_ROTH_PHASEOUT_START = 242000;   // Roth IRA MAGI phase-out band (IRS, 2026)
 const TP_ROTH_PHASEOUT_END   = 252000;
 const TP_SALT_CAP            = 40400;    // OBBBA SALT cap (2026)
-const TP_SALT_PHASEDOWN      = 500000;   // cap shrinks 30¢ per $ of MAGI over this…
+const TP_SALT_PHASEDOWN      = 505000;   // cap shrinks 30¢ per $ of MAGI over this (2026 — indexed +1%/yr like the cap)…
 const TP_SALT_CAP_FLOOR      = 10000;    // …but never below this
 const TP_QBI_THRESHOLD       = 403500;   // §199A W-2/UBIA limits phase in above this taxable income (Rev. Proc. 2025-32)
 const TP_QBI_PHASEIN_END     = 553500;
@@ -1677,30 +1677,61 @@ const TP_MD_EXEMPT_PHASEOUT  = 200000;   // MD personal exemptions reach $0 abov
 const TP_SAFE_HARBOR_AGI     = 150000;   // above this, the estimated-tax safe harbor is 110% of prior-year tax
 const TP_CHARITY_FLOOR_PCT   = 0.005;    // 2026+: itemized charitable gifts deductible only above 0.5% of AGI
 
-// ── Maryland Tax Constants (2025) ─────────────────────────────────────────────
+// ── Maryland Tax Constants (TY2025+ law, per BRFA of 2025 / Comptroller Tax Alert 12-22-2025) ──
+// Official Form 502 Tax Rate Schedule II (MFJ / HoH / QSS), including the two
+// new high-income brackets added for tax years beginning after 12/31/2024.
 const MD_BRACKETS_MFJ = [
   { limit: 1000,     rate: 0.02   },
   { limit: 2000,     rate: 0.03   },
   { limit: 3000,     rate: 0.04   },
-  { limit: 100000,   rate: 0.0475 },
-  { limit: 125000,   rate: 0.05   },
-  { limit: 150000,   rate: 0.0525 },
-  { limit: 250000,   rate: 0.055  },
-  { limit: Infinity, rate: 0.0575 },
+  { limit: 150000,   rate: 0.0475 },
+  { limit: 175000,   rate: 0.05   },
+  { limit: 225000,   rate: 0.0525 },
+  { limit: 300000,   rate: 0.055  },
+  { limit: 600000,   rate: 0.0575 },
+  { limit: 1200000,  rate: 0.0625 },
+  { limit: Infinity, rate: 0.065  },
 ];
-const MD_STD_DED_MIN = 3100;   // MFJ
-const MD_STD_DED_MAX = 4700;   // MFJ
+// Flat standard deduction (2025 law replaced the old 15%-of-AGI min/max formula;
+// COLA-indexed going forward).
+const MD_STD_DEDUCTION = 6700; // MFJ
 const MD_EXEMPTION   = 3200;   // per exemption
+// 2% surcharge on net capital gains (IRC §1222(11): net LT gain less net ST loss)
+// when federal AGI > $350k, TY2025+ (TG §10-105(a)(3), Technical Bulletin 58).
+const MD_CG_SURCHARGE_AGI  = 350000;
+const MD_CG_SURCHARGE_RATE = 0.02;
+const MD_CG_PRIMARY_EXEMPT_MAX_PRICE = 1500000; // primary-residence sales under this price are exempt
+// TY2026 local rates (Comptroller Tax Alert 12-22-2025: TY2025 changes — Anne
+// Arundel 2.94*, Calvert 3.20, Cecil 2.74, Dorchester 3.30, St. Mary's 3.20 —
+// plus TY2026 changes — Allegany 3.20, Kent 3.30). *Anne Arundel and Frederick
+// have progressive local brackets; flat middle-bracket rates used here.
 const MD_COUNTY_RATES = {
-  'Allegany':         0.0305, 'Anne Arundel':    0.0281, 'Baltimore City':  0.0320,
-  'Baltimore County': 0.0283, 'Calvert':         0.0300, 'Caroline':        0.0320,
-  'Carroll':          0.0303, 'Cecil':           0.0280, 'Charles':         0.0303,
-  'Dorchester':       0.0320, 'Frederick':       0.0296, 'Garrett':         0.0265,
-  'Harford':          0.0306, 'Howard':          0.0320, 'Kent':            0.0320,
+  'Allegany':         0.0320, 'Anne Arundel':    0.0294, 'Baltimore City':  0.0320,
+  'Baltimore County': 0.0320, 'Calvert':         0.0320, 'Caroline':        0.0320,
+  'Carroll':          0.0303, 'Cecil':           0.0274, 'Charles':         0.0303,
+  'Dorchester':       0.0330, 'Frederick':       0.0296, 'Garrett':         0.0265,
+  'Harford':          0.0306, 'Howard':          0.0320, 'Kent':            0.0330,
   'Montgomery':       0.0320, "Prince George's": 0.0320, "Queen Anne's":    0.0320,
-  "St. Mary's":       0.0300, 'Somerset':        0.0320, 'Talbot':          0.0240,
-  'Washington':       0.0280, 'Wicomico':        0.0320, 'Worcester':       0.0125,
+  "St. Mary's":       0.0320, 'Somerset':        0.0320, 'Talbot':          0.0240,
+  'Washington':       0.0295, 'Wicomico':        0.0320, 'Worcester':       0.0225,
 };
+
+// Net capital gain per IRC §1222(11): net LT capital gain less any net ST
+// capital loss. Unrecaptured §1250 depreciation recapture is LT capital gain,
+// so it counts. Primary-residence gain is exempt when the home sold for less
+// than $1.5M (TB-58); positive ST gains are taxed as ordinary income and are
+// NOT part of "net capital gain", so they don't enter the surcharge base.
+function mdNetCapitalGain(tp) {
+  const st = tpN(tp.crypto_st) + tpN(tp.rh_st) + tpN(tp.ibkr_st);
+  let lt = tpN(tp.crypto_lt) + tpN(tp.rh_lt) + tpN(tp.ibkr_lt);
+  for (const pfx of ['property_sale', 'property_sale_2']) {
+    if (!tp[`${pfx}_imported`]) continue;
+    const exemptPrimary = PRIMARY_PROPERTIES.has(tp[`${pfx}_property`]) &&
+      tpN(tp[`${pfx}_price`]) < MD_CG_PRIMARY_EXEMPT_MAX_PRICE;
+    if (!exemptPrimary) lt += tpN(tp[`${pfx}_taxable_gain`]) + tpN(tp[`${pfx}_depr_recapture`]);
+  }
+  return Math.max(0, lt + Math.min(0, st));
+}
 
 function calcMarylandTax(tp, agi) {
   const county = tp.md_county || 'Wicomico';
@@ -1712,8 +1743,8 @@ function calcMarylandTax(tp, agi) {
   // MD 529 (College Investment Plan) contributions are deductible on MD return
   const md529 = tpN(tp.md_529);
   const mdAgi = Math.max(0, agi - navyExempt - md529);
-  // Standard deduction: 15% of MD AGI, clamped to min/max
-  const mdStdDed = Math.min(MD_STD_DED_MAX, Math.max(MD_STD_DED_MIN, mdAgi * 0.15));
+  // Flat standard deduction (2025 law; the 15%-of-AGI min/max formula is gone)
+  const mdStdDed = MD_STD_DEDUCTION;
   // Personal exemptions: MFJ (2) + 2 dependents, phased down by federal AGI
   // (MD Form 502 exemption chart, MFJ: $3,200 ≤$150k · $1,600 ≤$175k · $800 ≤$200k · $0 above)
   const mdPerExemption = agi <= 150000 ? MD_EXEMPTION : agi <= 175000 ? 1600 : agi <= 200000 ? 800 : 0;
@@ -1727,10 +1758,13 @@ function calcMarylandTax(tp, agi) {
     prev = b.limit;
   }
   const countyTax  = mdTaxInc * countyRate;
-  const totalTax   = stateTax + countyTax;
+  // 2% surcharge on net capital gains when federal AGI > $350k (TY2025+, Form 502CG)
+  const cgSurchargeBase = agi > MD_CG_SURCHARGE_AGI ? mdNetCapitalGain(tp) : 0;
+  const cgSurcharge = cgSurchargeBase * MD_CG_SURCHARGE_RATE;
+  const totalTax   = stateTax + countyTax + cgSurcharge;
   const withheld   = tpN(tp.navy_state) + tpN(tp.wife_state);
   const owed       = totalTax - withheld;
-  return { county, countyRate, exemptCap, navyExempt, md529, mdAgi, mdStdDed, mdExemptAmt, mdTaxInc, stateTax, countyTax, totalTax, withheld, owed };
+  return { county, countyRate, exemptCap, navyExempt, md529, mdAgi, mdStdDed, mdPerExemption, mdExemptAmt, mdTaxInc, stateTax, countyTax, cgSurchargeBase, cgSurcharge, totalTax, withheld, owed };
 }
 
 const ESAI_API = 'https://eastern-shore-ai-contact.99redder.workers.dev';
@@ -4848,7 +4882,10 @@ function tpCalc(tp, rentalRows) {
   const depRecaptureTaxable = Math.min(Math.max(0, propertySaleDepRecapture), Math.max(0, taxInc - ltcgTaxable));
   const ordinaryTaxable = Math.max(0, taxInc - ltcgTaxable - depRecaptureTaxable);
   const ordTax        = tpCalcOrdinaryTax(ordinaryTaxable);
-  const ltcgTax       = tpCalcLTCGTax(ordinaryTaxable, ltcgTaxable);
+  // Unrecaptured §1250 gain is LT capital gain that fills the preferential-rate
+  // stack below other LT gains (Schedule D worksheet), so it's part of the base
+  // the remaining LTCG stacks on top of when finding the 0/15/20% breakpoints.
+  const ltcgTax       = tpCalcLTCGTax(ordinaryTaxable + depRecaptureTaxable, ltcgTaxable);
   const depRecaptureTax = depRecaptureTaxable * 0.25;
 
   // NIIT (3.8% on net investment income if AGI > threshold)
@@ -7529,9 +7566,11 @@ async function renderTaxPlanning() {
         <div class="tp-note">
           ✓ Navy retirement exemption: <strong>$12,500</strong> (under 55) or <strong>$20,000</strong> (age 55+) per MD Form 502SU code "u".<br>
           ✓ 529 contributions deducted from MD AGI (MD College Investment Plan).<br>
-          ✓ Standard deduction: 15% of MD AGI (min $3,100 / max $4,700, MFJ).<br>
-          ✓ Personal exemptions: 4 × $3,200 = $12,800 (MFJ + 2 dependents).<br>
-          ✓ County locked to Wicomico (3.20%). State withholding from W-2 &amp; Retirement section above.
+          ✓ Standard deduction: flat <strong>${fmt(MD_STD_DEDUCTION)}</strong> MFJ (2025 law — the old 15%-of-AGI formula is gone).<br>
+          ✓ Personal exemptions: 4 × $3,200 (MFJ + 2 dependents), stepped down above $150k federal AGI, $0 above $200k.<br>
+          ✓ MFJ brackets through <strong>6.5%</strong> (5.75% capped at $600k; 6.25%/6.5% added for TY2025+).<br>
+          ✓ <strong>2% capital gains surcharge</strong> on net LT gains (incl. depreciation recapture) when federal AGI &gt; $350k; primary-residence sales under $1.5M exempt.<br>
+          ✓ County rate from the dropdown above (default Wicomico, 3.20%). State withholding from W-2 &amp; Retirement section above.
         </div>
       </div>
     </div>
@@ -9537,6 +9576,17 @@ function tpAgiWarningsHtml(r, tp) {
       [['IRS: Additional Medicare Tax', 'https://www.irs.gov/taxtopics/tc560']]);
   }
 
+  // Maryland 2% capital gains surcharge — modeled in the MD estimate
+  if (agi > MD_CG_SURCHARGE_AGI && r.md.cgSurcharge > 0) {
+    add('hit', 'Maryland capital gains surcharge (2%)',
+      `Federal AGI over ${fmt(MD_CG_SURCHARGE_AGI)} triggers Maryland's 2% surcharge on net capital gains (TY2025+) — <strong>${fmt(r.md.cgSurcharge)}</strong> on ${fmt(r.md.cgSurchargeBase)} of net gains is included in the Maryland estimate. Primary-residence sales under $1.5M and retirement-account gains are exempt.`,
+      [['Comptroller of Maryland: Technical Bulletin 58', 'https://www.marylandcomptroller.gov/legal-library/tb-58-dec-29-2025.html']]);
+  } else if (near(MD_CG_SURCHARGE_AGI, agi)) {
+    add('near', 'Maryland capital gains surcharge (2%)',
+      `AGI is within ${fmt(MD_CG_SURCHARGE_AGI - agi)} of the ${fmt(MD_CG_SURCHARGE_AGI)} federal-AGI threshold where Maryland adds a 2% surcharge to all net capital gains — a property sale that crosses it is surcharged on the whole gain, not just the excess.`,
+      [['Comptroller of Maryland: Technical Bulletin 58', 'https://www.marylandcomptroller.gov/legal-library/tb-58-dec-29-2025.html']]);
+  }
+
   // Maryland exemption phase-out — modeled in the MD estimate
   if (agi > TP_MD_EXEMPT_PHASEOUT) {
     add('hit', 'Maryland personal exemptions eliminated',
@@ -9683,10 +9733,11 @@ function tpUpdateResults(tp) {
       ${md.md529 > 0 ? row('Less 529 Contributions', md.md529, 'in', true) : ''}
       ${row('Maryland AGI', md.mdAgi, 'in')}
       ${row('MD Standard Deduction', md.mdStdDed, 'in', true)}
-      ${row('Personal Exemptions (4×$3,200)', md.mdExemptAmt, 'in', true)}
+      ${row(`Personal Exemptions (4×$${md.mdPerExemption.toLocaleString()})`, md.mdExemptAmt, 'in', true)}
       ${row('MD Taxable Income', md.mdTaxInc, 'sub')}
       ${row('State Tax', md.stateTax, 'in')}
       ${row(md.county + ' County (' + (md.countyRate*100).toFixed(2) + '%)', md.countyTax, 'in')}
+      ${md.cgSurcharge > 0 ? row(`Capital Gains Surcharge (2% of ${fmtShort(md.cgSurchargeBase)} net gains, AGI > $350k)`, md.cgSurcharge, 'in') : ''}
       ${row('Total MD Tax', md.totalTax, 'sub')}
       ${md.withheld > 0 ? row('State Withholding', md.withheld, 'in', true) : ''}
       <div class="tp-row ${md.owed > 0.005 ? 'owed' : 'refund'}">
