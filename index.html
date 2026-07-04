@@ -7162,16 +7162,11 @@ async function renderTaxPlanning() {
   const propertySaleRows = Object.fromEntries(PROPERTIES.map(p => [p, calcPropertySaleTaxDetails(p)]));
   const selectedSaleProp = tp.property_sale_property || '';
   const selectedSale = selectedSaleProp ? propertySaleRows[selectedSaleProp] : null;
-  if (selectedSaleProp && tp.property_sale_imported && selectedSale && tp.property_sale_depr_recapture === undefined) {
-    tp.property_sale_depr_recapture = selectedSale.depreciationRecapture;
-    tpSave(tp);
-  }
   const saleOptions = `<option value="">— Select property —</option>` + PROPERTIES.map(p => `<option value="${p}" ${selectedSaleProp === p ? 'selected' : ''}>${p}</option>`).join('');
   const saleOptions2 = `<option value="">— Select property —</option>` + PROPERTIES.map(p => `<option value="${p}" ${tp.property_sale_2_property === p ? 'selected' : ''}>${p}</option>`).join('');
   const selectedSale2Prop = tp.property_sale_2_property || '';
   const selectedSale2 = selectedSale2Prop ? propertySaleRows[selectedSale2Prop] : null;
-  if (selectedSale2Prop && tp.property_sale_2_imported && selectedSale2 && tp.property_sale_2_depr_recapture === undefined) {
-    tp.property_sale_2_depr_recapture = selectedSale2.depreciationRecapture;
+  if (tpSyncImportedPropertySale(tp, 1, selectedSale) || tpSyncImportedPropertySale(tp, 2, selectedSale2)) {
     tpSave(tp);
   }
   const propertySaleDetails = selectedSaleProp && tp.property_sale_imported
@@ -7187,7 +7182,11 @@ async function renderTaxPlanning() {
         <div style="display:flex;justify-content:space-between;gap:1rem;border-top:1px solid var(--border);padding-top:.4rem;margin-top:.4rem"><span>Taxable long-term capital gain added to federal worksheet</span><strong style="color:var(--success)">${fmt(tp.property_sale_taxable_gain || 0)}</strong></div>
         <div style="display:flex;justify-content:space-between;gap:1rem"><span>Depreciation recapture taxed federally at 25%</span><strong style="color:var(--danger)">${fmt((tp.property_sale_depr_recapture || 0) * 0.25)}</strong></div>
         <div style="display:flex;justify-content:space-between;gap:1rem"><span>State/local taxable gain + recapture included in Maryland AGI</span><strong style="color:var(--success)">${fmt((tp.property_sale_taxable_gain || 0) + (tp.property_sale_depr_recapture || 0))}</strong></div>
-        <div class="tp-note" style="margin-top:.5rem">Imported from ${escHtml(selectedSaleProp)} ${selectedSale?.source === 'Actual sale closeout' ? 'final sale closeout' : 'hypothetical sale estimate'} in the property tab.</div>
+        <div class="tp-note" style="margin-top:.5rem">Imported from ${escHtml(selectedSaleProp)} ${
+          selectedSale?.source === 'Actual sale closeout' ? 'final sale closeout'
+            : selectedSale?.source === 'Draft sale closeout' ? 'draft sale closeout'
+              : 'hypothetical sale estimate'
+        } in the property tab.</div>
       </div>`
     : `<div class="tp-note" style="margin-top:.5rem">Select a property to import its property-tab sale estimate/closeout. This adds taxable long-term gain and depreciation recapture to the tax plan.</div>`;
 
@@ -7205,7 +7204,11 @@ async function renderTaxPlanning() {
         <div style="display:flex;justify-content:space-between;gap:1rem;border-top:1px solid var(--border);padding-top:.4rem;margin-top:.4rem"><span>Taxable long-term capital gain added to federal worksheet</span><strong style="color:var(--success)">${fmt(tp.property_sale_2_taxable_gain || 0)}</strong></div>
         <div style="display:flex;justify-content:space-between;gap:1rem"><span>Depreciation recapture taxed federally at 25%</span><strong style="color:var(--danger)">${fmt((tp.property_sale_2_depr_recapture || 0) * 0.25)}</strong></div>
         <div style="display:flex;justify-content:space-between;gap:1rem"><span>State/local taxable gain + recapture included in Maryland AGI</span><strong style="color:var(--success)">${fmt((tp.property_sale_2_taxable_gain || 0) + (tp.property_sale_2_depr_recapture || 0))}</strong></div>
-        <div class="tp-note" style="margin-top:.5rem">Imported from ${escHtml(selectedSale2Prop)} ${selectedSale2?.source === 'Actual sale closeout' ? 'final sale closeout' : 'hypothetical sale estimate'} in the property tab.</div>
+        <div class="tp-note" style="margin-top:.5rem">Imported from ${escHtml(selectedSale2Prop)} ${
+          selectedSale2?.source === 'Actual sale closeout' ? 'final sale closeout'
+            : selectedSale2?.source === 'Draft sale closeout' ? 'draft sale closeout'
+              : 'hypothetical sale estimate'
+        } in the property tab.</div>
       </div>`
     : `<div class="tp-note" style="margin-top:.5rem">Select a second property to import its sale estimate/closeout.</div>`;
 
@@ -9209,6 +9212,30 @@ function tpChanged() {
   tpUpdateResults(tp);
 }
 
+function tpSyncImportedPropertySale(tp, saleNum, details) {
+  if (!details) return false;
+  const prefix = saleNum === 2 ? 'property_sale_2' : 'property_sale';
+  if (!tp[`${prefix}_imported`] || tp[`${prefix}_property`] !== details.prop) return false;
+  const updates = {
+    [`${prefix}_source`]: details.source,
+    [`${prefix}_price`]: details.salePrice,
+    [`${prefix}_closing_costs`]: details.saleClosingCosts,
+    [`${prefix}_basis`]: details.basis,
+    [`${prefix}_capital_gain`]: details.capitalGain,
+    [`${prefix}_primary_exclusion`]: details.primaryExclusion,
+    [`${prefix}_depr_recapture`]: details.depreciationRecapture,
+    [`${prefix}_taxable_gain`]: details.taxableGain
+  };
+  let changed = false;
+  for (const [key, value] of Object.entries(updates)) {
+    if (tp[key] !== value) {
+      tp[key] = value;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 function calcPropertySaleTaxDetails(prop) {
   if (!PROPERTIES.includes(prop)) return null;
   const inv = state.data[prop]?.investment || {};
@@ -9218,7 +9245,12 @@ function calcPropertySaleTaxDetails(prop) {
   const summs = state.data[prop]?.summaries || {};
   const txns = state.data[prop]?.transactions || [];
   const isPrimaryResidence = PRIMARY_PROPERTIES.has(prop);
-  const salePrice = isSold ? saleCloseout.salePrice : (inv.zillowEstimate || 0);
+  const closeoutDraft = isSold ? {} : loadSaleCloseoutDraft(prop);
+  const draftBreakdown = closeoutDraft?.breakdown?.items ? closeoutDraft.breakdown : null;
+  const draftClosingCosts = draftBreakdown && typeof draftBreakdown.total === 'number' && isFinite(draftBreakdown.total)
+    ? draftBreakdown.total
+    : null;
+  const salePrice = isSold ? saleCloseout.salePrice : (closeoutDraft.price || inv.zillowEstimate || 0);
   if (!salePrice) return null;
 
   const purchasePrice = inv.purchasePrice || 0;
@@ -9246,9 +9278,12 @@ function calcPropertySaleTaxDetails(prop) {
   const depreciationRecapture = isPrimaryResidence ? 0 : (isSold && saleCloseout.depreciationRecaptureTax != null ? saleCloseout.depreciationRecaptureTax / 0.25 : cumulativeDepreciation);
 
   const basis = purchasePrice + purchaseClosing + cumulativeImprovements;
-  // Match the property tab's hypothetical sale math exactly: unsold properties use the saved sale closing %;
-  // finalized sales use the actual closeout amount/breakdown.
-  const saleClosingCosts = isSold ? (saleCloseout.saleClosingCosts || 0) : salePrice * (saleClosingPct / 100);
+  // Match the property tab's sale math: finalized sales use actual closeout
+  // amounts; unsold properties prefer any in-progress closeout draft, then fall
+  // back to the saved sale-closing percentage.
+  const saleClosingCosts = isSold ? (saleCloseout.saleClosingCosts || 0)
+    : draftClosingCosts !== null ? draftClosingCosts
+      : salePrice * (saleClosingPct / 100);
   const grossAfterClosing = salePrice - saleClosingCosts;
   const capitalGain = Math.max(0, grossAfterClosing - basis);
   const primaryExclusion = isPrimaryResidence ? Math.min(capitalGain, PRIMARY_RESIDENCE_GAIN_EXCLUSION) : 0;
@@ -9258,7 +9293,7 @@ function calcPropertySaleTaxDetails(prop) {
 
   return {
     prop,
-    source: isSold ? 'Actual sale closeout' : 'Hypothetical property tab estimate',
+    source: isSold ? 'Actual sale closeout' : draftClosingCosts !== null ? 'Draft sale closeout' : 'Hypothetical property tab estimate',
     salePrice,
     saleClosingCosts,
     basis,
