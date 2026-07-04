@@ -1639,25 +1639,26 @@ const SALE_CLOSING_COSTS = [
   { code: 'other', name: 'Other Closing Costs', hint: 'Anything else from the settlement statement', defaultValue: () => 0 },
 ];
 
-// ── Tax Planning Constants (2025 MFJ rates — 2026 IRS rates TBD) ─────────────
+// ── Tax Planning Constants (2026 MFJ) ─────────────────────────────────────────
 
 const TP_BRACKETS_MFJ = [
-  { limit: 23850,    rate: 0.10 },
-  { limit: 96950,    rate: 0.12 },
-  { limit: 206700,   rate: 0.22 },
-  { limit: 394600,   rate: 0.24 },
-  { limit: 501050,   rate: 0.32 },
-  { limit: 751600,   rate: 0.35 },
+  { limit: 24800,    rate: 0.10 },
+  { limit: 100800,   rate: 0.12 },
+  { limit: 211400,   rate: 0.22 },
+  { limit: 403550,   rate: 0.24 },
+  { limit: 512450,   rate: 0.32 },
+  { limit: 768700,   rate: 0.35 },
   { limit: Infinity, rate: 0.37 },
 ];
 const TP_LTCG_MFJ = [
-  { limit: 96700,    rate: 0.00 },
-  { limit: 600050,   rate: 0.15 },
+  { limit: 98900,    rate: 0.00 },
+  { limit: 613700,   rate: 0.15 },
   { limit: Infinity, rate: 0.20 },
 ];
-const TP_SE_SS_BASE = 176100;      // 2025 SS wage base
+const TP_SE_SS_BASE = 184500;      // 2026 SS wage base
 const TP_NIIT_THRESHOLD = 250000;  // MFJ NIIT threshold
-const TP_STD_DEDUCTION = 30000;    // 2025 MFJ standard deduction
+const TP_STD_DEDUCTION = 32200;    // 2026 MFJ standard deduction
+const TP_PRIOR_STD_DEDUCTION_DEFAULTS = new Set([30000, 31500]);
 const TP_IRA_LIMIT = 15000; // MFJ: 2 spouses × $7,500 each (2026 limit)
 const TP_CTC_PER_CHILD = 2200;     // 2026 (OBBBA)
 const TP_CTC_PHASEOUT = 400000;    // MFJ phase-out start
@@ -7117,6 +7118,10 @@ async function renderTaxPlanning() {
   // Seed 529 deduction default
   if (tp.md_529 === undefined) tp.md_529 = 4800;
   if (tp.md_529_locked === undefined) tp.md_529_locked = true;
+  if (tp.std_ded === undefined || TP_PRIOR_STD_DEDUCTION_DEFAULTS.has(Number(tp.std_ded))) {
+    tp.std_ded = TP_STD_DEDUCTION;
+    tpSave(tp);
+  }
 
   const propertySaleRows = Object.fromEntries(PROPERTIES.map(p => [p, calcPropertySaleTaxDetails(p)]));
   const selectedSaleProp = tp.property_sale_property || '';
@@ -7188,7 +7193,7 @@ async function renderTaxPlanning() {
     </style>
     <div>
       <div style="font-size:1.2rem;font-weight:700">${CURRENT_YEAR} Federal Tax Planning</div>
-      <div class="tp-note">Uses 2025 IRS rates (MFJ) as proxy — official ${CURRENT_YEAR} rates may differ. Not tax advice; consult a professional for filing.</div>
+      <div class="tp-note">Uses IRS ${CURRENT_YEAR} MFJ brackets, standard deduction, capital-gains thresholds, and Social Security wage base.</div>
     </div>
   </div>
   <div class="tp-layout">
@@ -7255,6 +7260,7 @@ async function renderTaxPlanning() {
             <button class="btn btn-ghost btn-sm" onclick="tpFetchFMG()">Fetch ${CURRENT_YEAR}</button>
           </div>
         </div>
+        <div id="tp-fmg-fetched" class="tp-note" style="font-style:italic">${tpFetchedLabel(tp.fmg_fetched_at)}</div>
         <div id="tp-fmg-msg" class="tp-note"></div>
 
         <div class="tp-group">Eastern Shore AI</div>
@@ -7269,6 +7275,7 @@ async function renderTaxPlanning() {
             <button class="btn btn-ghost btn-sm" onclick="tpFetchESAI()">Fetch ${CURRENT_YEAR}</button>
           </div>
         </div>
+        <div id="tp-esai-fetched" class="tp-note" style="font-style:italic">${tpFetchedLabel(tp.esai_fetched_at)}</div>
         <div id="tp-esai-msg" class="tp-note"></div>
         <div class="tp-note" style="margin-top:.5rem">SE tax (15.3%) applies automatically. Half is deducted above-the-line.</div>
       </div>
@@ -7376,7 +7383,7 @@ async function renderTaxPlanning() {
             <input type="number" id="tp-half-se" disabled style="background:var(--bg);cursor:not-allowed" value="0">
           </div>
         </div>
-        <div class="tp-group">Standard Deduction (2025 MFJ default: $30,000)</div>
+        <div class="tp-group">Standard Deduction (${CURRENT_YEAR} MFJ default: ${fmt(TP_STD_DEDUCTION)})</div>
         <div class="tp-grid-2" style="margin-bottom:.75rem">
           <div class="form-group">
             <label class="tp-lbl">Amount ($)</label>
@@ -7405,7 +7412,7 @@ async function renderTaxPlanning() {
 
     <!-- Maryland State Tax -->
     <div class="card">
-      <div class="card-header"><div class="card-title">Maryland State &amp; Local Income Tax (2025)</div></div>
+      <div class="card-header"><div class="card-title">Maryland State &amp; Local Income Tax (${CURRENT_YEAR})</div></div>
       <div class="card-body">
         <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.75rem">
           <div class="form-group" style="margin-bottom:0">
@@ -9573,6 +9580,24 @@ function tpUpdateResults(tp) {
     </div>`;
 }
 
+// Last-fetched bookkeeping for the FMG/ESAI import buttons. Timestamps live in
+// the tax-planning record (fmg_fetched_at / esai_fetched_at, ISO strings), so
+// they survive reloads and sync to KV with the rest of the year's inputs —
+// tpMarkFetched writes localStorage first, then the caller's tpChanged() saves.
+function tpFetchedLabel(iso) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || isNaN(d)) return 'Never fetched';
+  return 'Last fetched ' + d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function tpMarkFetched(key, elId) {
+  const saved = tpLoadLocal();
+  saved[key] = new Date().toISOString();
+  localStorage.setItem(TP_KEY, JSON.stringify(saved));
+  const el = document.getElementById(elId);
+  if (el) el.textContent = tpFetchedLabel(saved[key]);
+}
+
 async function tpFetchFMG() {
   const usernameInput = document.getElementById('tp-fmg-user');
   const passwordInput = document.getElementById('tp-fmg-pw');
@@ -9588,6 +9613,7 @@ async function tpFetchFMG() {
     const dollars = Number(data.netCents || 0) / 100;
     document.getElementById('tp-fmg').value = dollars.toFixed(2);
     msg.textContent = `Fetched: ${fmt(incCents/100)} income − ${fmt(expCents/100)} expenses = ${fmt(dollars)} net`;
+    tpMarkFetched('fmg_fetched_at', 'tp-fmg-fetched');
     tpChanged();
   } catch (e) { msg.textContent = `Failed: ${e.message}`; }
   finally { if (passwordInput) passwordInput.value = ''; }
@@ -9609,6 +9635,7 @@ async function tpFetchESAI() {
     const dollars = (incCents - expCents) / 100;
     document.getElementById('tp-esai').value = dollars.toFixed(2);
     msg.textContent = `Fetched: ${fmt(incCents/100)} income − ${fmt(expCents/100)} expenses = ${fmt(dollars)} net`;
+    tpMarkFetched('esai_fetched_at', 'tp-esai-fetched');
     tpChanged();
   } catch (e) { msg.textContent = `Failed: ${e.message}`; }
   finally { if (passwordInput) passwordInput.value = ''; }
