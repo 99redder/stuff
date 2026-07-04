@@ -4781,9 +4781,9 @@ function tpCalc(tp, rentalRows) {
   const rentalNet    = (rentalRows || []).reduce((s, p) => s + p.net, 0);
   const rentalDepr   = tpN(tp.rental_depr);
   const rentalTaxInc = rentalNet - rentalDepr;
-  const interest     = tpN(tp.treasury_int) + tpN(tp.ally_int) + tpN(tp.vio_int) +
+  const interest     = tpN(tp.treasury_int) + tpN(tp.ally_int) +
                        tpN(tp.rh_int) + tpN(tp.ibkr_int);
-  const dividends    = tpN(tp.rh_div);
+  const dividends    = tpN(tp.rh_div) + tpN(tp.ibkr_div);
   const cryptoInc    = tpN(tp.crypto_income);
   const propertySaleTaxableGain = tpN(tp.property_sale_taxable_gain) + tpN(tp.property_sale_2_taxable_gain || 0);
   const propertySaleDepRecapture = tpN(tp.property_sale_depr_recapture) + tpN(tp.property_sale_2_depr_recapture || 0);
@@ -7154,6 +7154,11 @@ async function renderTaxPlanning() {
   // Seed 529 deduction default
   if (tp.md_529 === undefined) tp.md_529 = 4800;
   if (tp.md_529_locked === undefined) tp.md_529_locked = true;
+  if (tp.ibkr_div === undefined && tp.vio_int !== undefined) {
+    tp.ibkr_div = tp.vio_int;
+    delete tp.vio_int;
+    tpSave(tp);
+  }
   if (tp.std_ded === undefined || TP_PRIOR_STD_DEDUCTION_DEFAULTS.has(Number(tp.std_ded))) {
     tp.std_ded = TP_STD_DEDUCTION;
     tpSave(tp);
@@ -7360,7 +7365,7 @@ async function renderTaxPlanning() {
           ${tpFld('tp-rh-int','RH Interest',tp.rh_int)}
           ${tpFld('tp-ibkr-int','IBKR Interest',tp.ibkr_int)}
           ${tpFld('tp-ally-int','Ally Interest',tp.ally_int)}
-          ${tpFld('tp-vio-int','Vio MMS Interest',tp.vio_int)}
+          ${tpFld('tp-ibkr-div','IBKR Dividends',tp.ibkr_div)}
           ${tpFld('tp-crypto-income','Crypto Income',tp.crypto_income)}
         </div>
       </div>
@@ -9186,7 +9191,7 @@ function tpReadForm() {
   tp.fmg = g('tp-fmg'); tp.esai = g('tp-esai');
   if (!tp.treasury_locked) tp.treasury_int = g('tp-treasury-int');
   tp.rh_div = g('tp-rh-div'); tp.rh_int = g('tp-rh-int');
-  tp.ibkr_int = g('tp-ibkr-int'); tp.ally_int = g('tp-ally-int'); tp.vio_int = g('tp-vio-int');
+  tp.ibkr_int = g('tp-ibkr-int'); tp.ally_int = g('tp-ally-int'); tp.ibkr_div = g('tp-ibkr-div');
   tp.crypto_income = g('tp-crypto-income');
   tp.crypto_st = g('tp-crypto-st'); tp.rh_st = g('tp-rh-st'); tp.ibkr_st = g('tp-ibkr-st');
   tp.crypto_lt = g('tp-crypto-lt'); tp.rh_lt = g('tp-rh-lt'); tp.ibkr_lt = g('tp-ibkr-lt');
