@@ -2121,11 +2121,32 @@ function saleClosingDefault(def, salePrice, stateCode) {
   return Math.round((def.defaultValue(salePrice || 0, stateCode) || 0) * 100) / 100;
 }
 
-function getSaleClosingBreakdownFromForm() {
-  const saleState = PROPERTY_SALE_STATE[state.currentProperty] || 'NH';
+function saleCloseoutDraftKey(prop = state.currentProperty) {
+  return `rentals_sale_closeout_draft_${prop}`;
+}
+
+function loadSaleCloseoutDraft(prop = state.currentProperty) {
+  try { return JSON.parse(localStorage.getItem(saleCloseoutDraftKey(prop)) || '{}'); }
+  catch { return {}; }
+}
+
+function saveSaleCloseoutDraft(prop = state.currentProperty) {
+  const date = document.getElementById('sale-closeout-date')?.value || '';
+  const price = parseFloat(document.getElementById('sale-closeout-price')?.value || '0') || 0;
+  const notes = document.getElementById('sale-closeout-notes')?.value.trim() || '';
+  const breakdown = getSaleClosingBreakdownFromForm(prop);
+  localStorage.setItem(saleCloseoutDraftKey(prop), JSON.stringify({ date, price, notes, breakdown }));
+}
+
+function clearSaleCloseoutDraft(prop = state.currentProperty) {
+  localStorage.removeItem(saleCloseoutDraftKey(prop));
+}
+
+function getSaleClosingBreakdownFromForm(prop = state.currentProperty) {
+  const saleState = PROPERTY_SALE_STATE[prop] || 'NH';
   const items = {};
   let total = 0;
-  for (const def of saleClosingDefsForProperty()) {
+  for (const def of saleClosingDefsForProperty(prop)) {
     const input = document.getElementById(`sale-cost-${def.code}`);
     const lockBtn = document.getElementById(`sale-cost-${def.code}-lock`);
     const value = parseFloat(input?.value || '0') || 0;
@@ -2165,6 +2186,7 @@ function syncSaleClosingCosts() {
   if (totalEl) totalEl.textContent = fmt(total);
   const hiddenTotal = document.getElementById('sale-closeout-costs');
   if (hiddenTotal) hiddenTotal.value = total.toFixed(2);
+  saveSaleCloseoutDraft();
 }
 
 function toggleSaleClosingCostLock(code) {
@@ -2181,6 +2203,10 @@ function onSaleClosingCostInput(code) {
   const input = document.getElementById(`sale-cost-${code}`);
   if (input) input.dataset.manual = '1';
   syncSaleClosingCosts();
+}
+
+function onSaleCloseoutFieldInput() {
+  saveSaleCloseoutDraft();
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -3811,16 +3837,20 @@ async function renderInvestmentReturn() {
     </div>`;
 
   const defaultSaleState = PROPERTY_SALE_STATE[prop] || saleCloseout?.saleState || 'NH';
-  const initialCloseoutPrice = zillowEstimate || '';
+  const closeoutDraft = isSold ? {} : loadSaleCloseoutDraft(prop);
+  const draftBreakdown = closeoutDraft?.breakdown?.items ? closeoutDraft.breakdown : null;
+  const initialCloseoutPrice = closeoutDraft.price || zillowEstimate || '';
   const activeSaleCostDefs = saleClosingDefsForProperty(prop);
   const activeSaleCostCodes = new Set(activeSaleCostDefs.map(def => def.code));
+  let initialCloseoutCostsTotal = 0;
   const closeoutCostRows = activeSaleCostDefs.map(def => {
-    const prior = saleCloseout?.saleClosingBreakdown?.items?.[def.code];
+    const prior = draftBreakdown?.items?.[def.code] || saleCloseout?.saleClosingBreakdown?.items?.[def.code];
     const locked = prior?.locked !== false;
     // Treat any previously saved line as a manual override so a later sale-price
     // change can't silently overwrite a figure the user already entered.
     const manual = prior ? (prior.manual !== false) : false;
-    const value = prior ? prior.value : saleClosingDefault(def, zillowEstimate || 0, defaultSaleState);
+    const value = prior ? prior.value : saleClosingDefault(def, initialCloseoutPrice || 0, defaultSaleState);
+    initialCloseoutCostsTotal += parseFloat(value || '0') || 0;
     return `
       <div style="display:grid;grid-template-columns:1fr 150px 2.4rem;gap:.5rem;align-items:end;margin-bottom:.55rem">
         <div>
@@ -3868,7 +3898,7 @@ async function renderInvestmentReturn() {
           <div class="form-grid" style="max-width:620px">
             <div class="form-group">
               <label>Sale Date</label>
-              <input type="date" id="sale-closeout-date" value="${appTodayIso()}">
+              <input type="date" id="sale-closeout-date" value="${escAttr(closeoutDraft.date || appTodayIso())}" onchange="onSaleCloseoutFieldInput()">
             </div>
             <div class="form-group">
               <label>Final Sale Price ($)</label>
@@ -3887,15 +3917,15 @@ async function renderInvestmentReturn() {
                 ${closeoutCostRows}
                 <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);padding-top:.6rem;margin-top:.2rem;font-weight:700">
                   <span>Total Closing Costs</span>
-                  <span id="sale-closeout-costs-total">${fmt(saleClosingAmt || 0)}</span>
+                  <span id="sale-closeout-costs-total">${fmt(initialCloseoutCostsTotal || saleClosingAmt || 0)}</span>
                 </div>
               </div>
-              <input type="hidden" id="sale-closeout-costs" value="${escAttr(String(saleClosingAmt ? Math.round(saleClosingAmt) : ''))}">
+              <input type="hidden" id="sale-closeout-costs" value="${escAttr(String(initialCloseoutCostsTotal || saleClosingAmt || ''))}">
               <div style="font-size:.78rem;color:var(--text-muted);margin-top:.25rem">Locked lines auto-calculate from the sale price. Unlock a line to type the actual settlement-statement amount — re-locking keeps the amount you entered (it won't revert to the estimate).</div>
             </div>
             <div class="form-group" style="grid-column:1/-1">
               <label>Closeout Notes</label>
-              <input type="text" id="sale-closeout-notes" placeholder="Optional notes about final settlement">
+              <input type="text" id="sale-closeout-notes" value="${escAttr(closeoutDraft.notes || '')}" placeholder="Optional notes about final settlement" oninput="onSaleCloseoutFieldInput()">
             </div>
           </div>
           <button class="btn btn-danger mt-1" type="button" onclick="closeOutInvestmentSale()">Finalize Sale & Lock Property</button>
@@ -4142,6 +4172,7 @@ async function closeOutInvestmentSale() {
           }
         });
         state.data[prop].investment = res.config;
+        clearSaleCloseoutDraft(prop);
         renderInvestmentReturn();
       } catch (err) {
         showCloseoutError('Closeout failed: ' + err.message);
@@ -9851,6 +9882,7 @@ window.saveInvestmentConfig    = saveInvestmentConfig;
 window.closeOutInvestmentSale  = closeOutInvestmentSale;
 window.syncSaleClosingCosts    = syncSaleClosingCosts;
 window.onSaleClosingCostInput  = onSaleClosingCostInput;
+window.onSaleCloseoutFieldInput = onSaleCloseoutFieldInput;
 window.toggleSaleClosingCostLock = toggleSaleClosingCostLock;
 window.refreshZillowEstimate   = refreshZillowEstimate;
 window.toggleInvestmentConfig  = toggleInvestmentConfig;
