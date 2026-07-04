@@ -2142,6 +2142,18 @@ function clearSaleCloseoutDraft(prop = state.currentProperty) {
   localStorage.removeItem(saleCloseoutDraftKey(prop));
 }
 
+function parseSaleCurrency(value) {
+  const n = parseFloat(String(value ?? '').replace(/[$,\s]/g, ''));
+  return isNaN(n) ? 0 : n;
+}
+
+function formatSaleCurrency(value) {
+  return parseSaleCurrency(value).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+
 function getSaleClosingBreakdownFromForm(prop = state.currentProperty) {
   const saleState = PROPERTY_SALE_STATE[prop] || 'NH';
   const items = {};
@@ -2149,7 +2161,7 @@ function getSaleClosingBreakdownFromForm(prop = state.currentProperty) {
   for (const def of saleClosingDefsForProperty(prop)) {
     const input = document.getElementById(`sale-cost-${def.code}`);
     const lockBtn = document.getElementById(`sale-cost-${def.code}-lock`);
-    const value = parseFloat(input?.value || '0') || 0;
+    const value = parseSaleCurrency(input?.value);
     const locked = lockBtn?.dataset.locked === '1';
     const manual = input?.dataset.manual === '1';
     items[def.code] = { label: def.name, value, locked, manual };
@@ -2178,9 +2190,9 @@ function syncSaleClosingCosts() {
     // when the line is re-locked, so locking freezes a manual figure rather
     // than wiping it back to the estimate.
     if (locked && input.dataset.manual !== '1') {
-      input.value = saleClosingDefault(def, salePrice, stateCode).toFixed(2);
+      input.value = formatSaleCurrency(saleClosingDefault(def, salePrice, stateCode));
     }
-    total += parseFloat(input.value || '0') || 0;
+    total += parseSaleCurrency(input.value);
   }
   const totalEl = document.getElementById('sale-closeout-costs-total');
   if (totalEl) totalEl.textContent = fmt(total);
@@ -2208,8 +2220,7 @@ function onSaleClosingCostInput(code) {
 function formatSaleClosingCostInput(code) {
   const input = document.getElementById(`sale-cost-${code}`);
   if (!input) return;
-  const value = parseFloat(input.value || '0') || 0;
-  input.value = value.toFixed(2);
+  input.value = formatSaleCurrency(input.value);
   syncSaleClosingCosts();
 }
 
@@ -3867,7 +3878,7 @@ async function renderInvestmentReturn() {
         </div>
         <div style="position:relative">
           <span style="position:absolute;left:.65rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:700;pointer-events:none">$</span>
-          <input type="number" id="sale-cost-${def.code}" step="0.01" min="0" value="${escAttr((parseFloat(value || '0') || 0).toFixed(2))}" data-manual="${manual ? '1' : '0'}" ${locked ? 'disabled style="background:var(--bg);cursor:not-allowed;padding-left:1.35rem"' : 'style="padding-left:1.35rem"'} oninput="onSaleClosingCostInput('${def.code}')" onblur="formatSaleClosingCostInput('${def.code}')">
+          <input type="text" inputmode="decimal" id="sale-cost-${def.code}" value="${escAttr(formatSaleCurrency(value))}" data-manual="${manual ? '1' : '0'}" ${locked ? 'disabled style="background:var(--bg);cursor:not-allowed;padding-left:1.35rem;text-align:right"' : 'style="padding-left:1.35rem;text-align:right"'} oninput="onSaleClosingCostInput('${def.code}')" onblur="formatSaleClosingCostInput('${def.code}')">
         </div>
         <button class="btn btn-ghost btn-sm" type="button" id="sale-cost-${def.code}-lock" data-locked="${locked ? '1' : '0'}" onclick="toggleSaleClosingCostLock('${def.code}')" title="${locked ? 'Unlock to edit this amount' : 'Lock this amount'}">${locked ? '🔒' : '🔓'}</button>
       </div>`;
