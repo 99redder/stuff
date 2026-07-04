@@ -4864,8 +4864,14 @@ function tpBuildPayments(payments) {
 }
 
 const TP_COLLAPSE_KEY = `rentals_tp_collapsed_${CURRENT_YEAR}`;
+const TP_AGI_WARNINGS_COLLAPSE_KEY = `rentals_tp_agi_warnings_collapsed_${CURRENT_YEAR}`;
 function tpCollapsedMap() { try { return JSON.parse(localStorage.getItem(TP_COLLAPSE_KEY) || '{}'); } catch { return {}; } }
 function tpSaveCollapsedMap(map) { localStorage.setItem(TP_COLLAPSE_KEY, JSON.stringify(map || {})); }
+function tpAgiWarningsCollapsed() { return localStorage.getItem(TP_AGI_WARNINGS_COLLAPSE_KEY) !== '0'; }
+function tpToggleAgiWarnings() {
+  localStorage.setItem(TP_AGI_WARNINGS_COLLAPSE_KEY, tpAgiWarningsCollapsed() ? '0' : '1');
+  tpUpdateResults();
+}
 function tpToggleSection(id) {
   const map = tpCollapsedMap();
   map[id] = !map[id];
@@ -9481,13 +9487,17 @@ function tpAgiWarningsHtml(r, tp) {
     : nears > 0
       ? `<span style="color:#d97706;font-weight:700">${nears} caution${nears === 1 ? '' : 's'}</span>`
       : `<span style="color:var(--success);font-weight:700">no warnings</span>`;
+  const collapsed = tpAgiWarningsCollapsed();
 
   return `
-    <div class="card-header" style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;flex-wrap:wrap">
+    <div class="card-header" onclick="tpToggleAgiWarnings()" style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;flex-wrap:wrap;cursor:pointer">
       <div class="card-title">⚠️ AGI Threshold Watch</div>
-      <div style="font-size:.72rem">${headline}</div>
+      <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+        <div style="font-size:.72rem">${headline}</div>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="event.stopPropagation();tpToggleAgiWarnings()" aria-expanded="${collapsed ? 'false' : 'true'}" style="margin-left:.25rem;font-size:.8rem;padding:.2rem .5rem">${collapsed ? 'Expand' : 'Minimize'}</button>
+      </div>
     </div>
-    <div class="card-body" style="padding:0.75rem 1rem">
+    <div class="card-body" style="padding:0.75rem 1rem;display:${collapsed ? 'none' : ''}">
       <div style="font-size:.68rem;color:var(--text-muted);margin-bottom:.55rem">Projected AGI <strong>${fmt(agi)}</strong> · taxable income <strong>${fmt(r.taxInc)}</strong> — checked against ${CURRENT_YEAR} MFJ phase-out thresholds.</div>
       ${rows || '<div style="font-size:.78rem;color:var(--success);font-weight:600">✓ No AGI-based phase-outs triggered at this income.</div>'}
     </div>`;
