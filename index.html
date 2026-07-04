@@ -9485,6 +9485,7 @@ function tpAgiWarningsHtml(r, tp) {
     <div class="card-header" onclick="tpToggleAgiWarnings()" style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;flex-wrap:wrap;cursor:pointer">
       <div class="card-title">⚠️ AGI Threshold Watch</div>
       <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+        <div style="font-size:.72rem;color:var(--text-muted)">AGI <strong style="color:var(--text)">${fmt(agi)}</strong> · Taxable <strong style="color:var(--text)">${fmt(r.taxInc)}</strong></div>
         <div style="font-size:.72rem">${headline}</div>
         <button type="button" class="btn btn-ghost btn-sm" onclick="event.stopPropagation();tpToggleAgiWarnings()" aria-expanded="${collapsed ? 'false' : 'true'}" style="margin-left:.25rem;font-size:.8rem;padding:.2rem .5rem">${collapsed ? 'Expand' : 'Minimize'}</button>
       </div>
