@@ -1675,7 +1675,6 @@ const TP_QBI_PHASEIN_END     = 553500;
 const TP_ADDL_MEDICARE       = 250000;   // 0.9% Additional Medicare Tax on wages/SE comp over this
 const TP_MD_EXEMPT_PHASEOUT  = 200000;   // MD personal exemptions reach $0 above this federal AGI (MFJ)
 const TP_SAFE_HARBOR_AGI     = 150000;   // above this, the estimated-tax safe harbor is 110% of prior-year tax
-const TP_IRMAA_FIRST_TIER    = 218000;   // ≈ first 2026 Medicare IRMAA tier (MFJ) — SSA sets final figure
 const TP_CHARITY_FLOOR_PCT   = 0.005;    // 2026+: itemized charitable gifts deductible only above 0.5% of AGI
 
 // ── Maryland Tax Constants (2025) ─────────────────────────────────────────────
@@ -9449,13 +9448,6 @@ function tpAgiWarningsHtml(r, tp) {
     add('info', 'Estimated-tax safe harbor is 110%',
       `Above ${fmt(TP_SAFE_HARBOR_AGI)} AGI, avoiding underpayment penalties requires paying in 110% of last year's total tax (or 90% of this year's) through withholding/estimates — pay an estimate in the quarter of any property sale.`,
       [['IRS: underpayment penalty', 'https://www.irs.gov/taxtopics/tc306']]);
-  }
-
-  // Medicare IRMAA lookback — informational
-  if (agi > TP_IRMAA_FIRST_TIER) {
-    add('info', `Medicare IRMAA (${CURRENT_YEAR + 2} premiums)`,
-      `If either spouse is on Medicare in ${CURRENT_YEAR + 2}, this year's MAGI sets premium surcharges via the 2-year lookback (first MFJ tier ≈ ${fmt(TP_IRMAA_FIRST_TIER)}; SSA sets the final figure). Ignore if you're both years from 65.`,
-      [['SSA: Medicare premiums & IRMAA', 'https://www.ssa.gov/benefits/medicare/medicare-premiums.html']]);
   }
 
   const STYLES = {
