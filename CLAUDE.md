@@ -660,6 +660,7 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 - **Federal LTCG stacking fix:** `tpCalcLTCGTax` is now called with `ordinaryTaxable + depRecaptureTaxable` as the stack base — unrecaptured §1250 gain occupies the preferential-rate stack *below* other LT gains (Schedule D worksheet), so remaining LTCG no longer incorrectly slides into the 0%/15% brackets when a rental sale includes large recapture.
 - **`TP_SALT_PHASEDOWN` 500000 → 505000** — OBBBA indexes the SALT phase-down MAGI threshold +1%/yr like the cap (2026 value).
 - Known simplifications (documented, not modeled): passive-activity-loss limits on net rental losses, capital-loss netting/$3k cap, IRA deductibility phase-out when covered by an employer plan, CTC ordering vs SE tax/NIIT, QBI taxable-income cap, and VA nonresident filing for 446BB rental income (MD credit for taxes paid to VA).
+- **MAGI computed and displayed** (`r.magi = agi + iraAdj` in `tpCalc` — Roth IRA MAGI per §408A(c)(3)(B)(i) adds back the traditional IRA deduction; the tab's other MAGI-based rules collapse to AGI since there are no foreign-exclusion/tax-exempt-interest inputs). Shown in the AGI Threshold Watch header (`AGI · MAGI · Taxable`) and body intro, and as a results-panel row under AGI whenever it differs. The Roth phase-out warnings now test MAGI instead of AGI (previously could miss ineligibility by up to the $15k IRA deduction).
 
 ### 2026-07-03 — Tax Planning: AGI Threshold Watch card
 

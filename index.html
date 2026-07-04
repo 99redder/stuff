@@ -4869,6 +4869,11 @@ function tpCalc(tp, rentalRows) {
   const iraAdj     = Math.min(tpN(tp.ira), TP_IRA_LIMIT);
   const adjustments = iraAdj + halfSeTax;
   const agi         = Math.max(0, grossIncome - adjustments);
+  // MAGI: the phase-out rules watched by this tab define MAGI as AGI plus
+  // add-backs. With no foreign-earned-income-exclusion or tax-exempt-interest
+  // inputs, every definition here collapses to AGI except Roth IRA MAGI
+  // (§408A(c)(3)(B)(i)), which adds back the traditional IRA deduction.
+  const magi = agi + iraAdj;
 
   // Deductions
   const stdDed  = tpN(tp.std_ded) || TP_STD_DEDUCTION;
@@ -4912,7 +4917,7 @@ function tpCalc(tp, rentalRows) {
     wages, businessInc, rentalNet, rentalDepr, rentalTaxInc,
     interest, dividends, cryptoInc, stGains, ltGains, propertySaleTaxableGain,
     propertySaleDepRecapture, depRecaptureTaxable, depRecaptureTax,
-    seTax, halfSeTax, grossIncome, iraAdj, adjustments, agi,
+    seTax, halfSeTax, grossIncome, iraAdj, adjustments, agi, magi,
     stdDed, qbiDed, totDed, taxInc, ordinaryTaxable, ltcgTaxable,
     ordTax, ltcgTax, nii, niit, grossFedTax, ctcRaw, ctcPhaseout, ctc, netFedTax,
     fedWithheld, estPmts, totFedPaid, fedOwed, md
@@ -9514,18 +9519,20 @@ function tpAgiWarningsHtml(r, tp) {
       [['IRS: Child Tax Credit', 'https://www.irs.gov/credits-deductions/individuals/child-tax-credit']]);
   }
 
-  // Roth IRA eligibility — not modeled (contribution-side rule)
-  if (agi >= TP_ROTH_PHASEOUT_END) {
+  // Roth IRA eligibility — not modeled (contribution-side rule). Uses MAGI:
+  // AGI + traditional IRA deduction added back (§408A(c)(3)(B)(i)).
+  const magi = r.magi;
+  if (magi >= TP_ROTH_PHASEOUT_END) {
     add('hit', 'Roth IRA — ineligible to contribute',
-      `MAGI exceeds the ${fmt(TP_ROTH_PHASEOUT_END)} MFJ ceiling. Any ${CURRENT_YEAR} Roth contributions already made are excess contributions (6% excise per year) — recharacterize them to a traditional IRA or withdraw them (with earnings) by the filing deadline.`,
+      `MAGI of ${fmt(magi)} (AGI${r.iraAdj > 0 ? ` + the ${fmt(r.iraAdj)} IRA deduction added back` : ''}) exceeds the ${fmt(TP_ROTH_PHASEOUT_END)} MFJ ceiling. Any ${CURRENT_YEAR} Roth contributions already made are excess contributions (6% excise per year) — recharacterize them to a traditional IRA or withdraw them (with earnings) by the filing deadline.`,
       [['IRS: 2026 IRA limits', 'https://www.irs.gov/newsroom/401k-limit-increases-to-24500-for-2026-ira-limit-increases-to-7500']]);
-  } else if (agi >= TP_ROTH_PHASEOUT_START) {
+  } else if (magi >= TP_ROTH_PHASEOUT_START) {
     add('hit', 'Roth IRA — reduced contribution limit',
-      `MAGI is inside the ${fmt(TP_ROTH_PHASEOUT_START)}–${fmt(TP_ROTH_PHASEOUT_END)} phase-out band — only a reduced Roth contribution is allowed this year.`,
+      `MAGI of ${fmt(magi)} is inside the ${fmt(TP_ROTH_PHASEOUT_START)}–${fmt(TP_ROTH_PHASEOUT_END)} phase-out band — only a reduced Roth contribution is allowed this year.`,
       [['IRS: 2026 IRA limits', 'https://www.irs.gov/newsroom/401k-limit-increases-to-24500-for-2026-ira-limit-increases-to-7500']]);
-  } else if (near(TP_ROTH_PHASEOUT_START, agi)) {
+  } else if (near(TP_ROTH_PHASEOUT_START, magi)) {
     add('near', 'Roth IRA phase-out',
-      `AGI is within ${fmt(TP_ROTH_PHASEOUT_START - agi)} of the ${fmt(TP_ROTH_PHASEOUT_START)} start of the Roth contribution phase-out.`,
+      `MAGI is within ${fmt(TP_ROTH_PHASEOUT_START - magi)} of the ${fmt(TP_ROTH_PHASEOUT_START)} start of the Roth contribution phase-out.`,
       [['IRS: 2026 IRA limits', 'https://www.irs.gov/newsroom/401k-limit-increases-to-24500-for-2026-ira-limit-increases-to-7500']]);
   }
 
@@ -9651,13 +9658,13 @@ function tpAgiWarningsHtml(r, tp) {
     <div class="card-header" onclick="tpToggleAgiWarnings()" style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;flex-wrap:wrap;cursor:pointer">
       <div class="card-title">⚠️ AGI Threshold Watch</div>
       <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
-        <div style="font-size:.72rem;color:var(--text-muted)">AGI <strong style="color:var(--text)">${fmt(agi)}</strong> · Taxable <strong style="color:var(--text)">${fmt(r.taxInc)}</strong></div>
+        <div style="font-size:.72rem;color:var(--text-muted)">AGI <strong style="color:var(--text)">${fmt(agi)}</strong> · MAGI <strong style="color:var(--text)">${fmt(r.magi)}</strong> · Taxable <strong style="color:var(--text)">${fmt(r.taxInc)}</strong></div>
         <div style="font-size:.72rem">${headline}</div>
         <button type="button" class="btn btn-ghost btn-sm" onclick="event.stopPropagation();tpToggleAgiWarnings()" aria-expanded="${collapsed ? 'false' : 'true'}" style="margin-left:.25rem;font-size:.8rem;padding:.2rem .5rem">${collapsed ? 'Expand' : 'Minimize'}</button>
       </div>
     </div>
     <div class="card-body" style="padding:0.75rem 1rem;display:${collapsed ? 'none' : ''}">
-      <div style="font-size:.68rem;color:var(--text-muted);margin-bottom:.55rem">Projected AGI <strong>${fmt(agi)}</strong> · taxable income <strong>${fmt(r.taxInc)}</strong> — checked against ${CURRENT_YEAR} MFJ phase-out thresholds.</div>
+      <div style="font-size:.68rem;color:var(--text-muted);margin-bottom:.55rem">Projected AGI <strong>${fmt(agi)}</strong> · MAGI <strong>${fmt(r.magi)}</strong>${r.iraAdj > 0 ? ' (AGI + IRA deduction added back — the basis for the Roth limit)' : ' (equals AGI — no add-backs apply)'} · taxable income <strong>${fmt(r.taxInc)}</strong> — checked against ${CURRENT_YEAR} MFJ phase-out thresholds.</div>
       ${rows || '<div style="font-size:.78rem;color:var(--success);font-weight:600">✓ No AGI-based phase-outs triggered at this income.</div>'}
     </div>`;
 }
@@ -9705,6 +9712,7 @@ function tpUpdateResults(tp) {
       ${r.iraAdj > 0 ? row('Traditional IRA', r.iraAdj, 'in', true) : ''}
       ${r.halfSeTax > 0 ? row('½ Self-Employment Tax', r.halfSeTax, 'in', true) : ''}
       ${row('AGI', r.agi, 'sub')}
+      ${Math.abs(r.magi - r.agi) >= 0.005 ? row('MAGI (AGI + IRA deduction, for Roth limits)', r.magi, 'in') : ''}
 
       ${sec('Deductions')}
       ${row('Standard Deduction', r.stdDed, 'in', true)}
