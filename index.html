@@ -4882,6 +4882,13 @@ function tpCalc(tp, rentalRows) {
   };
 }
 
+function tpPropertySaleLabel(tp) {
+  const names = [];
+  if (tp.property_sale_imported && tp.property_sale_property) names.push(tp.property_sale_property);
+  if (tp.property_sale_2_imported && tp.property_sale_2_property) names.push(tp.property_sale_2_property);
+  return names.length ? names.join(' + ') : 'selected property';
+}
+
 function tpFld(id, label, val, locked) {
   const dis = locked ? 'disabled style="background:var(--bg);cursor:not-allowed;text-align:right"' : 'style="text-align:right"';
   return `<div class="form-group">
@@ -9623,6 +9630,7 @@ function tpUpdateResults(tp) {
 
   const fedPos = r.fedOwed > 0.005;
   const md = r.md;
+  const propertySaleLabel = tpPropertySaleLabel(tp);
 
   el.innerHTML = `
     <div class="card-header"><div class="card-title">${CURRENT_YEAR} Estimate — MFJ</div></div>
@@ -9634,8 +9642,8 @@ function tpUpdateResults(tp) {
       ${r.rentalDepr > 0 ? row('Less Depreciation', r.rentalDepr, 'in', true) : ''}
       ${row('Interest & Dividends', r.interest + r.dividends + r.cryptoInc, 'in')}
       ${r.stGains !== 0 ? row('ST Capital Gains', r.stGains, 'in') : ''}
-      ${r.propertySaleTaxableGain > 0 ? row(`Property Sale LT Gain (${tp.property_sale_property || 'selected property'})`, r.propertySaleTaxableGain, 'in') : ''}
-      ${r.propertySaleDepRecapture > 0 ? row(`Property Depreciation Recapture (${tp.property_sale_property || 'selected property'})`, r.propertySaleDepRecapture, 'in') : ''}
+      ${r.propertySaleTaxableGain > 0 ? row(`Property Sale LT Gain (${propertySaleLabel})`, r.propertySaleTaxableGain, 'in') : ''}
+      ${r.propertySaleDepRecapture > 0 ? row(`Property Depreciation Recapture (${propertySaleLabel})`, r.propertySaleDepRecapture, 'in') : ''}
       ${r.ltGains !== 0 ? row('Total LT Capital Gains', r.ltGains, 'in') : ''}
       ${row('Gross Income', r.grossIncome, 'sub')}
 
@@ -9670,7 +9678,7 @@ function tpUpdateResults(tp) {
       </div>
 
       ${sec('Maryland State & Local Tax')}
-      ${(r.propertySaleTaxableGain + r.propertySaleDepRecapture) > 0 ? row(`Property Sale Gain + Recapture Included in State AGI (${tp.property_sale_property || 'selected property'})`, r.propertySaleTaxableGain + r.propertySaleDepRecapture, 'in') : ''}
+      ${(r.propertySaleTaxableGain + r.propertySaleDepRecapture) > 0 ? row(`Property Sale Gain + Recapture Included in State AGI (${propertySaleLabel})`, r.propertySaleTaxableGain + r.propertySaleDepRecapture, 'in') : ''}
       ${md.navyExempt > 0 ? row(`Less Navy Retirement (exempt, cap $${md.exemptCap.toLocaleString()})`, md.navyExempt, 'in', true) : ''}
       ${md.md529 > 0 ? row('Less 529 Contributions', md.md529, 'in', true) : ''}
       ${row('Maryland AGI', md.mdAgi, 'in')}
