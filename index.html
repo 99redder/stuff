@@ -744,7 +744,7 @@
     .tp-pay-row { display:flex; gap:0.5rem; align-items:center; padding:0.4rem 0; border-bottom:1px solid var(--border); }
     .tp-pay-row:last-child { border-bottom:none; }
     .tp-pay-row input[type="date"] { width:155px; flex-shrink:0; }
-    .tp-pay-row input[type="number"] { flex:1; }
+    .tp-pay-row input:not([type="date"]) { flex:1; }
     .mb-template-name { flex:1 1 8rem; min-width:6.25rem; }
     .mb-money {
       position: relative;
@@ -765,7 +765,7 @@
       pointer-events: none;
     }
     .mb-money input { width: 100%; padding-left: 1.35rem !important; }
-    .mb-money input[type="number"] { text-align: right; font-variant-numeric: tabular-nums; }
+    .mb-money input { text-align: right; font-variant-numeric: tabular-nums; }
     .tp-pay-row .mb-template-money { flex:0 0 128px; width:128px; }
     .tp-pay-row .mb-variable-money { flex:0 0 110px; width:110px; }
     .mb-modal-money { width:100%; }
@@ -1306,7 +1306,7 @@
         </div>
         <div class="form-group full">
           <label for="mom-template-amount" id="mom-template-amount-label">Monthly Amount ($)</label>
-          <span class="mb-money mb-modal-money"><input type="number" id="mom-template-amount" step="0.01" min="0" placeholder="0.00" onkeydown="if(event.key==='Enter') mbSaveTemplateAdd()"></span>
+          <span class="mb-money mb-modal-money"><input type="text" inputmode="decimal" id="mom-template-amount" placeholder="0.00" onblur="formatMoneyInput(this)" onkeydown="if(event.key==='Enter') mbSaveTemplateAdd()"></span>
         </div>
       </div>
       <div id="mom-template-error" class="error-msg hidden" style="margin-top:0.75rem"></div>
@@ -1347,7 +1347,7 @@
         </div>
         <div class="form-group">
           <label for="edit-amount">Amount ($)</label>
-          <input type="number" id="edit-amount" step="0.01" min="0.01">
+          <input type="text" inputmode="decimal" id="edit-amount" onblur="formatMoneyInput(this)">
         </div>
         <div class="form-group full">
           <label for="edit-notes">Notes</label>
@@ -1435,7 +1435,7 @@
           </label>
           <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
             Universal Service Program ($)
-            <input type="number" id="calc-universal-service" class="form-input" step=".01" value="0.32" oninput="updateCalcResult()">
+            <input type="text" inputmode="decimal" id="calc-universal-service" class="form-input" value="0.32" oninput="updateCalcResult()" onblur="formatMoneyInput(this)">
           </label>
           <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
             MD Franchise Tax ($/kWh)
@@ -1461,7 +1461,7 @@
         <div class="calc-grid">
           <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
             Customer Charge ($)
-            <input type="number" id="calc-cust" class="form-input" step=".01" value="9.43" oninput="updateCalcResult()">
+            <input type="text" inputmode="decimal" id="calc-cust" class="form-input" value="9.43" oninput="updateCalcResult()" onblur="formatMoneyInput(this)">
           </label>
           <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.85rem">
             Distribution Charge ($/kWh)
@@ -1761,7 +1761,7 @@ function tpSave(tp) {
   }, 800);
 }
 
-function tpN(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+function tpN(v) { return parseMoney(v); }
 
 // ── Maintenance Seed Data (pre-loaded from CSV logs) ─────────────────────────
 
@@ -2091,6 +2091,22 @@ function fmt(amount) {
   return '$' + abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function parseMoney(value) {
+  const n = parseFloat(String(value ?? '').replace(/[$,\s]/g, ''));
+  return isNaN(n) ? 0 : n;
+}
+
+function moneyInputValue(value) {
+  if (value === undefined || value === null || value === '') return '';
+  return parseMoney(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatMoneyInput(id) {
+  const el = typeof id === 'string' ? document.getElementById(id) : id;
+  if (!el) return;
+  el.value = moneyInputValue(el.value);
+}
+
 function fmtShort(amount) {
   const abs = Math.abs(amount);
   if (abs >= 1000) return '$' + (abs / 1000).toFixed(1) + 'k';
@@ -2132,7 +2148,7 @@ function loadSaleCloseoutDraft(prop = state.currentProperty) {
 
 function saveSaleCloseoutDraft(prop = state.currentProperty) {
   const date = document.getElementById('sale-closeout-date')?.value || '';
-  const price = parseFloat(document.getElementById('sale-closeout-price')?.value || '0') || 0;
+  const price = parseMoney(document.getElementById('sale-closeout-price')?.value);
   const notes = document.getElementById('sale-closeout-notes')?.value.trim() || '';
   const breakdown = getSaleClosingBreakdownFromForm(prop);
   localStorage.setItem(saleCloseoutDraftKey(prop), JSON.stringify({ date, price, notes, breakdown }));
@@ -2143,15 +2159,11 @@ function clearSaleCloseoutDraft(prop = state.currentProperty) {
 }
 
 function parseSaleCurrency(value) {
-  const n = parseFloat(String(value ?? '').replace(/[$,\s]/g, ''));
-  return isNaN(n) ? 0 : n;
+  return parseMoney(value);
 }
 
 function formatSaleCurrency(value) {
-  return parseSaleCurrency(value).toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
+  return moneyInputValue(value) || '0.00';
 }
 
 function getSaleClosingBreakdownFromForm(prop = state.currentProperty) {
@@ -2171,7 +2183,7 @@ function getSaleClosingBreakdownFromForm(prop = state.currentProperty) {
 }
 
 function syncSaleClosingCosts() {
-  const salePrice = parseFloat(document.getElementById('sale-closeout-price')?.value || '0') || 0;
+  const salePrice = parseMoney(document.getElementById('sale-closeout-price')?.value);
   const stateCode = PROPERTY_SALE_STATE[state.currentProperty] || 'NH';
   let total = 0;
   for (const def of saleClosingDefsForProperty()) {
@@ -2531,7 +2543,7 @@ function openEditModal(id) {
 
   // Populate other fields
   document.getElementById('edit-date').value   = txn.date;
-  document.getElementById('edit-amount').value = txn.amount;
+  document.getElementById('edit-amount').value = moneyInputValue(txn.amount);
   document.getElementById('edit-notes').value  = txn.description || '';
   document.getElementById('edit-error').classList.add('hidden');
 
@@ -2566,7 +2578,7 @@ async function saveEditTransaction() {
   const description = document.getElementById('edit-notes').value.trim();
 
   if (!date) { errEl.textContent = 'Date is required.'; errEl.classList.remove('hidden'); return; }
-  const amount = parseFloat(amountRaw);
+  const amount = parseMoney(amountRaw);
   if (isNaN(amount) || amount <= 0) { errEl.textContent = 'Enter a valid amount.'; errEl.classList.remove('hidden'); return; }
 
   try {
@@ -2644,7 +2656,7 @@ function renderDepreciationSection(prop) {
           <div class="form-grid" style="max-width:480px">
             <div class="form-group">
               <label>Structure Cost Basis ($)</label>
-              <input type="number" id="depr-basis" step="0.01" min="1" placeholder="e.g. 44030">
+              <input type="text" inputmode="decimal" id="depr-basis" placeholder="44,030.00" onblur="formatMoneyInput(this)">
             </div>
             <div class="form-group">
               <label>Date Placed In Service</label>
@@ -2721,7 +2733,7 @@ function renderDepreciationSection(prop) {
         <div class="form-grid" style="max-width:480px">
           <div class="form-group">
             <label>Structure Cost Basis ($)</label>
-            <input type="number" id="depr-basis" step="0.01" min="1" value="${config.costBasis}">
+            <input type="text" inputmode="decimal" id="depr-basis" value="${escAttr(moneyInputValue(config.costBasis))}" onblur="formatMoneyInput(this)">
           </div>
           <div class="form-group">
             <label>Date Placed In Service</label>
@@ -2748,7 +2760,7 @@ async function saveDepreciationConfig() {
   const purchaseEl = document.getElementById('depr-purchase');
   const errEl      = document.getElementById('depr-error');
 
-  const costBasis = parseFloat(basisEl?.value);
+  const costBasis = parseMoney(basisEl?.value);
   const placedInService = startEl?.value;
   const purchaseDate = purchaseEl?.value || null;
 
@@ -2895,22 +2907,22 @@ function buildYearFormGrid(year = '', data = {}) {
   const incomeFields = CATEGORIES.income.map(c => `
     <div class="form-group">
       <label>${escHtml(c.name)}</label>
-      <input type="number" id="yf-${c.code}" step="0.01" min="0" placeholder="0"
-             value="${data[c.code] || ''}">
+      <input type="text" inputmode="decimal" id="yf-${c.code}" placeholder="0.00"
+             value="${moneyInputValue(data[c.code])}" onblur="formatMoneyInput(this)">
     </div>`).join('');
 
   const expenseFields = CATEGORIES.expense.map(c => `
     <div class="form-group">
       <label>${escHtml(c.name)}</label>
-      <input type="number" id="yf-${c.code}" step="0.01" min="0" placeholder="0"
-             value="${data[c.code] || ''}">
+      <input type="text" inputmode="decimal" id="yf-${c.code}" placeholder="0.00"
+             value="${moneyInputValue(data[c.code])}" onblur="formatMoneyInput(this)">
     </div>`).join('');
 
   const histOnlyFields = HIST_ONLY_EXPENSES.map(c => `
     <div class="form-group">
       <label>${escHtml(c.name)}</label>
-      <input type="number" id="yf-${c.code}" step="0.01" min="0" placeholder="0"
-             value="${data[c.code] || ''}">
+      <input type="text" inputmode="decimal" id="yf-${c.code}" placeholder="0.00"
+             value="${moneyInputValue(data[c.code])}" onblur="formatMoneyInput(this)">
     </div>`).join('');
 
   document.getElementById('year-form-grid').innerHTML = `
@@ -2965,7 +2977,7 @@ async function saveYearForm() {
   const data = {};
   for (const c of [...ALL_CATS, ...HIST_ONLY_EXPENSES]) {
     const el = document.getElementById(`yf-${c.code}`);
-    data[c.code] = el && el.value !== '' ? parseFloat(el.value) || 0 : 0;
+    data[c.code] = el && el.value !== '' ? parseMoney(el.value) : 0;
   }
   const prEl = document.getElementById('yf-primary-residence');
   if (prEl && prEl.checked) data.primary_residence = true;
@@ -3115,8 +3127,8 @@ function renderMaintenanceSection(prop) {
             <input type="date" id="mf-date" value="${appTodayIso()}">
           </div>
           <div class="form-group">
-            <label>Cost ($)</label>
-            <input type="number" id="mf-cost" step="0.01" min="0" placeholder="0.00">
+          <label>Cost ($)</label>
+            <input type="text" inputmode="decimal" id="mf-cost" placeholder="0.00" onblur="formatMoneyInput(this)">
           </div>
           <div class="form-group">
             <label>Performed By</label>
@@ -3171,7 +3183,7 @@ function editMaintEntry(id) {
   document.getElementById('mf-edit-id').value = id;
   document.getElementById('mf-description').value = entry.description;
   document.getElementById('mf-date').value = entry.date;
-  document.getElementById('mf-cost').value = entry.cost || 0;
+  document.getElementById('mf-cost').value = moneyInputValue(entry.cost);
   document.getElementById('mf-performed-by').value = entry.performedBy || '';
   document.getElementById('mf-notes').value = entry.notes || '';
   const treatmentEl = document.getElementById('mf-tax-treatment');
@@ -3187,7 +3199,7 @@ async function saveMaintEntry() {
   const editId = document.getElementById('mf-edit-id').value;
   const description = document.getElementById('mf-description').value.trim();
   const date = document.getElementById('mf-date').value;
-  const cost = parseFloat(document.getElementById('mf-cost').value) || 0;
+  const cost = parseMoney(document.getElementById('mf-cost').value);
   const performedBy = document.getElementById('mf-performed-by').value.trim();
   const notes = document.getElementById('mf-notes').value.trim();
   const taxTreatment = document.getElementById('mf-tax-treatment')?.value || 'repair';
@@ -3386,7 +3398,7 @@ function renderMoveInPurchasesSection(prop) {
           </div>
           <div class="form-group">
             <label>Estimated Price ($)</label>
-            <input type="number" id="mip-estimated-price" step="0.01" min="0" placeholder="0.00">
+            <input type="text" inputmode="decimal" id="mip-estimated-price" placeholder="0.00" onblur="formatMoneyInput(this)">
           </div>
           <div class="form-group" style="align-self:end">
             <label style="display:flex;gap:.45rem;align-items:center;font-weight:600;text-transform:none;letter-spacing:0;color:var(--text)">
@@ -3451,7 +3463,7 @@ function editMoveInPurchase(id) {
   document.getElementById('mip-edit-id').value = id;
   document.getElementById('mip-item').value = entry.item || '';
   document.getElementById('mip-date').value = entry.date || MOVE_IN_PURCHASE_DEFAULT_DATE;
-  document.getElementById('mip-estimated-price').value = entry.estimatedPrice || 0;
+  document.getElementById('mip-estimated-price').value = moneyInputValue(entry.estimatedPrice);
   document.getElementById('mip-product-link').value = entry.productLink || '';
   document.getElementById('mip-notes').value = entry.notes || '';
   document.getElementById('mip-purchased').checked = !!entry.purchased;
@@ -3471,7 +3483,7 @@ async function saveMoveInPurchase() {
   const editId = document.getElementById('mip-edit-id').value;
   const item = document.getElementById('mip-item').value.trim();
   const date = document.getElementById('mip-date').value;
-  const estimatedPrice = parseFloat(document.getElementById('mip-estimated-price').value) || 0;
+  const estimatedPrice = parseMoney(document.getElementById('mip-estimated-price').value);
   const productLink = normalizePurchaseLink(document.getElementById('mip-product-link').value);
   const notes = document.getElementById('mip-notes').value.trim();
   const purchased = document.getElementById('mip-purchased').checked;
@@ -3869,7 +3881,7 @@ async function renderInvestmentReturn() {
     // change can't silently overwrite a figure the user already entered.
     const manual = prior ? (prior.manual !== false) : false;
     const value = prior ? prior.value : saleClosingDefault(def, initialCloseoutPrice || 0, defaultSaleState);
-    initialCloseoutCostsTotal += parseFloat(value || '0') || 0;
+    initialCloseoutCostsTotal += parseMoney(value);
     return `
       <div style="display:grid;grid-template-columns:1fr 170px 2.4rem;gap:.5rem;align-items:end;margin-bottom:.55rem">
         <div>
@@ -3924,7 +3936,7 @@ async function renderInvestmentReturn() {
             </div>
             <div class="form-group">
               <label>Final Sale Price ($)</label>
-              <input type="number" id="sale-closeout-price" step="1" min="1" value="${escAttr(String(initialCloseoutPrice))}" placeholder="Actual contract sale price" oninput="syncSaleClosingCosts()">
+              <input type="text" inputmode="decimal" id="sale-closeout-price" value="${escAttr(moneyInputValue(initialCloseoutPrice))}" placeholder="Actual contract sale price" oninput="syncSaleClosingCosts()" onblur="formatMoneyInput(this)">
             </div>
             <div class="form-group">
               <label>Property State</label>
@@ -3970,11 +3982,11 @@ async function renderInvestmentReturn() {
           <div class="form-grid" style="max-width:520px">
             <div class="form-group">
               <label>Purchase Price ($)</label>
-              <input type="number" id="inv-purchase-price" step="1" min="0" value="${escAttr(String(purchasePrice || ''))}" placeholder="e.g. 75000">
+              <input type="text" inputmode="decimal" id="inv-purchase-price" value="${escAttr(moneyInputValue(purchasePrice))}" placeholder="75,000.00" onblur="formatMoneyInput(this)">
             </div>
             <div class="form-group">
               <label>Purchase Closing Costs ($)</label>
-              <input type="number" id="inv-purchase-closing" step="1" min="0" value="${escAttr(String(purchaseClosing || ''))}" placeholder="e.g. 3200">
+              <input type="text" inputmode="decimal" id="inv-purchase-closing" value="${escAttr(moneyInputValue(purchaseClosing))}" placeholder="3,200.00" onblur="formatMoneyInput(this)">
             </div>
             <div class="form-group">
               <label>Purchase Date</label>
@@ -3999,7 +4011,7 @@ async function renderInvestmentReturn() {
             </div>
             <div class="form-group">
               <label>Manual Zillow Estimate Override ($)</label>
-              <input type="number" id="inv-zillow-manual" step="1" min="0" value="${escAttr(String(zillowEstimate || ''))}" placeholder="Enter manually if refresh fails">
+              <input type="text" inputmode="decimal" id="inv-zillow-manual" value="${escAttr(moneyInputValue(zillowEstimate))}" placeholder="Enter manually if refresh fails" onblur="formatMoneyInput(this)">
             </div>
           </div>
           <div class="form-actions mt-2" style="display:flex;gap:.5rem;align-items:center">
@@ -4042,13 +4054,13 @@ async function saveInvestmentConfig() {
   const errEl = document.getElementById('inv-config-error');
   errEl.classList.add('hidden');
 
-  const purchasePrice      = parseFloat(document.getElementById('inv-purchase-price').value) || 0;
-  const purchaseClosing    = parseFloat(document.getElementById('inv-purchase-closing').value) || 0;
+  const purchasePrice      = parseMoney(document.getElementById('inv-purchase-price').value);
+  const purchaseClosing    = parseMoney(document.getElementById('inv-purchase-closing').value);
   const saleClosingCostPct = parseFloat(document.getElementById('inv-sale-pct').value);
   const stateCapGainsPct   = parseFloat(document.getElementById('inv-state-cgt').value);
   const purchaseDate       = document.getElementById('inv-purchase-date').value || null;
   const zillowUrl          = document.getElementById('inv-zillow-url').value.trim();
-  const manualEstimate     = parseFloat(document.getElementById('inv-zillow-manual').value) || null;
+  const manualEstimate     = parseMoney(document.getElementById('inv-zillow-manual').value) || null;
 
   if (isNaN(saleClosingCostPct) || saleClosingCostPct < 0 || saleClosingCostPct > 20) {
     errEl.textContent = 'Sale closing cost % must be between 0 and 20.';
@@ -4095,7 +4107,7 @@ async function closeOutInvestmentSale() {
   syncSaleClosingCosts();
   const closingBreakdown = getSaleClosingBreakdownFromForm();
   const saleDate = document.getElementById('sale-closeout-date')?.value || '';
-  const salePrice = parseFloat(document.getElementById('sale-closeout-price')?.value || '0');
+  const salePrice = parseMoney(document.getElementById('sale-closeout-price')?.value);
   const saleClosingCosts = closingBreakdown.total;
   const notes = document.getElementById('sale-closeout-notes')?.value.trim() || '';
 
@@ -4550,7 +4562,7 @@ async function renderAddEntry() {
           <div class="form-group">
             <label>Amount ($)</label>
             <div class="amount-row">
-              <input type="number" id="entry-amount" step="0.01" min="0.01" placeholder="0.00" required>
+              <input type="text" inputmode="decimal" id="entry-amount" placeholder="0.00" required onblur="formatMoneyInput(this)">
               <button type="button" class="btn btn-default-amt hidden" id="use-default-btn"
                 onclick="useDefaultAmount()">—</button>
             </div>
@@ -4613,7 +4625,7 @@ function useDefaultAmount() {
   const cat  = document.getElementById('entry-cat').value;
   const def  = (state.data[prop].defaults || {})[cat];
   if (def != null) {
-    document.getElementById('entry-amount').value = def;
+    document.getElementById('entry-amount').value = moneyInputValue(def);
     document.getElementById('entry-date').focus();
   }
 }
@@ -4634,7 +4646,7 @@ async function saveEntry() {
 
   // Validate
   if (!date) { showEntryError('Please enter a date.'); return; }
-  const amount = parseFloat(amtRaw);
+  const amount = parseMoney(amtRaw);
   if (isNaN(amount) || amount <= 0) { showEntryError('Please enter a valid amount greater than $0.'); return; }
 
   try {
@@ -4871,10 +4883,10 @@ function tpCalc(tp, rentalRows) {
 }
 
 function tpFld(id, label, val, locked) {
-  const dis = locked ? 'disabled style="background:var(--bg);cursor:not-allowed"' : '';
+  const dis = locked ? 'disabled style="background:var(--bg);cursor:not-allowed;text-align:right"' : 'style="text-align:right"';
   return `<div class="form-group">
     <label class="tp-lbl">${escHtml(label)}</label>
-    <input type="number" id="${id}" step="0.01" min="0" placeholder="0" value="${val || ''}" oninput="tpChanged()" ${dis}>
+    <input type="text" inputmode="decimal" id="${id}" placeholder="0.00" value="${escAttr(moneyInputValue(val))}" oninput="tpChanged()" onblur="formatMoneyInput(this)" ${dis}>
   </div>`;
 }
 
@@ -4910,7 +4922,7 @@ function tpBuildPayments(payments) {
   return payments.map((p, i) => `
     <div class="tp-pay-row">
       <input type="date" value="${escAttr(p.date || '')}" onchange="tpPayDate(${i},this.value)">
-      <input type="number" step="0.01" min="0" placeholder="0.00" value="${p.amount || ''}" onchange="tpPayAmt(${i},this.value)">
+      <input type="text" inputmode="decimal" placeholder="0.00" value="${escAttr(moneyInputValue(p.amount))}" onchange="tpPayAmt(${i},this.value)" onblur="formatMoneyInput(this)">
       <button class="btn btn-ghost btn-sm" style="color:var(--danger);padding:.2rem .5rem" onclick="tpRemovePayment(${i})">×</button>
     </div>`).join('');
 }
@@ -5334,7 +5346,7 @@ function _budgetEditRow(section, item) {
   return `<div class="budget-item budget-edit-row">
     <input type="text" id="bedit-name" placeholder="Name" value="${escAttr(name)}"
            style="flex:1;min-width:0;padding:.3rem .5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);font-size:.875rem">
-    <input type="number" id="bedit-amt" placeholder="0.00" value="${escAttr(String(amount))}" step="0.01" min="0"
+    <input type="text" inputmode="decimal" id="bedit-amt" placeholder="0.00" value="${escAttr(moneyInputValue(amount))}" onblur="formatMoneyInput(this)"
            style="width:90px;padding:.3rem .5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);font-size:.875rem"
            onkeydown="if(event.key==='Enter')budgetSave('${escAttr(section)}','${id}')">
     <button class="btn btn-primary btn-sm" style="padding:.3rem .6rem" onclick="budgetSave('${escAttr(section)}','${id}')">Save</button>
@@ -5443,9 +5455,9 @@ function _renderBudgetWorksheetModal() {
       <div style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid var(--border);font-size:.875rem">
         <span style="flex:1">${escHtml(f.label)}</span>
         <span style="font-size:.75rem;color:var(--text-muted);width:1.5rem;text-align:center">${sign}</span>
-        <input type="number" id="ws-${f.key}" value="${val}" step="0.01" min="0"
+        <input type="text" inputmode="decimal" id="ws-${f.key}" value="${escAttr(moneyInputValue(val))}"
                style="width:110px;padding:.25rem .4rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);font-size:.85rem;text-align:right"
-               oninput="updateWsNet()">
+               oninput="updateWsNet()" onblur="formatMoneyInput(this)">
         <span class="budget-item-amt" id="ws-amt-${f.key}">${fmt(val)}</span>
       </div>`;
   }).join('');
@@ -5467,7 +5479,7 @@ function updateWsNet() {
   const ws = state.budget.worksheets?.[_bModal.incomeItemId] || {};
   PROP_INCOME_FIELDS.forEach(f => {
     const input = document.getElementById(`ws-${f.key}`);
-    if (input) ws[f.key] = parseFloat(input.value) || 0;
+    if (input) ws[f.key] = parseMoney(input.value);
   });
   const net = calcPropertyNet(ws);
   const netEl = document.getElementById('ws-net');
@@ -5504,7 +5516,7 @@ async function saveBudgetWorksheet() {
 
 async function budgetSave(section, id) {
   const name = document.getElementById('bedit-name')?.value.trim();
-  const amount = parseFloat(document.getElementById('bedit-amt')?.value) || 0;
+  const amount = parseMoney(document.getElementById('bedit-amt')?.value);
   if (!name) { document.getElementById('bedit-name')?.focus(); return; }
 
   const b = state.budget;
@@ -5977,7 +5989,7 @@ function _renderMomBudgetHtml() {
         <span class="mb-fixed-paid">
           <span class="mb-fixed-paid-label">${isVariableBill ? 'Paid amount' : 'Amount'}</span>
           ${isVariableBill
-            ? `<span class="mb-money"><input class="form-input" type="number" step=".01" min="0" ${canEnterPaidAmount ? '' : 'disabled'} value="${escAttr(paid ? String(paidAmount) : '')}" placeholder="${escAttr(budgetedAmount.toFixed(2))}" onchange="mbUpdateFixedActual('${escAttr(item.id)}', this.value)"></span>`
+            ? `<span class="mb-money"><input class="form-input" type="text" inputmode="decimal" ${canEnterPaidAmount ? '' : 'disabled'} value="${escAttr(paid ? moneyInputValue(paidAmount) : '')}" placeholder="${escAttr(moneyInputValue(budgetedAmount))}" onchange="mbUpdateFixedActual('${escAttr(item.id)}', this.value)" onblur="formatMoneyInput(this)"></span>`
             : `<span class="mb-fixed-paid-value">${fmt(budgetedAmount)}</span>`}
           ${over ? `<span class="mb-fixed-over">+${fmt(over)} over</span>` : ''}
         </span>
@@ -6083,7 +6095,7 @@ function _renderMomBudgetHtml() {
             <div class="tp-pay-row">
               <span style="flex:1;font-weight:600">Discretionary</span>
               ${mbLockButton(t.variableLocks.discretionary, `mbToggleVariableLock('discretionary')`, t.variableLocks.discretionary ? 'Unlock discretionary budget' : 'Lock discretionary budget')}
-              <span class="mb-money mb-variable-money"><input type="number" class="form-input" step=".01" min="0" value="${escAttr(t.variable.discretionary.toFixed(2))}" ${t.variableLocks.discretionary ? 'disabled' : ''} onchange="mbUpdateVariable('discretionary', this.value)"></span>
+              <span class="mb-money mb-variable-money"><input type="text" inputmode="decimal" class="form-input" value="${escAttr(moneyInputValue(t.variable.discretionary))}" ${t.variableLocks.discretionary ? 'disabled' : ''} onchange="mbUpdateVariable('discretionary', this.value)" onblur="formatMoneyInput(this)"></span>
             </div>
           </div>
         </div>
@@ -6141,8 +6153,8 @@ function mbRmdCard() {
             <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Traditional 401(k) gross balance on Dec 31, ${priorYear}</label>
             <div style="position:relative">
               <span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
-              <input type="number" class="form-input" min="0" step="0.01" value="${escAttr(r.balance ? String(r.balance) : '')}" placeholder="0.00"
-                     onchange="mbUpdateRmd('balance', this.value)" style="width:100%;padding-left:1.5rem;font-weight:600">
+              <input type="text" inputmode="decimal" class="form-input" value="${escAttr(moneyInputValue(r.balance))}" placeholder="0.00"
+                     onchange="mbUpdateRmd('balance', this.value)" onblur="formatMoneyInput(this)" style="width:100%;padding-left:1.5rem;font-weight:600">
             </div>
           </div>
           <div style="flex:1;min-width:140px">
@@ -6161,7 +6173,7 @@ function mbRmdCard() {
 async function mbUpdateRmd(field, value) {
   if (!state.momBudget.rmd) state.momBudget.rmd = { balance: 0, year: CURRENT_YEAR };
   if (field === 'balance') {
-    const v = parseFloat(value);
+    const v = parseMoney(value);
     state.momBudget.rmd.balance = (isFinite(v) && v >= 0) ? v : 0;
   } else if (field === 'year') {
     state.momBudget.rmd.year = mbNormalizeRmdYear(value);
@@ -6183,7 +6195,7 @@ function mbTemplateRow(section, item) {
   return `<div class="tp-pay-row">
     <input type="text" class="form-input mb-template-name" value="${escAttr(item.name)}" onchange="mbUpdateTemplateItem('${section}','${escAttr(item.id)}','name',this.value)">
     ${mbLockButton(locked, `mbToggleTemplateLock('${section}','${escAttr(item.id)}')`, locked ? 'Unlock amount' : 'Lock amount')}
-    <span class="mb-money mb-template-money"><input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(item.amount.toFixed(2))}" ${locked ? 'disabled' : ''} onchange="mbUpdateTemplateItem('${section}','${escAttr(item.id)}','amount',this.value)"></span>
+    <span class="mb-money mb-template-money"><input type="text" inputmode="decimal" class="form-input mb-template-amount" value="${escAttr(moneyInputValue(item.amount))}" ${locked ? 'disabled' : ''} onchange="mbUpdateTemplateItem('${section}','${escAttr(item.id)}','amount',this.value)" onblur="formatMoneyInput(this)"></span>
     <button class="btn btn-ghost btn-sm" style="color:var(--danger)" title="Delete ${escAttr(item.name)}" onclick="mbDeleteTemplateItem('${section}','${escAttr(item.id)}')">×</button>
   </div>`;
 }
@@ -6220,7 +6232,7 @@ function mbFixedTemplateRow(item, index = 0) {
     </div>
     <div class="mb-fixed-template-row-controls">
       ${mbLockButton(locked, `mbToggleTemplateLock('fixed','${escAttr(item.id)}')`, locked ? 'Unlock monthly reserve' : 'Lock monthly reserve')}
-      <span class="mb-money mb-template-money"><input type="number" class="form-input mb-template-amount" step=".01" min="0" value="${escAttr(item.amount.toFixed(2))}" ${locked ? 'disabled' : ''} title="Monthly reserve" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','amount',this.value)"></span>
+      <span class="mb-money mb-template-money"><input type="text" inputmode="decimal" class="form-input mb-template-amount" value="${escAttr(moneyInputValue(item.amount))}" ${locked ? 'disabled' : ''} title="Monthly reserve" onchange="mbUpdateTemplateItem('fixed','${escAttr(item.id)}','amount',this.value)" onblur="formatMoneyInput(this)"></span>
     </div>
   </div>`;
 }
@@ -6254,7 +6266,7 @@ async function mbSaveTemplateAdd() {
   if (!['income', 'fixed'].includes(section)) return;
   const err = document.getElementById('mom-template-error');
   const name = document.getElementById('mom-template-name')?.value.trim() || '';
-  const amount = parseFloat(document.getElementById('mom-template-amount')?.value) || 0;
+  const amount = parseMoney(document.getElementById('mom-template-amount')?.value);
   if (!name) {
     err.textContent = 'Enter a name.';
     err.classList.remove('hidden');
@@ -6293,13 +6305,13 @@ function mbLedgerCard(title, section, entries, label, nameKey, options = {}) {
     ? `<div class="mb-ledger-add-row has-description">
         <input type="date" id="mb-${section}-date" class="form-input mb-date-input" value="${appTodayIso()}">
         <input type="text" id="mb-${section}-name" class="form-input" placeholder="${escAttr(label)}">
-        <span class="mb-money"><input type="number" id="mb-${section}-amount" class="form-input" step=".01" min="0" placeholder="0.00"></span>
+        <span class="mb-money"><input type="text" inputmode="decimal" id="mb-${section}-amount" class="form-input" placeholder="0.00" onblur="formatMoneyInput(this)"></span>
         <button class="btn btn-primary btn-sm" onclick="mbAddLedger('${section}','${nameKey}')">Add</button>
       </div>`
     : `<div class="mb-ledger-add-row no-description">
         <input type="date" id="mb-${section}-date" class="form-input mb-date-input" value="${appTodayIso()}">
         <span class="mb-ledger-spacer" aria-hidden="true"></span>
-        <span class="mb-money"><input type="number" id="mb-${section}-amount" class="form-input" step=".01" min="0" placeholder="0.00"></span>
+        <span class="mb-money"><input type="text" inputmode="decimal" id="mb-${section}-amount" class="form-input" placeholder="0.00" onblur="formatMoneyInput(this)"></span>
         <button class="btn btn-primary btn-sm" onclick="mbAddLedger('${section}','${nameKey}')">Add</button>
       </div>`);
 
@@ -6350,7 +6362,7 @@ async function mbUpdateFixedActual(id, value) {
   const m = state.momBudget.months[_mbMonth] || (state.momBudget.months[_mbMonth] = mbBlankMonth());
   if (!m.fixedActual) m.fixedActual = {};
   if (!m.fixedPaid) m.fixedPaid = {};
-  const amount = parseFloat(value) || 0;
+  const amount = parseMoney(value);
   const item = state.momBudget.template.fixed.find(i => i.id === id);
   if (!item) return;
   if (mbFixedBillKind(item) === 'fixed') return;
@@ -6373,7 +6385,7 @@ async function mbAddLedger(section, nameKey) {
   const m = state.momBudget.months[_mbMonth] || (state.momBudget.months[_mbMonth] = mbBlankMonth());
   const date = document.getElementById(`mb-${section}-date`)?.value || appTodayIso();
   const name = document.getElementById(`mb-${section}-name`)?.value.trim() || '';
-  const amount = parseFloat(document.getElementById(`mb-${section}-amount`)?.value) || 0;
+  const amount = parseMoney(document.getElementById(`mb-${section}-amount`)?.value);
   const hasDescription = !['groceries', 'gas'].includes(section);
   if ((hasDescription && !name) || amount <= 0) return;
   if (!Array.isArray(m[section])) m[section] = [];
@@ -6396,7 +6408,7 @@ async function mbUpdateTemplateItem(section, id, field, value) {
   if (!item) return;
   if (field === 'amount' && item.locked) return;
   if (field === 'amount' || field === 'paymentAmount') {
-    item[field] = parseFloat(value) || 0;
+    item[field] = parseMoney(value);
     if (section === 'fixed' && field === 'amount' && item.frequency === 'monthly') item.paymentAmount = item.amount;
   } else if (field === 'dueMonth') {
     item.dueMonth = Math.min(12, Math.max(1, Number(value) || 1));
@@ -6445,7 +6457,7 @@ async function mbToggleTemplateLock(section, id) {
 
 async function mbUpdateVariable(key, value) {
   if (state.momBudget.template.variableLocks?.[key]) return;
-  state.momBudget.template.variable[key] = parseFloat(value) || 0;
+  state.momBudget.template.variable[key] = parseMoney(value);
   _renderMomBudgetHtml();
   await _saveMomBudget();
 }
@@ -6499,7 +6511,7 @@ function _solarEntryEditRow(entry) {
     <td><input type="date" id="sentry-date" class="form-input" style="width:135px;font-size:.83rem" value="${escAttr(d)}"></td>
     <td><select id="sentry-code" class="form-input" style="font-size:.83rem">${codeOpts}</select></td>
     <td><input type="text" id="sentry-desc" class="form-input" style="font-size:.83rem" placeholder="Description" value="${escAttr(n)}"></td>
-    <td><input type="number" id="sentry-amt" class="form-input" style="width:95px;text-align:right;font-size:.83rem" step=".01" min="0" placeholder="0.00" value="${escAttr(String(a))}"></td>
+    <td><input type="text" inputmode="decimal" id="sentry-amt" class="form-input" style="width:105px;text-align:right;font-size:.83rem" placeholder="0.00" value="${escAttr(moneyInputValue(a))}" onblur="formatMoneyInput(this)"></td>
     <td style="white-space:nowrap">
       <button class="btn btn-primary btn-sm" onclick="solarSaveEntry('${escAttr(id)}')">Save</button>
       <button class="btn btn-ghost btn-sm" onclick="solarCancelEntry()">Cancel</button>
@@ -6510,8 +6522,8 @@ function _solarEntryEditRow(entry) {
 function _solarSummaryEditRow(year, data) {
   const isNew = year === 'new';
   const inp = (code) =>
-    `<td><input type="number" id="ssum-${code}" class="form-input" step=".01" min="0"
-      style="width:78px;font-size:.78rem" value="${escAttr(String(data?.[code] !== undefined ? data[code] : ''))}"></td>`;
+    `<td><input type="text" inputmode="decimal" id="ssum-${code}" class="form-input"
+      style="width:86px;font-size:.78rem;text-align:right" value="${escAttr(moneyInputValue(data?.[code]))}" onblur="formatMoneyInput(this)"></td>`;
   return `<tr style="background:var(--hover)">
     <td>${isNew
       ? `<input type="number" id="ssum-year" class="form-input" style="width:72px;font-size:.85rem" placeholder="YYYY" min="2000" max="2099">`
@@ -6783,7 +6795,7 @@ function _renderSolarHtml() {
           <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:.04em;margin-bottom:.5rem">Billing Cycle Calculator Defaults (Delmarva Power)</div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-bottom:.75rem">
             <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.82rem">
-              Customer Charge ($)<input type="number" id="scfg-cust" class="form-input" step=".01" value="${escAttr(String(cr.customerCharge ?? 9.43))}">
+              Customer Charge ($)<input type="text" inputmode="decimal" id="scfg-cust" class="form-input" value="${escAttr(moneyInputValue(cr.customerCharge ?? 9.43))}" onblur="formatMoneyInput(this)">
             </label>
             <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.82rem">
               Distribution Charge ($/kWh)<input type="number" id="scfg-dist" class="form-input" step=".000001" value="${escAttr(String(cr.distRate ?? 0.062598))}">
@@ -6810,7 +6822,7 @@ function _renderSolarHtml() {
               MD Franchise Tax ($/kWh)<input type="number" id="scfg-md-franchise-tax" class="form-input" step=".000001" value="${escAttr(String(cr.mdFranchiseTaxRate ?? 0.000620))}">
             </label>
             <label style="display:flex;flex-direction:column;gap:.2rem;font-size:.82rem">
-              Universal Service Program ($)<input type="number" id="scfg-universal-service" class="form-input" step=".01" value="${escAttr(String(cr.universalServiceProgramAmount ?? 0.32))}">
+              Universal Service Program ($)<input type="text" inputmode="decimal" id="scfg-universal-service" class="form-input" value="${escAttr(moneyInputValue(cr.universalServiceProgramAmount ?? 0.32))}" onblur="formatMoneyInput(this)">
             </label>
           </div>
           <div id="solar-cfg-error" class="error-msg hidden"></div>
@@ -6881,7 +6893,7 @@ async function solarSaveEntry(id) {
   const date   = document.getElementById('sentry-date')?.value?.trim();
   const code   = document.getElementById('sentry-code')?.value;
   const desc   = document.getElementById('sentry-desc')?.value?.trim() || '';
-  const amount = parseFloat(document.getElementById('sentry-amt')?.value);
+  const amount = parseMoney(document.getElementById('sentry-amt')?.value);
 
   if (!date) { alert('Please enter a date.'); return; }
   if (isNaN(amount) || amount < 0) { alert('Please enter a valid non-negative amount.'); return; }
@@ -6952,7 +6964,7 @@ async function solarSaveSummary(yearArg) {
 
   const data = {};
   for (const sc of SOLAR_CODES) {
-    const val = parseFloat(document.getElementById(`ssum-${sc.code}`)?.value);
+    const val = parseMoney(document.getElementById(`ssum-${sc.code}`)?.value);
     if (!isNaN(val) && val >= 0) data[sc.code] = val;
   }
 
@@ -7000,7 +7012,7 @@ async function saveSolarConfig() {
   const laborWarranty    = parseInt(document.getElementById('scfg-lwarn')?.value);
   const srecsPerYear     = parseInt(document.getElementById('scfg-srecs')?.value);
   const calcRates = {
-    customerCharge: parseFloat(document.getElementById('scfg-cust')?.value),
+    customerCharge: parseMoney(document.getElementById('scfg-cust')?.value),
     distRate:       parseFloat(document.getElementById('scfg-dist')?.value),
     transRate:      parseFloat(document.getElementById('scfg-trans')?.value),
     procurementCostAdjRate: parseFloat(document.getElementById('scfg-procurement')?.value),
@@ -7008,7 +7020,7 @@ async function saveSolarConfig() {
     empowerMdChargeRate: parseFloat(document.getElementById('scfg-empower-md')?.value),
     administrativeCreditRate: parseFloat(document.getElementById('scfg-admin-credit')?.value),
     mdFranchiseTaxRate: parseFloat(document.getElementById('scfg-md-franchise-tax')?.value),
-    universalServiceProgramAmount: parseFloat(document.getElementById('scfg-universal-service')?.value),
+    universalServiceProgramAmount: parseMoney(document.getElementById('scfg-universal-service')?.value),
   };
 
   const newCfg = {
@@ -7037,7 +7049,7 @@ async function saveSolarConfig() {
 
 function openSolarCalcModal() {
   const cr = (state.solar.config || {}).calcRates || {};
-  document.getElementById('calc-cust').value   = cr.customerCharge ?? 9.43;
+  document.getElementById('calc-cust').value   = moneyInputValue(cr.customerCharge ?? 9.43);
   document.getElementById('calc-dist').value   = cr.distRate  ?? 0.062598;
   document.getElementById('calc-trans').value  = cr.transRate ?? 0.120590;
   document.getElementById('calc-procurement').value = cr.procurementCostAdjRate ?? cr.supplyRate ?? 0.0066884;
@@ -7045,7 +7057,7 @@ function openSolarCalcModal() {
   document.getElementById('calc-empower-md').value = cr.empowerMdChargeRate ?? 0.020055;
   document.getElementById('calc-admin-credit').value = cr.administrativeCreditRate ?? cr.administrativeCreditAmount ?? -0.001393;
   document.getElementById('calc-md-franchise-tax').value = cr.mdFranchiseTaxRate ?? 0.000620;
-  document.getElementById('calc-universal-service').value = cr.universalServiceProgramAmount ?? 0.32;
+  document.getElementById('calc-universal-service').value = moneyInputValue(cr.universalServiceProgramAmount ?? 0.32);
   document.getElementById('calc-kwh').value = '';
   document.getElementById('calc-result-amount').textContent    = '—';
   document.getElementById('calc-result-breakdown').textContent = '';
@@ -7062,7 +7074,7 @@ function closeSolarCalcModal() {
 function updateCalcResult() {
   const kwh    = parseFloat(document.getElementById('calc-kwh')?.value) || 0;
   const noSolarKwh = kwh;
-  const cust   = parseFloat(document.getElementById('calc-cust')?.value) || 0;
+  const cust   = parseMoney(document.getElementById('calc-cust')?.value);
   const dist   = parseFloat(document.getElementById('calc-dist')?.value) || 0;
   const trans  = parseFloat(document.getElementById('calc-trans')?.value) || 0;
   const procurement = parseFloat(document.getElementById('calc-procurement')?.value) || 0;
@@ -7070,7 +7082,7 @@ function updateCalcResult() {
   const empowerMdRate = parseFloat(document.getElementById('calc-empower-md')?.value) || 0;
   const administrativeCreditRate = parseFloat(document.getElementById('calc-admin-credit')?.value) || 0;
   const mdFranchiseTaxRate = parseFloat(document.getElementById('calc-md-franchise-tax')?.value) || 0;
-  const universalServiceProgram = parseFloat(document.getElementById('calc-universal-service')?.value) || 0;
+  const universalServiceProgram = parseMoney(document.getElementById('calc-universal-service')?.value);
 
   if (!kwh) {
     document.getElementById('calc-result-amount').textContent    = '—';
@@ -7365,8 +7377,8 @@ async function renderTaxPlanning() {
         </table>
         <div class="form-group" style="max-width:240px">
           <label class="tp-lbl">Total Depreciation Deduction ($)</label>
-          <input type="number" id="tp-rental-depr" step="0.01" min="0"
-                 value="${tp.rental_depr !== undefined ? tp.rental_depr : autoDepr}" oninput="tpChanged()">
+          <input type="text" inputmode="decimal" id="tp-rental-depr"
+                 value="${escAttr(moneyInputValue(tp.rental_depr !== undefined ? tp.rental_depr : autoDepr))}" oninput="tpChanged()" onblur="formatMoneyInput(this)">
           <div class="tp-note">Auto-filled from depreciation schedules. Adjust if needed.</div>
         </div>
       </div>
@@ -7446,15 +7458,15 @@ async function renderTaxPlanning() {
           ${tpFld('tp-ira','Traditional IRA Contribution',tp.ira,tp.ira_locked)}
           <div class="form-group">
             <label class="tp-lbl">½ SE Tax (auto-calculated)</label>
-            <input type="number" id="tp-half-se" disabled style="background:var(--bg);cursor:not-allowed" value="0">
+            <input type="text" id="tp-half-se" disabled style="background:var(--bg);cursor:not-allowed;text-align:right" value="0.00">
           </div>
         </div>
         <div class="tp-group">Standard Deduction (${CURRENT_YEAR} MFJ default: ${fmt(TP_STD_DEDUCTION)})</div>
         <div class="tp-grid-2" style="margin-bottom:.75rem">
           <div class="form-group">
             <label class="tp-lbl">Amount ($)</label>
-            <input type="number" id="tp-std-ded" step="1" min="0"
-                   value="${tp.std_ded || TP_STD_DEDUCTION}" oninput="tpChanged()">
+            <input type="text" inputmode="decimal" id="tp-std-ded"
+                   value="${escAttr(moneyInputValue(tp.std_ded || TP_STD_DEDUCTION))}" oninput="tpChanged()" onblur="formatMoneyInput(this)">
           </div>
         </div>
         <div class="tp-group">QBI Deduction</div>
@@ -7709,7 +7721,7 @@ function _deductionEditRow(d) {
       <select id="ded-edit-cat" style="padding:.3rem .4rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);font-size:.85rem;width:100%">${catOpts}</select>
     </td>
     <td style="padding:.35rem .5rem">
-      <input type="number" id="ded-edit-amount" value="${d.amount || ''}" step="0.01" min="0.01" placeholder="0.00" style="width:100%;padding:.3rem .4rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);font-size:.85rem;text-align:right">
+      <input type="text" inputmode="decimal" id="ded-edit-amount" value="${escAttr(moneyInputValue(d.amount))}" placeholder="0.00" onblur="formatMoneyInput(this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);font-size:.85rem;text-align:right">
     </td>
     <td style="padding:.35rem .5rem;text-align:right;white-space:nowrap">
       <button class="btn btn-primary btn-sm" style="padding:.3rem .5rem" onclick="dedSave('${d.id}')">Save</button>
@@ -7741,7 +7753,7 @@ async function dedSave(id) {
   const date = document.getElementById('ded-edit-date').value;
   const description = document.getElementById('ded-edit-desc').value.trim();
   const category = document.getElementById('ded-edit-cat').value;
-  const amount = parseFloat(document.getElementById('ded-edit-amount').value);
+  const amount = parseMoney(document.getElementById('ded-edit-amount').value);
 
   if (!date || !/\d{4}-\d{2}-\d{2}/.test(date)) {
     alert('Please enter a valid date.');
@@ -8033,9 +8045,9 @@ function _renderSavingsHtml() {
           <label style="display:block;font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Robinhood Checking</label>
           <div style="position:relative">
             <span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
-            <input type="number" id="sav-acct-robinhood-checking" class="form-input" step="0.01" min="0"
-                   value="${escAttr(String(s.accounts.robinhoodChecking || 0))}"
-                   onchange="savUpdateAccount('robinhoodChecking', this.value)"
+            <input type="text" inputmode="decimal" id="sav-acct-robinhood-checking" class="form-input"
+                   value="${escAttr(moneyInputValue(s.accounts.robinhoodChecking || 0))}"
+                   onchange="savUpdateAccount('robinhoodChecking', this.value)" onblur="formatMoneyInput(this)"
                    style="width:100%;padding-left:1.5rem;font-size:1.05rem;font-weight:600">
           </div>
         </div>
@@ -8043,9 +8055,9 @@ function _renderSavingsHtml() {
           <label style="display:block;font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Robinhood Brokerage</label>
           <div style="position:relative">
             <span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
-            <input type="number" id="sav-acct-robinhood-brokerage" class="form-input" step="0.01" min="0"
-                   value="${escAttr(String(s.accounts.robinhoodBrokerage || 0))}"
-                   onchange="savUpdateAccount('robinhoodBrokerage', this.value)"
+            <input type="text" inputmode="decimal" id="sav-acct-robinhood-brokerage" class="form-input"
+                   value="${escAttr(moneyInputValue(s.accounts.robinhoodBrokerage || 0))}"
+                   onchange="savUpdateAccount('robinhoodBrokerage', this.value)" onblur="formatMoneyInput(this)"
                    style="width:100%;padding-left:1.5rem;font-size:1.05rem;font-weight:600">
           </div>
         </div>
@@ -8200,7 +8212,7 @@ function _savEditRow(o) {
       <input type="text" id="sav-edit-note" class="form-input" placeholder="Note (optional)" value="${escAttr(o.note || '')}" style="width:100%;font-size:.75rem">
     </td>
     <td style="padding:.4rem .6rem;border-bottom:1px solid var(--border)">
-      <input type="number" id="sav-edit-amount" class="form-input" step="0.01" min="0" placeholder="0" value="${escAttr(String(o.amount ?? ''))}" style="width:100%;font-size:.85rem;text-align:right">
+      <input type="text" inputmode="decimal" id="sav-edit-amount" class="form-input" placeholder="0.00" value="${escAttr(moneyInputValue(o.amount))}" onblur="formatMoneyInput(this)" style="width:100%;font-size:.85rem;text-align:right">
     </td>
     <td style="padding:.4rem .6rem;border-bottom:1px solid var(--border);text-align:center">
       <select id="sav-edit-freq" class="form-input" style="font-size:.8rem;padding:.25rem">
@@ -8217,7 +8229,7 @@ function _savEditRow(o) {
 }
 
 async function savUpdateAccount(key, value) {
-  const v = parseFloat(value);
+  const v = parseMoney(value);
   state.savings.accounts[key] = isFinite(v) && v >= 0 ? v : 0;
   await saveSavings();
   _renderSavingsHtml();
@@ -8267,7 +8279,7 @@ function savCancelEdit() {
 async function savSave(id) {
   const name = (document.getElementById('sav-edit-name')?.value || '').trim();
   const note = (document.getElementById('sav-edit-note')?.value || '').trim();
-  const amount = parseFloat(document.getElementById('sav-edit-amount')?.value || '0') || 0;
+  const amount = parseMoney(document.getElementById('sav-edit-amount')?.value);
   const freqRaw = document.getElementById('sav-edit-freq')?.value || '1';
   const kind = freqRaw === 'static' ? 'static' : 'recurring';
   const ppy = freqRaw === '2' ? 2 : 1;
@@ -8625,7 +8637,7 @@ function fsRenderCard() {
           <label style="display:block;font-size:.66rem;font-weight:600;color:var(--text-muted);margin-bottom:.2rem">Budget item</label>
           <select class="form-input" style="width:100%;font-size:.85rem" onchange="fsUpdateMortgage('itemId', this.value)">${mortgageOptions || '<option value="">— none in Mortgage category —</option>'}</select>
         </div>
-        ${mInput('loanAmount', 'Loan amount', `type="number" min="1" step="1000" value="${escAttr(String(m.loanAmount))}"`)}
+        ${mInput('loanAmount', 'Loan amount', `type="text" inputmode="decimal" value="${escAttr(moneyInputValue(m.loanAmount))}" onblur="formatMoneyInput(this)"`)}
         ${mInput('ratePct', 'Rate % (fixed)', `type="number" min="0.01" step="0.01" value="${escAttr(String(m.ratePct))}"`)}
         ${mInput('termYears', 'Term (yrs)', `type="number" min="1" step="1" value="${escAttr(String(m.termYears))}"`)}
         ${mInput('firstPayment', 'First payment', `type="month" value="${escAttr(m.firstPayment)}"`)}
@@ -8676,13 +8688,13 @@ function fsRenderCard() {
         </div>
         <div style="flex:1;min-width:110px">
           <label style="display:block;font-size:.66rem;font-weight:600;color:var(--text-muted);margin-bottom:.2rem">Her portion / mo</label>
-          <input class="form-input" style="width:100%;font-size:.85rem" type="number" min="1" step="1" value="${escAttr(String(fb.amount))}"
-                 onchange="fsUpdateFoodBenchmark('amount', this.value)">
+          <input class="form-input" style="width:100%;font-size:.85rem" type="text" inputmode="decimal" value="${escAttr(moneyInputValue(fb.amount))}"
+                 onchange="fsUpdateFoodBenchmark('amount', this.value)" onblur="formatMoneyInput(this)">
         </div>
         <div style="flex:1;min-width:110px">
           <label style="display:block;font-size:.66rem;font-weight:600;color:var(--text-muted);margin-bottom:.2rem">Supplies allowance</label>
-          <input class="form-input" style="width:100%;font-size:.85rem" type="number" min="0" step="1" value="${escAttr(String(fb.suppliesAllowance))}"
-                 onchange="fsUpdateFoodBenchmark('suppliesAllowance', this.value)">
+          <input class="form-input" style="width:100%;font-size:.85rem" type="text" inputmode="decimal" value="${escAttr(moneyInputValue(fb.suppliesAllowance))}"
+                 onchange="fsUpdateFoodBenchmark('suppliesAllowance', this.value)" onblur="formatMoneyInput(this)">
         </div>
         <div style="flex:3;min-width:220px">
           <label style="display:block;font-size:.66rem;font-weight:600;color:var(--text-muted);margin-bottom:.2rem">Benchmark source</label>
@@ -8867,7 +8879,7 @@ async function fsUpdateMortgage(key, value) {
   } else if (key === 'itemId' || key === 'firstPayment') {
     m[key] = String(value || '');
   } else {
-    const v = parseFloat(value);
+    const v = key === 'loanAmount' ? parseMoney(value) : parseFloat(value);
     if (isFinite(v) && v > 0) m[key] = v;
   }
   fsSyncBudgetIncome();
@@ -8884,10 +8896,10 @@ async function fsUpdateFoodBenchmark(key, value) {
   } else if (key === 'sourceLabel') {
     fb.sourceLabel = String(value ?? '').trim() || FS_USDA_DEFAULT_SOURCE;
   } else if (key === 'amount') {
-    const v = parseFloat(value);
+    const v = parseMoney(value);
     if (isFinite(v) && v > 0) fb.amount = v;
   } else if (key === 'suppliesAllowance') {
-    const v = parseFloat(value);
+    const v = parseMoney(value);
     if (isFinite(v) && v >= 0) fb.suppliesAllowance = v;
   }
   fsSyncBudgetIncome();
@@ -9203,7 +9215,7 @@ function fsPrintAgreement() {
 
 function tpReadForm() {
   const tp = tpLoadLocal(); // get existing (preserves estimated_payments)
-  const g = id => { const el = document.getElementById(id); return el && el.value !== '' ? parseFloat(el.value) || 0 : 0; };
+  const g = id => { const el = document.getElementById(id); return el && el.value !== '' ? tpN(el.value) : 0; };
   const gc = id => { const el = document.getElementById(id); return el ? el.checked : true; };
   if (!tp.navy_locked) { tp.navy_gross = g('tp-navy-gross'); tp.navy_fed = g('tp-navy-fed'); tp.navy_state = g('tp-navy-state'); }
   const ageEl = document.getElementById('tp-navy-age-55');
@@ -9597,7 +9609,7 @@ function tpUpdateResults(tp) {
   if (warnEl) warnEl.innerHTML = tpAgiWarningsHtml(r, tp);
 
   const hse = document.getElementById('tp-half-se');
-  if (hse) hse.value = r.halfSeTax.toFixed(2);
+  if (hse) hse.value = moneyInputValue(r.halfSeTax);
 
   const el = document.getElementById('tp-results');
   if (!el) return;
@@ -9761,7 +9773,7 @@ function tpPayDate(i, val) {
 
 function tpPayAmt(i, val) {
   const tp = tpReadForm();
-  if (tp.estimated_payments?.[i]) { tp.estimated_payments[i].amount = parseFloat(val) || 0; tpSave(tp); tpUpdateResults(tp); }
+  if (tp.estimated_payments?.[i]) { tp.estimated_payments[i].amount = parseMoney(val); tpSave(tp); tpUpdateResults(tp); }
 }
 
 // ── Security Helpers ──────────────────────────────────────────────────────────
