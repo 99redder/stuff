@@ -9581,6 +9581,10 @@ function tpAgiWarningsHtml(r, tp) {
     add('hit', 'Maryland capital gains surcharge (2%)',
       `Federal AGI over ${fmt(MD_CG_SURCHARGE_AGI)} triggers Maryland's 2% surcharge on net capital gains (TY2025+) — <strong>${fmt(r.md.cgSurcharge)}</strong> on ${fmt(r.md.cgSurchargeBase)} of net gains is included in the Maryland estimate. Primary-residence sales under $1.5M and retirement-account gains are exempt.`,
       [['Comptroller of Maryland: Technical Bulletin 58', 'https://www.marylandcomptroller.gov/legal-library/tb-58-dec-29-2025.html']]);
+  } else if (agi > MD_CG_SURCHARGE_AGI) {
+    add('hit', 'Maryland capital gains surcharge (2%)',
+      `Federal AGI is over the ${fmt(MD_CG_SURCHARGE_AGI)} threshold — any net capital gain realized this year (stock/crypto LT gains, a rental sale's gain + depreciation recapture) draws Maryland's extra 2% surcharge on the full gain. No gains are in this plan yet, so $0 is modeled. Primary-residence sales under $1.5M and retirement-account gains are exempt.`,
+      [['Comptroller of Maryland: Technical Bulletin 58', 'https://www.marylandcomptroller.gov/legal-library/tb-58-dec-29-2025.html']]);
   } else if (near(MD_CG_SURCHARGE_AGI, agi)) {
     add('near', 'Maryland capital gains surcharge (2%)',
       `AGI is within ${fmt(MD_CG_SURCHARGE_AGI - agi)} of the ${fmt(MD_CG_SURCHARGE_AGI)} federal-AGI threshold where Maryland adds a 2% surcharge to all net capital gains — a property sale that crosses it is surcharged on the whole gain, not just the excess.`,
