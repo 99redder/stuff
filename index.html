@@ -2205,6 +2205,14 @@ function onSaleClosingCostInput(code) {
   syncSaleClosingCosts();
 }
 
+function formatSaleClosingCostInput(code) {
+  const input = document.getElementById(`sale-cost-${code}`);
+  if (!input) return;
+  const value = parseFloat(input.value || '0') || 0;
+  input.value = value.toFixed(2);
+  syncSaleClosingCosts();
+}
+
 function onSaleCloseoutFieldInput() {
   saveSaleCloseoutDraft();
 }
@@ -3852,12 +3860,15 @@ async function renderInvestmentReturn() {
     const value = prior ? prior.value : saleClosingDefault(def, initialCloseoutPrice || 0, defaultSaleState);
     initialCloseoutCostsTotal += parseFloat(value || '0') || 0;
     return `
-      <div style="display:grid;grid-template-columns:1fr 150px 2.4rem;gap:.5rem;align-items:end;margin-bottom:.55rem">
+      <div style="display:grid;grid-template-columns:1fr 170px 2.4rem;gap:.5rem;align-items:end;margin-bottom:.55rem">
         <div>
           <label for="sale-cost-${def.code}">${escHtml(def.name)}</label>
           <div style="font-size:.75rem;color:var(--text-muted);margin-top:.12rem">${escHtml(def.hint)}</div>
         </div>
-        <input type="number" id="sale-cost-${def.code}" step="0.01" min="0" value="${escAttr(String(value))}" data-manual="${manual ? '1' : '0'}" ${locked ? 'disabled style="background:var(--bg);cursor:not-allowed"' : ''} oninput="onSaleClosingCostInput('${def.code}')">
+        <div style="position:relative">
+          <span style="position:absolute;left:.65rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:700;pointer-events:none">$</span>
+          <input type="number" id="sale-cost-${def.code}" step="0.01" min="0" value="${escAttr((parseFloat(value || '0') || 0).toFixed(2))}" data-manual="${manual ? '1' : '0'}" ${locked ? 'disabled style="background:var(--bg);cursor:not-allowed;padding-left:1.35rem"' : 'style="padding-left:1.35rem"'} oninput="onSaleClosingCostInput('${def.code}')" onblur="formatSaleClosingCostInput('${def.code}')">
+        </div>
         <button class="btn btn-ghost btn-sm" type="button" id="sale-cost-${def.code}-lock" data-locked="${locked ? '1' : '0'}" onclick="toggleSaleClosingCostLock('${def.code}')" title="${locked ? 'Unlock to edit this amount' : 'Lock this amount'}">${locked ? '🔒' : '🔓'}</button>
       </div>`;
   }).join('');
@@ -9922,6 +9933,7 @@ window.saveInvestmentConfig    = saveInvestmentConfig;
 window.closeOutInvestmentSale  = closeOutInvestmentSale;
 window.syncSaleClosingCosts    = syncSaleClosingCosts;
 window.onSaleClosingCostInput  = onSaleClosingCostInput;
+window.formatSaleClosingCostInput = formatSaleClosingCostInput;
 window.onSaleCloseoutFieldInput = onSaleCloseoutFieldInput;
 window.toggleSaleClosingCostLock = toggleSaleClosingCostLock;
 window.refreshZillowEstimate   = refreshZillowEstimate;
