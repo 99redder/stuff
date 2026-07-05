@@ -1579,6 +1579,8 @@ const MAINTENANCE_BASIS_PROPERTIES = new Set(['6AL', '95EB', ...PRIMARY_PROPERTI
 const MOVE_IN_PURCHASE_PROPERTY = '4781MC';
 const MOVE_IN_PURCHASE_DEFAULT_DATE = '2027-02-01';
 const PRIMARY_VIEWS = new Set(['investment-return', 'maintenance']);
+const GLOBAL_HEADER_VIEWS = new Set(['tax-planning', 'budget', 'mom-budget', 'solar', 'deductions', 'savings']);
+const PROPERTY_TAB_RETURN_VIEWS = new Set(['portfolio', ...GLOBAL_HEADER_VIEWS]);
 const APP_TIME_ZONE = 'America/New_York';
 function appTodayParts(date = new Date()) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
@@ -2334,18 +2336,24 @@ function updateViewTabAvailability(prop) {
 }
 
 function switchProperty(prop) {
+  const toolsMenu = document.getElementById('header-tools-menu');
+  if (toolsMenu) toolsMenu.open = false;
   state.currentProperty = prop;
   document.querySelectorAll('.prop-tab').forEach(b => {
     b.classList.toggle('active', b.dataset.prop === prop);
   });
   updateViewTabAvailability(prop);
-  // Redirect to a valid view if current one isn't available for this property
-  if (!isViewAvailableForProperty(prop, state.currentView)) {
+  // Global views keep property tabs visible; choosing a property returns to its default view.
+  if (PROPERTY_TAB_RETURN_VIEWS.has(state.currentView) || !isViewAvailableForProperty(prop, state.currentView)) {
     state.currentView = defaultViewForProperty(prop);
     document.querySelectorAll('.view-btn').forEach(b => {
       b.classList.toggle('active', b.dataset.view === state.currentView);
     });
   }
+  document.getElementById('property-tabs').style.display = '';
+  document.getElementById('view-nav').style.display = '';
+  ['tax-planning-btn', 'budget-btn', 'mom-budget-btn', 'solar-btn', 'deductions-btn', 'savings-btn', 'header-tools-summary']
+    .forEach(id => document.getElementById(id)?.classList.remove('active'));
   renderView();
 }
 
@@ -2364,10 +2372,9 @@ function switchView(view) {
   const isSolar = view === 'solar';
   const isDeductions = view === 'deductions';
   const isSavings = view === 'savings';
-  const isFullscreen = isTaxPlanning || isBudget || isMomBudget || isSolar || isDeductions || isSavings;
-  // Hide property tabs for portfolio, tax planning, budget, solar, deductions, savings
-  document.getElementById('property-tabs').style.display =
-    (view === 'portfolio' || isFullscreen) ? 'none' : '';
+  const isFullscreen = GLOBAL_HEADER_VIEWS.has(view);
+  // Keep property tabs visible even in global views so a property is one click away.
+  document.getElementById('property-tabs').style.display = '';
   // Hide view-nav for fullscreen global views
   document.getElementById('view-nav').style.display = isFullscreen ? 'none' : '';
   // Toggle header button active states
