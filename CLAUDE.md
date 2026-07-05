@@ -1,4 +1,4 @@
-# Rental Property Manager — CLAUDE.md
+# STUFF — CLAUDE.md
 
 Developer reference for AI agents working on this project.
 
@@ -9,7 +9,7 @@ Developer reference for AI agents working on this project.
 A single-page property management app for tracking rental income, expenses, and depreciation across three rental properties (**6AL**, **95EB**, **446BB**) plus two primary residences (**731WO**, **4781MC** / 4781 MC).
 
 Deployed as:
-- **Frontend**: GitHub Pages — static `index.html` served from `https://99redder.github.io/rentals/`
+- **Frontend**: GitHub Pages — static `index.html` served from `https://99redder.github.io/stuff/`
 - **API**: Cloudflare Worker — `https://rentals-api.99redder.workers.dev`
 
 There is no build step. The entire frontend is one self-contained `index.html` (HTML + CSS + JS). Do not introduce bundlers, frameworks, or separate JS/CSS files unless explicitly asked.
@@ -19,7 +19,7 @@ There is no build step. The entire frontend is one self-contained `index.html` (
 ## File Structure
 
 ```
-rentals/
+stuff/
 ├── index.html                  # Entire frontend — all HTML, CSS, and JS
 ├── mom-budget-phone.html       # Public read-only phone PWA for Mom Budget balances
 ├── mom-budget-manifest.webmanifest
@@ -312,7 +312,7 @@ discretionaryAdjusted =
 Separate public read-only page for an Android/Samsung Galaxy phone:
 
 - File: `mom-budget-phone.html`
-- Live URL after GitHub Pages deploy: `https://99redder.github.io/rentals/mom-budget-phone.html`
+- Live URL after GitHub Pages deploy: `https://99redder.github.io/stuff/mom-budget-phone.html`
 - Manifest: `mom-budget-manifest.webmanifest`
 - Service worker: `mom-budget-sw.js`
 - Icons: `mom-budget-icon-192.png`, `mom-budget-icon-512.png`, plus source SVG
@@ -616,7 +616,7 @@ The `index.html` at the repo root is served directly by GitHub Pages from the `m
 Settings → Pages → Source: Deploy from branch → Branch: main / / (root)
 ```
 
-Live URL: `https://99redder.github.io/rentals/`
+Live URL: `https://99redder.github.io/stuff/`
 
 To update: commit changes to `index.html` and push to `main`. GitHub Pages deploys automatically within ~1 minute.
 
