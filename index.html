@@ -9492,8 +9492,13 @@ function tpClearPropertySale(saleNum) {
 function tpAgiWarningsHtml(r, tp) {
   const agi = r.agi;
   const items = [];
-  const add = (level, title, detail, sources) => items.push({ level, title, detail, sources });
+  const add = (level, title, detail, sources, pinned = false) => items.push({ level, title, detail, sources, pinned });
   const near = (threshold, value) => value > threshold - TP_WARN_NEAR && value <= threshold;
+
+  add('info', 'Maryland net investment / capital-gains rule',
+    `Permanent watch: Maryland adds a 2% tax on net capital gain included in Maryland AGI when federal AGI is over ${fmt(MD_CG_SURCHARGE_AGI)}. The threshold is not a phase-in — crossing it can surcharge the full taxable net gain. Primary-residence sales under $1.5M and retirement-account gains are exempt.`,
+    [['Comptroller of Maryland: Technical Bulletin 58', 'https://www.marylandcomptroller.gov/legal-library/tb-58-dec-29-2025.html']],
+    true);
 
   // NIIT — modeled
   if (agi > TP_NIIT_THRESHOLD) {
@@ -9629,7 +9634,7 @@ function tpAgiWarningsHtml(r, tp) {
     info: { border: 'var(--border)',  badge: 'Note',       badgeColor: 'var(--text-muted)' },
   };
   const order = { hit: 0, near: 1, info: 2 };
-  items.sort((a, b) => order[a.level] - order[b.level]);
+  items.sort((a, b) => Number(b.pinned) - Number(a.pinned) || order[a.level] - order[b.level]);
   const hits = items.filter(i => i.level === 'hit').length;
   const nears = items.filter(i => i.level === 'near').length;
 
