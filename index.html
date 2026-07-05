@@ -707,6 +707,41 @@
     }
     .tp-header-btn:hover { background: var(--success-hover); }
     .tp-header-btn.active { background: var(--success-hover); outline: 2px solid rgba(22,163,74,0.35); outline-offset: 1px; }
+    .header-tools-menu {
+      position: relative;
+      flex-shrink: 0;
+    }
+    .header-tools-menu summary {
+      list-style: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .header-tools-menu summary::-webkit-details-marker { display: none; }
+    .header-tools-menu summary::after {
+      content: '▾';
+      font-size: 0.72rem;
+      line-height: 1;
+    }
+    .header-tools-menu[open] summary::after { content: '▴'; }
+    .header-tools-panel {
+      position: absolute;
+      top: calc(100% + 0.45rem);
+      right: 0;
+      z-index: 20;
+      min-width: 190px;
+      display: grid;
+      gap: 0.4rem;
+      padding: 0.45rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--shadow-lg);
+    }
+    .header-tools-panel .tp-header-btn {
+      width: 100%;
+      text-align: left;
+    }
     .tp-layout { display: grid; grid-template-columns: 1fr 390px; gap: 1.25rem; align-items: start; }
     .tp-sticky { position: sticky; top: 5.5rem; }
     .tp-grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 0.75rem; }
@@ -1193,12 +1228,17 @@
       <button class="prop-tab" data-prop="4781MC">4781 MC</button>
     </div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
-      <button class="tp-header-btn" id="deductions-btn" onclick="switchView('deductions')">Deductions Tracker</button>
       <button class="tp-header-btn" id="budget-btn" onclick="switchView('budget')">Monthly Budget</button>
-      <button class="tp-header-btn" id="mom-budget-btn" onclick="switchView('mom-budget')">Mom Budget</button>
-      <button class="tp-header-btn" id="solar-btn" onclick="switchView('solar')">☀️ Solar</button>
       <button class="tp-header-btn" id="tax-planning-btn" onclick="switchView('tax-planning')">Tax Planning</button>
+      <button class="tp-header-btn" id="mom-budget-btn" onclick="switchView('mom-budget')">Mom Budget</button>
       <button class="tp-header-btn" id="savings-btn" onclick="switchView('savings')">💰 Savings</button>
+      <details class="header-tools-menu" id="header-tools-menu">
+        <summary class="tp-header-btn" id="header-tools-summary">More</summary>
+        <div class="header-tools-panel">
+          <button class="tp-header-btn" id="solar-btn" onclick="switchView('solar')">☀️ Solar</button>
+          <button class="tp-header-btn" id="deductions-btn" onclick="switchView('deductions')">Deductions Tracker</button>
+        </div>
+      </details>
       <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
       <button class="btn-signout" id="signout-btn" onclick="signOut()" title="Sign out">Sign Out</button>
     </div>
@@ -2310,6 +2350,8 @@ function switchProperty(prop) {
 }
 
 function switchView(view) {
+  const toolsMenu = document.getElementById('header-tools-menu');
+  if (toolsMenu) toolsMenu.open = false;
   state.currentView = view;
   state.pendingDefaultPrompt = null;
   state.pendingMaintPrompt = null;
@@ -2341,6 +2383,8 @@ function switchView(view) {
   if (dedBtn) dedBtn.classList.toggle('active', isDeductions);
   const savingsBtn = document.getElementById('savings-btn');
   if (savingsBtn) savingsBtn.classList.toggle('active', isSavings);
+  const toolsSummary = document.getElementById('header-tools-summary');
+  if (toolsSummary) toolsSummary.classList.toggle('active', isSolar || isDeductions);
   renderView();
 }
 
