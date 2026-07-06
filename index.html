@@ -1809,7 +1809,6 @@ function calcMarylandTax(tp, agi) {
   return { county, countyRate, exemptCap, navyExempt, md529, mdAgi, mdStdDed, mdPerExemption, mdExemptAmt, mdTaxInc, stateTax, countyTax, cgSurchargeBase, cgSurcharge, totalTax, withheld, owed };
 }
 
-const ESAI_API = 'https://eastern-shore-ai-contact.99redder.workers.dev';
 const TP_KEY = `rentals_tax_${CURRENT_YEAR}`;
 
 function tpLoadLocal() { try { return JSON.parse(localStorage.getItem(TP_KEY) || '{}'); } catch { return {}; } }
@@ -4062,7 +4061,7 @@ async function refreshZillowEstimate() {
   const url    = document.getElementById('inv-zillow-url').value.trim();
   const status = document.getElementById('inv-zillow-status');
 
-  if (!url || !url.includes('zillow.com')) {
+  if (!isValidZillowUrl(url)) {
     status.textContent = 'Enter a valid Zillow property URL first.';
     status.style.color = 'var(--danger)';
     return;
@@ -4082,6 +4081,16 @@ async function refreshZillowEstimate() {
   } catch (err) {
     status.textContent = err.message;
     status.style.color = 'var(--danger)';
+  }
+}
+
+function isValidZillowUrl(raw) {
+  try {
+    const parsed = new URL(String(raw || '').trim());
+    const host = parsed.hostname.toLowerCase();
+    return parsed.protocol === 'https:' && (host === 'zillow.com' || host.endsWith('.zillow.com'));
+  } catch {
+    return false;
   }
 }
 
@@ -9618,13 +9627,10 @@ async function tpFetchESAI() {
   if (!pw) { msg.textContent = 'Enter admin password first.'; return; }
   msg.textContent = 'Fetching…';
   try {
-    const res = await fetch(`${ESAI_API}/api/tax/transactions?year=${CURRENT_YEAR}&type=all&limit=5000`,
-      { headers: { 'X-Admin-Password': pw } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const incCents = (data.income || []).reduce((s, r) => s + Number(r.amount_cents || 0), 0);
-    const expCents = (data.expenses || []).reduce((s, r) => s + Number(r.amount_cents || 0), 0);
-    const dollars = (incCents - expCents) / 100;
+    const data = await callApi({ action: 'fetch_esai_tax_summary', year: String(CURRENT_YEAR), password: pw });
+    const incCents = Number(data.incomeCents || 0);
+    const expCents = Number(data.expenseCents || 0);
+    const dollars = Number(data.netCents || 0) / 100;
     document.getElementById('tp-esai').value = dollars.toFixed(2);
     msg.textContent = `Fetched: ${fmt(incCents/100)} income − ${fmt(expCents/100)} expenses = ${fmt(dollars)} net`;
     tpMarkFetched('esai_fetched_at', 'tp-esai-fetched');

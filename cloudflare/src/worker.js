@@ -17,6 +17,9 @@ const SESSION_COOKIE = 'rentals_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 12; // 12 hours
 const LOGIN_WINDOW_SECONDS = 15 * 60;
 const LOGIN_MAX_FAILURES = 5;
+const MAX_UPSTREAM_JSON_BYTES = 1_000_000;
+const MAX_ZILLOW_HTML_BYTES = 2_000_000;
+const MAX_USDA_PDF_BYTES = 5_000_000;
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
@@ -89,6 +92,7 @@ async function handleDataApi(request, env) {
   if (action === 'get_tax_planning') return handleGetTaxPlanning(env, body.year);
   if (action === 'save_tax_planning') return handleSaveTaxPlanning(env, body.year, body.data);
   if (action === 'fetch_fmg_tax_summary') return handleFetchFmgTaxSummary(body);
+  if (action === 'fetch_esai_tax_summary') return handleFetchEsaiTaxSummary(body);
   if (action === 'get_budget') return handleGetBudget(env);
   if (action === 'save_budget') return handleSaveBudget(env, body.data);
   if (action === 'refresh_usda_food_benchmark') return handleRefreshUsdaFoodBenchmark();
@@ -258,14 +262,19 @@ async function handleFetchFmgTaxSummary(body) {
   if (!username || !password) return jsonResponse({ error: 'FMG username and password are required' }, 400);
   if (!/^\d{4}$/.test(year)) return jsonResponse({ error: 'Invalid year' }, 400);
 
-  const loginRes = await fetch('https://florencemaegifts.com/api/admin/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
-  });
+  let loginRes;
+  try {
+    loginRes = await fetch('https://florencemaegifts.com/api/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+  } catch (err) {
+    return jsonResponse({ error: `Failed to reach FMG: ${err.message}` }, 502);
+  }
 
   if (!loginRes.ok) {
-    const err = await loginRes.json().catch(() => ({}));
+    const err = await readJsonLimited(loginRes, MAX_UPSTREAM_JSON_BYTES).catch(() => ({}));
     // Never relay upstream auth failures as 401 — the frontend treats a 401
     // from this API as an expired rentals session and forces a logout.
     return jsonResponse({ error: err.error || `FMG login failed (${loginRes.status})` }, loginRes.status === 429 ? 429 : 502);
@@ -276,11 +285,58 @@ async function handleFetchFmgTaxSummary(body) {
   if (!sessionCookie) return jsonResponse({ error: 'FMG login did not return a session cookie' }, 502);
 
   const txUrl = `https://florencemaegifts.com/api/tax/transactions?year=${encodeURIComponent(year)}&type=all&limit=5000`;
-  const txRes = await fetch(txUrl, { headers: { Cookie: sessionCookie } });
-  const data = await txRes.json().catch(() => ({}));
+  let txRes;
+  try {
+    txRes = await fetch(txUrl, { headers: { Cookie: sessionCookie } });
+  } catch (err) {
+    return jsonResponse({ error: `Failed to fetch FMG tax data: ${err.message}` }, 502);
+  }
+  let data;
+  try {
+    data = await readJsonLimited(txRes, MAX_UPSTREAM_JSON_BYTES);
+  } catch (err) {
+    data = {};
+    if (txRes.ok) return jsonResponse({ error: `FMG returned an invalid or oversized response: ${err.message}` }, 502);
+  }
 
   if (!txRes.ok) {
     return jsonResponse({ error: data.error || `FMG tax fetch failed (${txRes.status})` }, 502);
+  }
+
+  const incomeCents = Array.isArray(data.income)
+    ? data.income.reduce((s, r) => s + Number(r.amount_cents || 0), 0)
+    : 0;
+  const expenseCents = Array.isArray(data.expenses)
+    ? data.expenses.reduce((s, r) => s + Number(r.amount_cents || 0), 0)
+    : 0;
+
+  return jsonResponse({ ok: true, incomeCents, expenseCents, netCents: incomeCents - expenseCents });
+}
+
+async function handleFetchEsaiTaxSummary(body) {
+  const password = String(body.password || '');
+  const year = String(body.year || '').trim();
+
+  if (!password) return jsonResponse({ error: 'ESAI admin password is required' }, 400);
+  if (!/^\d{4}$/.test(year)) return jsonResponse({ error: 'Invalid year' }, 400);
+
+  const txUrl = `https://eastern-shore-ai-contact.99redder.workers.dev/api/tax/transactions?year=${encodeURIComponent(year)}&type=all&limit=5000`;
+  let txRes;
+  try {
+    txRes = await fetch(txUrl, { headers: { 'X-Admin-Password': password } });
+  } catch (err) {
+    return jsonResponse({ error: `Failed to reach ESAI: ${err.message}` }, 502);
+  }
+
+  let data;
+  try {
+    data = await readJsonLimited(txRes, MAX_UPSTREAM_JSON_BYTES);
+  } catch (err) {
+    data = {};
+    if (txRes.ok) return jsonResponse({ error: `ESAI returned an invalid or oversized response: ${err.message}` }, 502);
+  }
+  if (!txRes.ok) {
+    return jsonResponse({ error: data.error || `ESAI tax fetch failed (${txRes.status})` }, txRes.status === 429 ? 429 : 502);
   }
 
   const incomeCents = Array.isArray(data.income)
@@ -749,9 +805,9 @@ async function handleRefreshUsdaFoodBenchmark() {
     const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1));
     const url = `${USDA_PDF_URL_BASE}${USDA_MONTHS[d.getUTCMonth()]}${d.getUTCFullYear()}.pdf`;
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { headers: { Accept: 'application/pdf' } });
       if (!res.ok) continue;
-      const bytes = new Uint8Array(await res.arrayBuffer());
+      const bytes = await readBytesLimited(res, MAX_USDA_PDF_BYTES);
       if (bytes[0] !== 0x25 || bytes[1] !== 0x50) continue;  // not %PDF (404 page)
       const parsed = await parseUsdaCostOfFoodPdf(bytes);
       if (parsed) return jsonResponse({ ...parsed, url });
@@ -1392,13 +1448,14 @@ function sanitizeSaleClosingBreakdown(raw) {
 }
 
 async function handleFetchZillow(env, property, url) {
-  if (!url || typeof url !== 'string' || !url.includes('zillow.com')) {
+  const zillowUrl = normalizeZillowUrl(url);
+  if (!zillowUrl) {
     return jsonResponse({ error: 'Invalid Zillow URL' }, 400);
   }
 
   let html;
   try {
-    const response = await fetch(url, {
+    const response = await fetch(zillowUrl.href, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -1411,7 +1468,7 @@ async function handleFetchZillow(env, property, url) {
       return jsonResponse({ error: `Zillow returned HTTP ${response.status}. Try entering the estimate manually.` }, 422);
     }
 
-    html = await response.text();
+    html = await readTextLimited(response, MAX_ZILLOW_HTML_BYTES);
   } catch (err) {
     return jsonResponse({ error: `Failed to reach Zillow: ${err.message}` }, 502);
   }
@@ -1459,10 +1516,26 @@ async function handleFetchZillow(env, property, url) {
   const existing = await env.RENTALS.get(`investment:${property}`, 'json') || {};
   existing.zillowEstimate = zestimate;
   existing.zillowFetchedAt = new Date().toISOString();
-  existing.zillowUrl = url;
+  existing.zillowUrl = zillowUrl.href;
   await env.RENTALS.put(`investment:${property}`, JSON.stringify(existing));
 
   return jsonResponse({ zestimate, fetchedAt: existing.zillowFetchedAt });
+}
+
+function normalizeZillowUrl(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  try {
+    const parsed = new URL(raw.trim());
+    const host = parsed.hostname.toLowerCase();
+    if (parsed.protocol !== 'https:') return null;
+    if (host !== 'zillow.com' && !host.endsWith('.zillow.com')) return null;
+    parsed.username = '';
+    parsed.password = '';
+    parsed.hash = '';
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
 // ── Solar ─────────────────────────────────────────────────────────────────────
@@ -1662,6 +1735,44 @@ async function handleSaveSavings(env, data) {
 }
 
 // ── Helper ────────────────────────────────────────────────────────────────────
+
+async function readBytesLimited(response, maxBytes) {
+  const lengthHeader = response.headers.get('Content-Length');
+  if (lengthHeader && Number(lengthHeader) > maxBytes) {
+    throw new Error(`Upstream response is too large (${lengthHeader} bytes)`);
+  }
+  if (!response.body) throw new Error('Upstream response did not include a readable body');
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      try { await reader.cancel(); } catch (_) { /* ignore cancel failure */ }
+      throw new Error(`Upstream response exceeded ${maxBytes} bytes`);
+    }
+    chunks.push(value);
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+async function readTextLimited(response, maxBytes) {
+  return new TextDecoder().decode(await readBytesLimited(response, maxBytes));
+}
+
+async function readJsonLimited(response, maxBytes) {
+  return JSON.parse(await readTextLimited(response, maxBytes));
+}
 
 function addSecurityHeaders(response) {
   const headers = new Headers(response.headers);
