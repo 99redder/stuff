@@ -21,7 +21,7 @@ const LOGIN_MAX_FAILURES = 5;
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Password, X-Session',
+  'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Allow-Credentials': 'true',
   'Vary': 'Origin',
 };
@@ -125,7 +125,7 @@ async function handleDataApi(request, env) {
     'add_transaction', 'add_transactions', 'delete_transaction',
     'save_summary', 'delete_summary',
     'save_defaults', 'save_depreciation',
-    'save_maintenance', 'add_maintenance_entry', 'update_maintenance_entry', 'delete_maintenance_entry',
+    'save_maintenance', 'seed_maintenance', 'add_maintenance_entry', 'update_maintenance_entry', 'delete_maintenance_entry',
     'save_move_in_purchases', 'add_move_in_purchase', 'update_move_in_purchase', 'delete_move_in_purchase'
   ]);
   if (readOnlyWhenSold.has(action) && await isPropertySold(env, property)) {
@@ -171,6 +171,9 @@ async function handleDataApi(request, env) {
 
     case 'save_maintenance':
       return handleSaveMaintenance(env, property, body.entries);
+
+    case 'seed_maintenance':
+      return handleSeedMaintenance(env, property);
 
     case 'add_maintenance_entry':
       return handleAddMaintenanceEntry(env, property, body.entry);
@@ -234,7 +237,7 @@ async function handleVerifyPassword(request, env, password) {
   const sessionKey = `session:${await sha256Hex(token)}`;
   await env.RENTALS.put(sessionKey, JSON.stringify({ createdAt: new Date().toISOString(), ip }), { expirationTtl: SESSION_TTL_SECONDS });
 
-  return jsonResponse({ ok: true, sessionToken: token }, 200, {
+  return jsonResponse({ ok: true }, 200, {
     'Set-Cookie': `${SESSION_COOKIE}=${token}; Max-Age=${SESSION_TTL_SECONDS}; Path=/; HttpOnly; Secure; SameSite=None`,
   });
 }
@@ -296,15 +299,11 @@ async function isAuthenticated(request, env) {
     const session = await env.RENTALS.get(`session:${await sha256Hex(token)}`);
     if (session) return true;
   }
-
-  // Temporary backwards-compatible fallback; remove after session-cookie auth is confirmed live.
-  const provided = request.headers.get('X-Password') || '';
-  const stored = env.ADMIN_PASSWORD || '';
-  return !!stored && provided === stored;
+  return false;
 }
 
 function getSessionToken(request) {
-  return request.headers.get('X-Session') || getCookie(request, SESSION_COOKIE);
+  return getCookie(request, SESSION_COOKIE);
 }
 
 function getCookie(request, name) {
@@ -526,6 +525,25 @@ async function handleSaveMaintenance(env, property, entries) {
     return jsonResponse({ error: 'entries must be an array' }, 400);
   }
   const saved = entries.map(e => ({
+    ...normalizeMaintenanceEntry(e),
+    id: e.id || crypto.randomUUID(),
+  }));
+  await env.RENTALS.put(`maintenance:${property}`, JSON.stringify(saved));
+  return jsonResponse({ entries: saved });
+}
+
+async function handleSeedMaintenance(env, property) {
+  const existing = await env.RENTALS.get(`maintenance:${property}`, 'json') || [];
+  if (existing.length) {
+    return jsonResponse({ error: 'Maintenance log already has entries' }, 409);
+  }
+
+  const seedEntries = await env.RENTALS.get(`maintenance_seed:${property}`, 'json') || [];
+  if (!seedEntries.length) {
+    return jsonResponse({ error: 'No historical maintenance records found for this property' }, 404);
+  }
+
+  const saved = seedEntries.map(e => ({
     ...normalizeMaintenanceEntry(e),
     id: e.id || crypto.randomUUID(),
   }));
