@@ -1669,7 +1669,7 @@ const SALE_STATE_NAMES = {
 };
 
 const SALE_CLOSING_COSTS = [
-  { code: 'agentCommission', name: 'Agent Commission', hint: 'Default 5.0% of sale price', defaultValue: price => price * 0.05 },
+  { code: 'agentCommission', name: 'Agent Commission', hint: 'Default 2.5% of sale price', defaultValue: price => price * 0.025, defaultLocked: false },
   { code: 'nhTransferTax', name: 'NH Real Estate Transfer Tax — Seller Share', states: ['NH'], hint: 'NH seller share: $7.50 per $1,000 / 0.75%', defaultValue: price => price * 0.0075 },
   { code: 'vaGrantorTax', name: 'VA Grantor Tax', states: ['VA'], hint: 'Virginia seller grantor tax: $0.50 per $500 / 0.10%', defaultValue: price => price * 0.001 },
   { code: 'mdTransferRecordation', name: 'MD Transfer / Recordation Taxes', states: ['MD'], hint: 'County-specific; default $0 unless this sale is in MD', defaultValue: () => 0 },
@@ -1969,11 +1969,12 @@ function saleClosingDefault(def, salePrice, stateCode) {
 }
 
 function saleClosingEstimateTotal(prop, salePrice, draftBreakdown = null) {
-  if (draftBreakdown && typeof draftBreakdown.total === 'number' && isFinite(draftBreakdown.total)) {
-    return draftBreakdown.total;
-  }
   const stateCode = PROPERTY_SALE_STATE[prop] || 'NH';
   return saleClosingDefsForProperty(prop).reduce((sum, def) => {
+    const prior = draftBreakdown?.items?.[def.code];
+    if (prior && prior.manual !== false && typeof prior.value === 'number' && isFinite(prior.value)) {
+      return sum + prior.value;
+    }
     return sum + saleClosingDefault(def, salePrice || 0, stateCode);
   }, 0);
 }
@@ -2042,7 +2043,7 @@ function syncSaleClosingCosts() {
     // Once the user has typed an amount (data-manual="1") it is preserved even
     // when the line is re-locked, so locking freezes a manual figure rather
     // than wiping it back to the estimate.
-    if (locked && input.dataset.manual !== '1') {
+    if (input.dataset.manual !== '1') {
       input.value = formatSaleCurrency(saleClosingDefault(def, salePrice, stateCode));
     }
     total += parseSaleCurrency(input.value);
@@ -3732,7 +3733,7 @@ async function renderInvestmentReturn() {
   let initialCloseoutCostsTotal = 0;
   const closeoutCostRows = activeSaleCostDefs.map(def => {
     const prior = draftBreakdown?.items?.[def.code] || saleCloseout?.saleClosingBreakdown?.items?.[def.code];
-    const locked = prior?.locked !== false;
+    const locked = prior ? prior.locked !== false : def.defaultLocked !== false;
     // Treat any previously saved line as a manual override so a later sale-price
     // change can't silently overwrite a figure the user already entered.
     const manual = prior ? (prior.manual !== false) : false;
