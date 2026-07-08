@@ -1968,6 +1968,16 @@ function saleClosingDefault(def, salePrice, stateCode) {
   return Math.round((def.defaultValue(salePrice || 0, stateCode) || 0) * 100) / 100;
 }
 
+function saleClosingEstimateTotal(prop, salePrice, draftBreakdown = null) {
+  if (draftBreakdown && typeof draftBreakdown.total === 'number' && isFinite(draftBreakdown.total)) {
+    return draftBreakdown.total;
+  }
+  const stateCode = PROPERTY_SALE_STATE[prop] || 'NH';
+  return saleClosingDefsForProperty(prop).reduce((sum, def) => {
+    return sum + saleClosingDefault(def, salePrice || 0, stateCode);
+  }, 0);
+}
+
 function saleCloseoutDraftKey(prop = state.currentProperty) {
   return `rentals_sale_closeout_draft_${prop}`;
 }
@@ -3518,6 +3528,10 @@ async function renderInvestmentReturn() {
   const zillowEstimate  = isSold ? saleCloseout.salePrice : (inv.zillowEstimate || null);
   const zillowFetchedAt = inv.zillowFetchedAt || null;
   const zillowUrl       = inv.zillowUrl || '';
+  const defaultSaleState = PROPERTY_SALE_STATE[prop] || saleCloseout?.saleState || 'NH';
+  const closeoutDraft = isSold ? {} : loadSaleCloseoutDraft(prop);
+  const draftBreakdown = closeoutDraft?.breakdown?.items ? closeoutDraft.breakdown : null;
+  const initialCloseoutPrice = closeoutDraft.price || zillowEstimate || '';
 
   let netSaleProceeds     = null;
   let saleClosingAmt      = null;
@@ -3528,7 +3542,7 @@ async function renderInvestmentReturn() {
   let primaryResidenceExclusion = 0;
   let grossAfterClosing   = null;
   if (zillowEstimate) {
-    saleClosingAmt = isSold ? saleCloseout.saleClosingCosts : zillowEstimate * (saleClosingPct / 100);
+    saleClosingAmt = isSold ? saleCloseout.saleClosingCosts : saleClosingEstimateTotal(prop, zillowEstimate, draftBreakdown);
     grossAfterClosing = zillowEstimate - saleClosingAmt;
     // Capital gain = gross proceeds - total invested (depr recapture taxed separately)
     capitalGain = Math.max(0, grossAfterClosing - totalCapitalInvested);
@@ -3685,7 +3699,7 @@ async function renderInvestmentReturn() {
       <div class="card-body" style="padding:0">
         <table style="width:100%;border-collapse:collapse">
           ${row(isSold ? 'Final Sale Price' : 'Zillow Estimate', zillowEstimate, 'var(--success)')}
-          ${row(isSold ? '− Actual Sale Closing Costs' : `− Sale Closing Costs (${saleClosingPct}%)`, saleClosingAmt, 'var(--danger)')}
+          ${row(isSold ? '− Actual Sale Closing Costs' : '− Sale Closing Costs (Close Out estimate)', saleClosingAmt, 'var(--danger)')}
           ${isPrimaryResidence
             ? `${row('Capital Gain', capitalGain, capitalGain >= 0 ? 'var(--success)' : 'var(--danger)')}
           ${row('− §121 Primary Residence Exclusion', primaryResidenceExclusion, 'var(--success)')}
@@ -3713,10 +3727,6 @@ async function renderInvestmentReturn() {
       </div>
     </div>`;
 
-  const defaultSaleState = PROPERTY_SALE_STATE[prop] || saleCloseout?.saleState || 'NH';
-  const closeoutDraft = isSold ? {} : loadSaleCloseoutDraft(prop);
-  const draftBreakdown = closeoutDraft?.breakdown?.items ? closeoutDraft.breakdown : null;
-  const initialCloseoutPrice = closeoutDraft.price || zillowEstimate || '';
   const activeSaleCostDefs = saleClosingDefsForProperty(prop);
   const activeSaleCostCodes = new Set(activeSaleCostDefs.map(def => def.code));
   let initialCloseoutCostsTotal = 0;
