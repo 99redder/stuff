@@ -1557,7 +1557,7 @@
  *   Historical         renderHistorical(), depreciation schedule (MACRS 27.5yr mid-month)
  *   Maintenance Log    renderMaintenance(): add/edit/delete/seed maintenance entries
  *   Tax Summary        renderTaxSummary(): per-category YTD totals, print-ready
- *   Investment Return  renderInvestmentReturn(): IRR, equity, Zillow estimate, config
+ *   Investment Return  renderInvestmentReturn(): IRR, equity, closeout sale estimate, config
  *   Portfolio          renderPortfolio(): cross-property stats + multi-year history
  *   Add Entry          renderAddEntry(): transaction form with "Use Default" and "Post Normal Month"
  *   Tax Planning       renderTaxPlanning(): projected federal/state liability with live inputs
@@ -3525,14 +3525,12 @@ async function renderInvestmentReturn() {
   // Primary residences: no depreciation recapture (never rented), no capital gains tax (§121 exclusion)
   const depreciationRecaptureTax = isPrimaryResidence ? 0 : cumulativeDepreciation * 0.25;
 
-  // ── Zillow / Net Proceeds ─────────────────────────────────────────────────
-  const zillowEstimate  = isSold ? saleCloseout.salePrice : (inv.zillowEstimate || null);
-  const zillowFetchedAt = inv.zillowFetchedAt || null;
-  const zillowUrl       = inv.zillowUrl || '';
+  // ── Sale Value / Net Proceeds ─────────────────────────────────────────────
   const defaultSaleState = PROPERTY_SALE_STATE[prop] || saleCloseout?.saleState || 'NH';
   const closeoutDraft = isSold ? {} : loadSaleCloseoutDraft(prop);
   const draftBreakdown = closeoutDraft?.breakdown?.items ? closeoutDraft.breakdown : null;
-  const initialCloseoutPrice = closeoutDraft.price || zillowEstimate || '';
+  const saleValue = isSold ? saleCloseout.salePrice : (closeoutDraft.price || null);
+  const initialCloseoutPrice = closeoutDraft.price || saleValue || '';
 
   let netSaleProceeds     = null;
   let saleClosingAmt      = null;
@@ -3542,9 +3540,9 @@ async function renderInvestmentReturn() {
   let taxableCapitalGain  = 0;
   let primaryResidenceExclusion = 0;
   let grossAfterClosing   = null;
-  if (zillowEstimate) {
-    saleClosingAmt = isSold ? saleCloseout.saleClosingCosts : saleClosingEstimateTotal(prop, zillowEstimate, draftBreakdown);
-    grossAfterClosing = zillowEstimate - saleClosingAmt;
+  if (saleValue) {
+    saleClosingAmt = isSold ? saleCloseout.saleClosingCosts : saleClosingEstimateTotal(prop, saleValue, draftBreakdown);
+    grossAfterClosing = saleValue - saleClosingAmt;
     // Capital gain = gross proceeds - total invested (depr recapture taxed separately)
     capitalGain = Math.max(0, grossAfterClosing - totalCapitalInvested);
     primaryResidenceExclusion = isPrimaryResidence ? Math.min(capitalGain, PRIMARY_RESIDENCE_GAIN_EXCLUSION) : 0;
@@ -3602,11 +3600,6 @@ async function renderInvestmentReturn() {
   const firstHistYear = histYears.length ? histYears[0] : yearStr;
   const yearRangeLabel = firstHistYear === yearStr ? yearStr : `${firstHistYear}–${yearStr}`;
 
-  // Fetch timestamp display
-  const fetchedLabel = zillowFetchedAt
-    ? ` (fetched ${fmtDate(zillowFetchedAt.slice(0, 10))})`
-    : '';
-
   // Row builder
   const row = (label, value, color, borderBottom = true, bold = false) => {
     const borderStyle = borderBottom ? 'border-bottom:1px solid var(--border);' : '';
@@ -3642,7 +3635,7 @@ async function renderInvestmentReturn() {
       <div class="stat-card">
         <div class="stat-label">Est. Net Proceeds</div>
         <div class="stat-value" style="color:${netSaleProceeds !== null ? 'var(--success)' : 'var(--text-muted)'}">${netSaleProceeds !== null ? fmt(netSaleProceeds) : '—'}</div>
-        <div class="stat-sub">Zillow − Closing − Taxes</div>
+        <div class="stat-sub">Sale Price − Closing − Taxes</div>
       </div>
       ${!isPrimaryResidence ? `<div class="stat-card">
         <div class="stat-label">Net Cash Flow</div>
@@ -3696,10 +3689,10 @@ async function renderInvestmentReturn() {
   // ── Estimated Current Value card ──────────────────────────────────────────
   const currentValueCard = `
     <div class="card" style="margin-bottom:1rem">
-      <div class="card-header"><div class="card-title">${isSold ? 'Final Sale Value' : `Estimated Current Value${fetchedLabel}`}</div></div>
+      <div class="card-header"><div class="card-title">${isSold ? 'Final Sale Value' : 'Estimated Current Value'}</div></div>
       <div class="card-body" style="padding:0">
         <table style="width:100%;border-collapse:collapse">
-          ${row(isSold ? 'Final Sale Price' : 'Zillow Estimate', zillowEstimate, 'var(--success)')}
+          ${row(isSold ? 'Final Sale Price' : 'Closeout Sale Price', saleValue, 'var(--success)')}
           ${row(isSold ? '− Actual Sale Closing Costs' : '− Sale Closing Costs (Close Out estimate)', saleClosingAmt, 'var(--danger)')}
           ${isPrimaryResidence
             ? `${row('Capital Gain', capitalGain, capitalGain >= 0 ? 'var(--success)' : 'var(--danger)')}
@@ -3711,7 +3704,7 @@ async function renderInvestmentReturn() {
           ${stateCapGainsPct > 0 ? row(`− MD State/Local Capital Gains Tax (${stateCapGainsPct}%)`, stateCapGainsTax, 'var(--danger)') : ''}
           ${row('Estimated Net Proceeds', netSaleProceeds, netSaleProceeds !== null ? 'var(--success)' : 'var(--text-muted)', false, true)}
         </table>
-        ${zillowEstimate === null ? `<div style="padding:.5rem .75rem;color:var(--text-muted);font-size:0.85rem">Configure a Zillow URL below and click Refresh to fetch the current estimate.</div>` : ''}
+        ${saleValue === null ? `<div style="padding:.5rem .75rem;color:var(--text-muted);font-size:0.85rem">Enter a final sale price in the Close Out Property Sale card to calculate estimated proceeds.</div>` : ''}
       </div>
     </div>`;
 
@@ -3793,7 +3786,7 @@ async function renderInvestmentReturn() {
             </div>
             <div class="form-group">
               <label>Final Sale Price ($)</label>
-              <input type="text" inputmode="decimal" id="sale-closeout-price" value="${escAttr(moneyInputValue(initialCloseoutPrice))}" placeholder="Actual contract sale price" oninput="syncSaleClosingCosts()" onblur="formatMoneyInput(this)">
+              <input type="text" inputmode="decimal" id="sale-closeout-price" value="${escAttr(moneyInputValue(initialCloseoutPrice))}" placeholder="Actual contract sale price" oninput="syncSaleClosingCosts()" onblur="formatMoneyInput(this); renderInvestmentReturn()">
             </div>
             <div class="form-group">
               <label>Property State</label>
@@ -3858,18 +3851,6 @@ async function renderInvestmentReturn() {
               <input type="number" id="inv-state-cgt" step="0.01" min="0" max="20" value="${escAttr(String(stateCapGainsPct))}" placeholder="8.95">
               <div style="font-size:0.78rem;color:var(--text-muted);margin-top:.2rem">Default: 8.95% = MD state 5.75% + Wicomico local 3.20%</div>
             </div>
-            <div class="form-group" style="grid-column:1/-1">
-              <label>Zillow Property URL</label>
-              <div style="display:flex;gap:.5rem;align-items:flex-start">
-                <input type="url" id="inv-zillow-url" value="${escAttr(zillowUrl)}" placeholder="https://www.zillow.com/homedetails/..." style="flex:1">
-                <button class="btn btn-secondary btn-sm" type="button" onclick="refreshZillowEstimate()" style="white-space:nowrap;margin-top:0">Refresh Estimate</button>
-              </div>
-              <div id="inv-zillow-status" style="font-size:0.82rem;margin-top:.25rem;color:var(--text-muted)">${zillowEstimate ? `Last fetched: ${fetchedLabel.trim().replace(/[()]/g,'')} — $${zillowEstimate.toLocaleString()}` : 'No estimate fetched yet.'}</div>
-            </div>
-            <div class="form-group">
-              <label>Manual Zillow Estimate Override ($)</label>
-              <input type="text" inputmode="decimal" id="inv-zillow-manual" value="${escAttr(moneyInputValue(zillowEstimate))}" placeholder="Enter manually if refresh fails" onblur="formatMoneyInput(this)">
-            </div>
           </div>
           <div class="form-actions mt-2" style="display:flex;gap:.5rem;align-items:center">
             <button class="btn btn-primary" type="button" onclick="saveInvestmentConfig()">Save Configuration</button>
@@ -3916,8 +3897,6 @@ async function saveInvestmentConfig() {
   const saleClosingCostPct = parseFloat(document.getElementById('inv-sale-pct').value);
   const stateCapGainsPct   = parseFloat(document.getElementById('inv-state-cgt').value);
   const purchaseDate       = document.getElementById('inv-purchase-date').value || null;
-  const zillowUrl          = document.getElementById('inv-zillow-url').value.trim();
-  const manualEstimate     = parseMoney(document.getElementById('inv-zillow-manual').value) || null;
 
   if (isNaN(saleClosingCostPct) || saleClosingCostPct < 0 || saleClosingCostPct > 20) {
     errEl.textContent = 'Sale closing cost % must be between 0 and 20.';
@@ -3930,11 +3909,7 @@ async function saveInvestmentConfig() {
     return;
   }
 
-  const configToSave = { purchasePrice, purchaseClosingCosts: purchaseClosing, saleClosingCostPct, stateCapGainsPct, purchaseDate, zillowUrl };
-  if (manualEstimate && manualEstimate > 0) {
-    configToSave.zillowEstimate  = manualEstimate;
-    configToSave.zillowFetchedAt = new Date().toISOString();
-  }
+  const configToSave = { purchasePrice, purchaseClosingCosts: purchaseClosing, saleClosingCostPct, stateCapGainsPct, purchaseDate };
 
   try {
     const res = await callApi({ action: 'save_investment', property: prop, config: configToSave });
@@ -4070,44 +4045,6 @@ async function closeOutInvestmentSale() {
       }
     }
   });
-}
-
-async function refreshZillowEstimate() {
-  const prop   = state.currentProperty;
-  const url    = document.getElementById('inv-zillow-url').value.trim();
-  const status = document.getElementById('inv-zillow-status');
-
-  if (!isValidZillowUrl(url)) {
-    status.textContent = 'Enter a valid Zillow property URL first.';
-    status.style.color = 'var(--danger)';
-    return;
-  }
-
-  status.textContent = 'Fetching estimate…';
-  status.style.color = 'var(--text-muted)';
-
-  try {
-    const res = await callApi({ action: 'fetch_zillow', property: prop, url });
-    // Worker already persisted the result — update local cache
-    if (!state.data[prop].investment) state.data[prop].investment = {};
-    state.data[prop].investment.zillowEstimate  = res.zestimate;
-    state.data[prop].investment.zillowFetchedAt = res.fetchedAt;
-    state.data[prop].investment.zillowUrl       = url;
-    renderInvestmentReturn();
-  } catch (err) {
-    status.textContent = err.message;
-    status.style.color = 'var(--danger)';
-  }
-}
-
-function isValidZillowUrl(raw) {
-  try {
-    const parsed = new URL(String(raw || '').trim());
-    const host = parsed.hostname.toLowerCase();
-    return parsed.protocol === 'https:' && (host === 'zillow.com' || host.endsWith('.zillow.com'));
-  } catch {
-    return false;
-  }
 }
 
 function toggleInvestmentConfig() {
@@ -9170,15 +9107,11 @@ function calcPropertySaleTaxDetails(prop) {
   const isPrimaryResidence = PRIMARY_PROPERTIES.has(prop);
   const closeoutDraft = isSold ? {} : loadSaleCloseoutDraft(prop);
   const draftBreakdown = closeoutDraft?.breakdown?.items ? closeoutDraft.breakdown : null;
-  const draftClosingCosts = draftBreakdown && typeof draftBreakdown.total === 'number' && isFinite(draftBreakdown.total)
-    ? draftBreakdown.total
-    : null;
-  const salePrice = isSold ? saleCloseout.salePrice : (closeoutDraft.price || inv.zillowEstimate || 0);
+  const salePrice = isSold ? saleCloseout.salePrice : (closeoutDraft.price || 0);
   if (!salePrice) return null;
 
   const purchasePrice = inv.purchasePrice || 0;
   const purchaseClosing = inv.purchaseClosingCosts || 0;
-  const saleClosingPct = (typeof inv.saleClosingCostPct === 'number') ? inv.saleClosingCostPct : 6;
 
   let cumulativeImprovements = 0;
   for (const [yr, d] of Object.entries(summs)) {
@@ -9202,11 +9135,9 @@ function calcPropertySaleTaxDetails(prop) {
 
   const basis = purchasePrice + purchaseClosing + cumulativeImprovements;
   // Match the property tab's sale math: finalized sales use actual closeout
-  // amounts; unsold properties prefer any in-progress closeout draft, then fall
-  // back to the saved sale-closing percentage.
+  // amounts; unsold properties use the in-progress closeout sale-price/costs.
   const saleClosingCosts = isSold ? (saleCloseout.saleClosingCosts || 0)
-    : draftClosingCosts !== null ? draftClosingCosts
-      : salePrice * (saleClosingPct / 100);
+    : saleClosingEstimateTotal(prop, salePrice, draftBreakdown);
   const grossAfterClosing = salePrice - saleClosingCosts;
   const capitalGain = Math.max(0, grossAfterClosing - basis);
   const primaryExclusion = isPrimaryResidence ? Math.min(capitalGain, PRIMARY_RESIDENCE_GAIN_EXCLUSION) : 0;
@@ -9216,7 +9147,7 @@ function calcPropertySaleTaxDetails(prop) {
 
   return {
     prop,
-    source: isSold ? 'Actual sale closeout' : draftClosingCosts !== null ? 'Draft sale closeout' : 'Hypothetical property tab estimate',
+    source: isSold ? 'Actual sale closeout' : 'Draft sale closeout',
     salePrice,
     saleClosingCosts,
     basis,
@@ -9240,7 +9171,7 @@ function tpApplyPropertySale(prop, saleNum) {
   }
   const details = calcPropertySaleTaxDetails(prop);
   if (!details) {
-    alert('No sale estimate/closeout is available for that property yet. Add a Zillow estimate or finalize a sale in the property tab first.');
+    alert('No sale price is available for that property yet. Enter a final sale price in the Close Out Property Sale card first.');
     if (saleNum === 2) {
       tp.property_sale_2_property = '';
       tp.property_sale_2_imported = false;
@@ -9875,7 +9806,6 @@ window.onSaleClosingCostInput  = onSaleClosingCostInput;
 window.formatSaleClosingCostInput = formatSaleClosingCostInput;
 window.onSaleCloseoutFieldInput = onSaleCloseoutFieldInput;
 window.toggleSaleClosingCostLock = toggleSaleClosingCostLock;
-window.refreshZillowEstimate   = refreshZillowEstimate;
 window.toggleInvestmentConfig  = toggleInvestmentConfig;
 window.solarSetEntrySort       = solarSetEntrySort;
 window.solarStartAddEntry      = solarStartAddEntry;

@@ -66,7 +66,7 @@ Header buttons: [Deductions Tracker]  [Monthly Budget]  [Mom Budget]  [☀️ So
 |---|---|---|
 | Current Year | `current-year` | YTD stat cards + transaction list with Edit/Delete |
 | Tax Summary | `tax-summary` | Current-year category totals, print-ready |
-| Investment Return | `investment-return` | IRR, equity, Zillow estimate, purchase config, federal + MD state/local capital gains estimates |
+| Investment Return | `investment-return` | IRR, equity, closeout sale estimate, purchase config, federal + MD state/local capital gains estimates |
 | Historical | `historical` | Annual summary table + Depreciation Schedule card |
 | Maintenance | `maintenance` | Per-property maintenance log with improvement tracking |
 | All Properties | `portfolio` | Combined stats + per-property breakdown + multi-year history |
@@ -114,7 +114,7 @@ const state = {
 | `renderAddEntry()` | Add entry form |
 | `renderPortfolio()` | All-properties portfolio view |
 | `renderMaintenance()` | Maintenance log view |
-| `renderInvestmentReturn()` | IRR/equity/Zillow view |
+| `renderInvestmentReturn()` | IRR/equity/closeout sale view |
 | `renderBudget()` | Monthly budget planner |
 | `renderSolar()` | Solar ROI view |
 | `renderTaxPlanning()` | Tax planning view |

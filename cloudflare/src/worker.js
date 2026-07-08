@@ -18,7 +18,6 @@ const SESSION_TTL_SECONDS = 60 * 60 * 12; // 12 hours
 const LOGIN_WINDOW_SECONDS = 15 * 60;
 const LOGIN_MAX_FAILURES = 5;
 const MAX_UPSTREAM_JSON_BYTES = 1_000_000;
-const MAX_ZILLOW_HTML_BYTES = 2_000_000;
 const MAX_USDA_PDF_BYTES = 5_000_000;
 
 const CORS_HEADERS = {
@@ -211,9 +210,6 @@ async function handleDataApi(request, env) {
 
     case 'close_investment':
       return handleCloseInvestment(env, property, body.closeout);
-
-    case 'fetch_zillow':
-      return handleFetchZillow(env, property, body.url);
 
     default:
       return jsonResponse({ error: 'Invalid action' }, 400);
@@ -1339,7 +1335,7 @@ async function handleSaveInvestment(env, property, config) {
     return jsonResponse({ error: 'stateCapGainsPct must be a number between 0 and 20' }, 400);
   }
 
-  // Merge into existing — preserve zillowEstimate/zillowFetchedAt unless manually overridden
+  // Merge into existing sale configuration.
   const existing = await env.RENTALS.get(`investment:${property}`, 'json') || {};
   const saved = {
     ...existing,
@@ -1347,16 +1343,9 @@ async function handleSaveInvestment(env, property, config) {
     purchaseClosingCosts,
     saleClosingCostPct,
     stateCapGainsPct,
-    zillowUrl: typeof config.zillowUrl === 'string' ? config.zillowUrl.trim() : (existing.zillowUrl || ''),
     purchaseDate: (typeof config.purchaseDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(config.purchaseDate))
       ? config.purchaseDate : (existing.purchaseDate || null),
   };
-
-  // Allow manual Zillow estimate override
-  if (typeof config.zillowEstimate === 'number' && isFinite(config.zillowEstimate) && config.zillowEstimate > 0) {
-    saved.zillowEstimate  = config.zillowEstimate;
-    saved.zillowFetchedAt = typeof config.zillowFetchedAt === 'string' ? config.zillowFetchedAt : new Date().toISOString();
-  }
 
   await env.RENTALS.put(`investment:${property}`, JSON.stringify(saved));
   return jsonResponse({ success: true, config: saved });
@@ -1445,97 +1434,6 @@ function sanitizeSaleClosingBreakdown(raw) {
     items,
     total: Math.round(total * 100) / 100,
   };
-}
-
-async function handleFetchZillow(env, property, url) {
-  const zillowUrl = normalizeZillowUrl(url);
-  if (!zillowUrl) {
-    return jsonResponse({ error: 'Invalid Zillow URL' }, 400);
-  }
-
-  let html;
-  try {
-    const response = await fetch(zillowUrl.href, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Cache-Control': 'no-cache',
-      }
-    });
-
-    if (!response.ok) {
-      return jsonResponse({ error: `Zillow returned HTTP ${response.status}. Try entering the estimate manually.` }, 422);
-    }
-
-    html = await readTextLimited(response, MAX_ZILLOW_HTML_BYTES);
-  } catch (err) {
-    return jsonResponse({ error: `Failed to reach Zillow: ${err.message}` }, 502);
-  }
-
-  // Attempt extraction — multiple patterns for resilience
-  let zestimate = null;
-
-  // Pattern 1: "zestimate":{"amount":XXXXXX}
-  const m1 = html.match(/"zestimate"\s*:\s*\{\s*"amount"\s*:\s*(\d+)/);
-  if (m1) zestimate = parseInt(m1[1], 10);
-
-  // Pattern 2: "zestimate":XXXXXX (direct number, 5–7 digits)
-  if (!zestimate) {
-    const m2 = html.match(/"zestimate"\s*:\s*(\d{5,7})\b/);
-    if (m2) zestimate = parseInt(m2[1], 10);
-  }
-
-  // Pattern 3: __NEXT_DATA__ script tag
-  if (!zestimate) {
-    try {
-      const ndMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-      if (ndMatch) {
-        const nd = JSON.parse(ndMatch[1]);
-        const gdpCache = nd?.props?.pageProps?.componentProps?.gdpClientCache;
-        if (gdpCache) {
-          const gc = JSON.parse(gdpCache);
-          const firstKey = Object.keys(gc)[0];
-          zestimate = gc?.[firstKey]?.property?.zestimate?.amount
-            || gc?.[firstKey]?.zestimate?.amount
-            || null;
-        }
-      }
-    } catch (_) {
-      // parse failure — continue to error below
-    }
-  }
-
-  if (!zestimate) {
-    return jsonResponse({
-      error: 'Could not find Zestimate on page. Zillow may be blocking automated access — enter the estimate manually.'
-    }, 422);
-  }
-
-  // Persist result into investment config
-  const existing = await env.RENTALS.get(`investment:${property}`, 'json') || {};
-  existing.zillowEstimate = zestimate;
-  existing.zillowFetchedAt = new Date().toISOString();
-  existing.zillowUrl = zillowUrl.href;
-  await env.RENTALS.put(`investment:${property}`, JSON.stringify(existing));
-
-  return jsonResponse({ zestimate, fetchedAt: existing.zillowFetchedAt });
-}
-
-function normalizeZillowUrl(raw) {
-  if (!raw || typeof raw !== 'string') return null;
-  try {
-    const parsed = new URL(raw.trim());
-    const host = parsed.hostname.toLowerCase();
-    if (parsed.protocol !== 'https:') return null;
-    if (host !== 'zillow.com' && !host.endsWith('.zillow.com')) return null;
-    parsed.username = '';
-    parsed.password = '';
-    parsed.hash = '';
-    return parsed;
-  } catch {
-    return null;
-  }
 }
 
 // ── Solar ─────────────────────────────────────────────────────────────────────
