@@ -815,6 +815,9 @@ async function handleSaveCashFlow(env, year, data) {
 
   const saved = {
     year: Number(year),
+    robinhoodChecking: (typeof data.robinhoodChecking === 'number' && isFinite(data.robinhoodChecking) && data.robinhoodChecking >= 0)
+      ? data.robinhoodChecking
+      : 0,
     income: sanitizeItems(data.income),
     expenses: sanitizeItems(data.expenses),
   };

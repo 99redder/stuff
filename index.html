@@ -7690,6 +7690,7 @@ function normalizeCashFlow(raw) {
 
   return {
     year: CASH_FLOW_YEAR,
+    robinhoodChecking: tpN(raw?.robinhoodChecking),
     income: normalizeItems(raw?.income),
     expenses: normalizeItems(raw?.expenses)
   };
@@ -7716,7 +7717,8 @@ async function renderCashFlow() {
 }
 
 function cfTotals(autoIncome = []) {
-  const income = [...autoIncome, ...(state.cashFlow?.income || [])].reduce((s, item) => s + tpN(item.amount), 0);
+  const income = tpN(state.cashFlow?.robinhoodChecking) +
+    [...autoIncome, ...(state.cashFlow?.income || [])].reduce((s, item) => s + tpN(item.amount), 0);
   const expenses = (state.cashFlow?.expenses || []).reduce((s, item) => s + tpN(item.amount), 0);
   return { income, expenses, excess: income - expenses };
 }
@@ -7814,7 +7816,7 @@ function _renderCashFlowHtml() {
       </div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.85rem;margin-bottom:1rem">
-      ${stat('Income Events', totals.income, 'var(--success)', `${autoIncome.length} auto + ${cf.income.length} manual`)}
+      ${stat('Income Events', totals.income, 'var(--success)', `1 pinned + ${autoIncome.length} auto + ${cf.income.length} manual`)}
       ${stat('Expense Events', totals.expenses, 'var(--danger)', `${cf.expenses.length} item${cf.expenses.length === 1 ? '' : 's'}`)}
       <div style="padding:1rem 1.1rem;background:${excessPositive ? 'rgba(16,185,129,.10)' : 'rgba(220,38,38,.08)'};border:1px solid ${excessPositive ? 'rgba(16,185,129,.35)' : 'rgba(220,38,38,.30)'};border-radius:var(--radius)">
         <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.25rem">${excessPositive ? 'Excess Left Over' : 'Shortfall'}</div>
@@ -7835,7 +7837,9 @@ function cfColumnHtml(type, title, color, autoItems = []) {
     const bd = b.date || '9999-99-99';
     return ad.localeCompare(bd) || (a.name || '').localeCompare(b.name || '');
   });
-  const total = [...autoItems, ...items].reduce((s, item) => s + tpN(item.amount), 0);
+  const pinnedTotal = type === 'income' ? tpN(state.cashFlow?.robinhoodChecking) : 0;
+  const total = pinnedTotal + [...autoItems, ...items].reduce((s, item) => s + tpN(item.amount), 0);
+  const pinnedRow = type === 'income' ? cfPinnedCheckingRow(color) : '';
   const autoRows = autoItems.map(item => cfAutoRow(item, color)).join('');
   const rows = items.map(item => (_cfEdit?.type === type && _cfEdit?.id === item.id)
     ? cfEditRow(type, item)
@@ -7862,6 +7866,7 @@ function cfColumnHtml(type, title, color, autoItems = []) {
             </tr>
           </thead>
           <tbody>
+            ${pinnedRow}
             ${autoRows}
             ${addRow}
             ${rows || (addRow || autoRows ? '' : `<tr><td colspan="4" style="padding:1.5rem;text-align:center;color:var(--text-muted)">No ${title.toLowerCase()} yet.</td></tr>`)}
@@ -7869,6 +7874,29 @@ function cfColumnHtml(type, title, color, autoItems = []) {
         </table>
       </div>
     </div>`;
+}
+
+function cfPinnedCheckingRow(color) {
+  return `<tr style="background:rgba(16,185,129,.08)">
+    <td style="padding:.55rem .6rem;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
+        <span style="font-weight:700">Robinhood Checking Current Balance</span>
+        <span style="display:inline-block;padding:.08rem .38rem;border-radius:999px;background:rgba(16,185,129,.14);color:var(--success);font-size:.66rem;font-weight:750;text-transform:uppercase">Pinned</span>
+      </div>
+      <div style="font-size:.72rem;color:var(--text-muted);margin-top:.1rem">Editable cash-on-hand starting point for ${CASH_FLOW_YEAR} cash flow.</div>
+    </td>
+    <td style="padding:.55rem .6rem;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text-muted)">Current</td>
+    <td style="padding:.55rem .6rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;min-width:150px">
+      <div style="position:relative">
+        <span style="position:absolute;left:.55rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
+        <input type="text" inputmode="decimal" class="form-input"
+               value="${escAttr(moneyInputValue(state.cashFlow?.robinhoodChecking || 0))}"
+               onchange="cfUpdateChecking(this.value)" onblur="formatMoneyInput(this)"
+               style="width:100%;padding-left:1.35rem;text-align:right;font-size:.84rem;font-weight:700;color:${color}">
+      </div>
+    </td>
+    <td style="padding:.55rem .4rem;border-bottom:1px solid var(--border);text-align:right;color:var(--text-muted);font-size:.72rem;white-space:nowrap">Editable</td>
+  </tr>`;
 }
 
 function cfAutoRow(item, color) {
@@ -7885,6 +7913,13 @@ function cfAutoRow(item, color) {
     <td style="padding:.55rem .6rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;font-weight:700;color:${amountColor}">${fmt(item.amount || 0)}</td>
     <td style="padding:.55rem .4rem;border-bottom:1px solid var(--border);text-align:right;color:var(--text-muted);font-size:.72rem;white-space:nowrap">Property page</td>
   </tr>`;
+}
+
+async function cfUpdateChecking(value) {
+  const amount = parseMoney(value);
+  state.cashFlow.robinhoodChecking = isFinite(amount) && amount >= 0 ? amount : 0;
+  await saveCashFlow();
+  _renderCashFlowHtml();
 }
 
 function cfDisplayRow(type, item, color) {
@@ -10190,6 +10225,7 @@ window.cfEdit                  = cfEdit;
 window.cfCancel                = cfCancel;
 window.cfSave                  = cfSave;
 window.cfDelete                = cfDelete;
+window.cfUpdateChecking        = cfUpdateChecking;
 
 // Close modals on Escape
 document.addEventListener('keydown', e => {
