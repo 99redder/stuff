@@ -1583,6 +1583,7 @@ const PRIMARY_VIEWS = new Set(['investment-return', 'maintenance']);
 const GLOBAL_HEADER_VIEWS = new Set(['tax-planning', 'budget', 'cash-flow', 'mom-budget', 'solar', 'deductions', 'savings']);
 const CASH_FLOW_YEAR = 2026;
 const CASH_FLOW_AUTO_PROCEEDS_PROPS = ['6AL', '95EB', '731WO'];
+const CASH_FLOW_MORTGAGE_PAYOFFS = { '731WO': 135000 };
 const PROPERTY_TAB_RETURN_VIEWS = new Set(['portfolio', ...GLOBAL_HEADER_VIEWS]);
 const APP_TIME_ZONE = 'America/New_York';
 function appTodayParts(date = new Date()) {
@@ -7733,13 +7734,14 @@ function cfPropertySaleProceedsItem(prop) {
   const draftBreakdown = closeoutDraft?.breakdown?.items ? closeoutDraft.breakdown : null;
   const salePrice = isSold ? saleCloseout.salePrice : (closeoutDraft.price || 0);
   const date = isSold ? (saleCloseout.saleDate || '') : (closeoutDraft.date || '');
+  const mortgagePayoff = CASH_FLOW_MORTGAGE_PAYOFFS[prop] || 0;
   const base = {
     id: `auto-sale-${prop}`,
     auto: true,
     date,
-    name: `${prop} Sale Net Proceeds After Taxes`,
+    name: `${prop} Sale Net Proceeds After Taxes${mortgagePayoff ? ' & Mortgage Payoff' : ''}`,
     amount: 0,
-    note: `Auto from ${prop} Investment Return sale worksheet after closing costs and estimated sale taxes`
+    note: `Auto from ${prop} Investment Return sale worksheet after closing costs and estimated sale taxes${mortgagePayoff ? `, less ${fmt(mortgagePayoff)} mortgage payoff` : ''}`
   };
   if (!salePrice) {
     return { ...base, note: `${base.note} - enter a sale price to calculate` };
@@ -7782,10 +7784,11 @@ function cfPropertySaleProceedsItem(prop) {
   const netSaleProceeds = isSold
     ? (saleCloseout.netSaleProceeds || 0)
     : grossAfterClosing - depreciationRecaptureTax - federalCapGainsTax - stateCapGainsTax;
+  const cashFlowProceeds = netSaleProceeds - mortgagePayoff;
 
   return {
     ...base,
-    amount: netSaleProceeds,
+    amount: cashFlowProceeds,
     note: `${base.note} - ${isSold ? 'final closeout' : 'draft worksheet'}`
   };
 }
