@@ -7737,9 +7737,9 @@ function cfPropertySaleProceedsItem(prop) {
     id: `auto-sale-${prop}`,
     auto: true,
     date,
-    name: `${prop} Sale Net Proceeds`,
+    name: `${prop} Sale Net Proceeds After Taxes`,
     amount: 0,
-    note: `Auto from ${prop} Investment Return sale worksheet`
+    note: `Auto from ${prop} Investment Return sale worksheet after closing costs and estimated sale taxes`
   };
   if (!salePrice) {
     return { ...base, note: `${base.note} - enter a sale price to calculate` };
