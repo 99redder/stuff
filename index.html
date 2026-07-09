@@ -1582,6 +1582,7 @@ const MOVE_IN_PURCHASE_DEFAULT_DATE = '2027-02-01';
 const PRIMARY_VIEWS = new Set(['investment-return', 'maintenance']);
 const GLOBAL_HEADER_VIEWS = new Set(['tax-planning', 'budget', 'cash-flow', 'mom-budget', 'solar', 'deductions', 'savings']);
 const CASH_FLOW_YEAR = 2026;
+const CASH_FLOW_AUTO_PROCEEDS_PROPS = ['6AL', '95EB', '731WO'];
 const PROPERTY_TAB_RETURN_VIEWS = new Set(['portfolio', ...GLOBAL_HEADER_VIEWS]);
 const APP_TIME_ZONE = 'America/New_York';
 function appTodayParts(date = new Date()) {
@@ -7705,18 +7706,94 @@ async function saveCashFlow() {
 
 async function renderCashFlow() {
   await loadCashFlow();
+  await Promise.all(CASH_FLOW_AUTO_PROCEEDS_PROPS.flatMap(prop => {
+    const keys = ['transactions', 'summaries', 'depreciation', 'investment'];
+    if (MAINTENANCE_BASIS_PROPERTIES.has(prop)) keys.push('maintenance');
+    return keys.map(key => ensureLoaded(prop, key));
+  }));
   _renderCashFlowHtml();
 }
 
-function cfTotals() {
-  const income = (state.cashFlow?.income || []).reduce((s, item) => s + tpN(item.amount), 0);
+function cfTotals(autoIncome = []) {
+  const income = [...autoIncome, ...(state.cashFlow?.income || [])].reduce((s, item) => s + tpN(item.amount), 0);
   const expenses = (state.cashFlow?.expenses || []).reduce((s, item) => s + tpN(item.amount), 0);
   return { income, expenses, excess: income - expenses };
 }
 
+function cfAutoIncomeItems() {
+  return CASH_FLOW_AUTO_PROCEEDS_PROPS.map(prop => cfPropertySaleProceedsItem(prop));
+}
+
+function cfPropertySaleProceedsItem(prop) {
+  const inv = state.data[prop]?.investment || {};
+  const saleCloseout = inv.saleCloseout || null;
+  const isSold = !!saleCloseout?.closedAt;
+  const isPrimaryResidence = PRIMARY_PROPERTIES.has(prop);
+  const closeoutDraft = isSold ? {} : loadSaleCloseoutDraft(prop);
+  const draftBreakdown = closeoutDraft?.breakdown?.items ? closeoutDraft.breakdown : null;
+  const salePrice = isSold ? saleCloseout.salePrice : (closeoutDraft.price || 0);
+  const date = isSold ? (saleCloseout.saleDate || '') : (closeoutDraft.date || '');
+  const base = {
+    id: `auto-sale-${prop}`,
+    auto: true,
+    date,
+    name: `${prop} Sale Net Proceeds`,
+    amount: 0,
+    note: `Auto from ${prop} Investment Return sale worksheet`
+  };
+  if (!salePrice) {
+    return { ...base, note: `${base.note} - enter a sale price to calculate` };
+  }
+
+  const purchasePrice = inv.purchasePrice || 0;
+  const purchaseClosing = inv.purchaseClosingCosts || 0;
+  const summs = state.data[prop]?.summaries || {};
+  const txns = state.data[prop]?.transactions || [];
+  let cumulativeImprovements = 0;
+  const yearStr = String(CASH_FLOW_YEAR);
+  for (const [yr, d] of Object.entries(summs)) {
+    if (yr !== yearStr) cumulativeImprovements += (d.improvements || 0);
+  }
+  for (const t of txns) {
+    if (t.date?.startsWith(yearStr) && t.category === 'improvements') cumulativeImprovements += t.amount || 0;
+  }
+  if (MAINTENANCE_BASIS_PROPERTIES.has(prop)) {
+    for (const e of (state.data[prop]?.maintenance || [])) {
+      if (e.capitalImprovement) cumulativeImprovements += (e.cost || 0);
+    }
+  }
+
+  let cumulativeDepreciation = 0;
+  const dc = state.data[prop]?.depreciation;
+  if (!isPrimaryResidence && dc) {
+    const sched = calcDepreciationSchedule(dc.costBasis, dc.placedInService);
+    if (sched.length) cumulativeDepreciation = sched[sched.length - 1].cumulative;
+  }
+
+  const basis = purchasePrice + purchaseClosing + cumulativeImprovements;
+  const saleClosingCosts = isSold ? (saleCloseout.saleClosingCosts || 0)
+    : saleClosingEstimateTotal(prop, salePrice, draftBreakdown);
+  const grossAfterClosing = salePrice - saleClosingCosts;
+  const saleTax = calcSaleCapitalTaxAmounts(grossAfterClosing, basis, cumulativeDepreciation, isPrimaryResidence);
+  const depreciationRecaptureTax = saleTax.depreciationRecapture * 0.25;
+  const stateCapGainsPct = ((typeof inv.stateCapGainsPct === 'number' && inv.stateCapGainsPct > 0) ? inv.stateCapGainsPct : 8.95);
+  const federalCapGainsTax = Math.max(0, saleTax.taxableGain) * 0.15;
+  const stateCapGainsTax = Math.max(0, saleTax.taxableGain) * (stateCapGainsPct / 100);
+  const netSaleProceeds = isSold
+    ? (saleCloseout.netSaleProceeds || 0)
+    : grossAfterClosing - depreciationRecaptureTax - federalCapGainsTax - stateCapGainsTax;
+
+  return {
+    ...base,
+    amount: netSaleProceeds,
+    note: `${base.note} - ${isSold ? 'final closeout' : 'draft worksheet'}`
+  };
+}
+
 function _renderCashFlowHtml() {
   const cf = state.cashFlow;
-  const totals = cfTotals();
+  const autoIncome = cfAutoIncomeItems();
+  const totals = cfTotals(autoIncome);
   const excessPositive = totals.excess >= 0;
   const stat = (label, value, color, sub = '') => `
     <div style="padding:1rem 1.1rem;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius)">
@@ -7734,7 +7811,7 @@ function _renderCashFlowHtml() {
       </div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.85rem;margin-bottom:1rem">
-      ${stat('Income Events', totals.income, 'var(--success)', `${cf.income.length} item${cf.income.length === 1 ? '' : 's'}`)}
+      ${stat('Income Events', totals.income, 'var(--success)', `${autoIncome.length} auto + ${cf.income.length} manual`)}
       ${stat('Expense Events', totals.expenses, 'var(--danger)', `${cf.expenses.length} item${cf.expenses.length === 1 ? '' : 's'}`)}
       <div style="padding:1rem 1.1rem;background:${excessPositive ? 'rgba(16,185,129,.10)' : 'rgba(220,38,38,.08)'};border:1px solid ${excessPositive ? 'rgba(16,185,129,.35)' : 'rgba(220,38,38,.30)'};border-radius:var(--radius)">
         <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.25rem">${excessPositive ? 'Excess Left Over' : 'Shortfall'}</div>
@@ -7743,19 +7820,20 @@ function _renderCashFlowHtml() {
       </div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1rem;align-items:start">
-      ${cfColumnHtml('income', 'Income', 'var(--success)')}
+      ${cfColumnHtml('income', 'Income', 'var(--success)', autoIncome)}
       ${cfColumnHtml('expenses', 'Expenses', 'var(--danger)')}
     </div>
   `;
 }
 
-function cfColumnHtml(type, title, color) {
+function cfColumnHtml(type, title, color, autoItems = []) {
   const items = (state.cashFlow?.[type] || []).slice().sort((a, b) => {
     const ad = a.date || '9999-99-99';
     const bd = b.date || '9999-99-99';
     return ad.localeCompare(bd) || (a.name || '').localeCompare(b.name || '');
   });
-  const total = items.reduce((s, item) => s + tpN(item.amount), 0);
+  const total = [...autoItems, ...items].reduce((s, item) => s + tpN(item.amount), 0);
+  const autoRows = autoItems.map(item => cfAutoRow(item, color)).join('');
   const rows = items.map(item => (_cfEdit?.type === type && _cfEdit?.id === item.id)
     ? cfEditRow(type, item)
     : cfDisplayRow(type, item, color)).join('');
@@ -7781,12 +7859,29 @@ function cfColumnHtml(type, title, color) {
             </tr>
           </thead>
           <tbody>
+            ${autoRows}
             ${addRow}
-            ${rows || (addRow ? '' : `<tr><td colspan="4" style="padding:1.5rem;text-align:center;color:var(--text-muted)">No ${title.toLowerCase()} yet.</td></tr>`)}
+            ${rows || (addRow || autoRows ? '' : `<tr><td colspan="4" style="padding:1.5rem;text-align:center;color:var(--text-muted)">No ${title.toLowerCase()} yet.</td></tr>`)}
           </tbody>
         </table>
       </div>
     </div>`;
+}
+
+function cfAutoRow(item, color) {
+  const amountColor = item.amount > 0 ? color : 'var(--text-muted)';
+  return `<tr style="background:var(--surface)">
+    <td style="padding:.55rem .6rem;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
+        <span style="font-weight:650">${escHtml(item.name || 'Untitled')}</span>
+        <span style="display:inline-block;padding:.08rem .38rem;border-radius:999px;background:rgba(37,99,235,.10);color:var(--primary);font-size:.66rem;font-weight:750;text-transform:uppercase">Auto</span>
+      </div>
+      ${item.note ? `<div style="font-size:.72rem;color:var(--text-muted);margin-top:.1rem">${escHtml(item.note)}</div>` : ''}
+    </td>
+    <td style="padding:.55rem .6rem;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text-muted)">${item.date ? fmtDate(item.date) : 'Worksheet'}</td>
+    <td style="padding:.55rem .6rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;font-weight:700;color:${amountColor}">${fmt(item.amount || 0)}</td>
+    <td style="padding:.55rem .4rem;border-bottom:1px solid var(--border);text-align:right;color:var(--text-muted);font-size:.72rem;white-space:nowrap">Property page</td>
+  </tr>`;
 }
 
 function cfDisplayRow(type, item, color) {
