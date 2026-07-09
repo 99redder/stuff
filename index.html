@@ -7736,6 +7736,7 @@ async function saveCashFlow() {
 
 async function renderCashFlow() {
   await loadCashFlow();
+  await loadSavings();
   await Promise.all(CASH_FLOW_AUTO_PROCEEDS_PROPS.flatMap(prop => {
     const keys = ['transactions', 'summaries', 'depreciation', 'investment'];
     if (MAINTENANCE_BASIS_PROPERTIES.has(prop)) keys.push('maintenance');
@@ -7744,8 +7745,12 @@ async function renderCashFlow() {
   _renderCashFlowHtml();
 }
 
+function cfRobinhoodChecking() {
+  return tpN(state.savings?.accounts?.robinhoodChecking);
+}
+
 function cfTotals(autoIncome = []) {
-  const income = tpN(state.cashFlow?.robinhoodChecking) +
+  const income = cfRobinhoodChecking() +
     [...autoIncome, ...(state.cashFlow?.income || [])].reduce((s, item) => s + tpN(item.amount), 0);
   const expenses = (state.cashFlow?.expenses || []).reduce((s, item) => s + tpN(item.amount), 0);
   return { income, expenses, excess: income - expenses };
@@ -7872,7 +7877,7 @@ function cfColumnHtml(type, title, color, autoItems = []) {
       return ad.localeCompare(bd) || (a.name || '').localeCompare(b.name || '');
     });
   }
-  const pinnedTotal = type === 'income' ? tpN(state.cashFlow?.robinhoodChecking) : 0;
+  const pinnedTotal = type === 'income' ? cfRobinhoodChecking() : 0;
   const total = pinnedTotal + [...autoItems, ...items].reduce((s, item) => s + tpN(item.amount), 0);
   const pinnedRow = type === 'income' ? cfPinnedCheckingRow(color) : '';
   const autoRows = autoItems.map(item => cfAutoRow(item, color)).join('');
@@ -7936,7 +7941,7 @@ function cfPinnedCheckingRow(color) {
       <div style="position:relative">
         <span style="position:absolute;left:.55rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
         <input type="text" inputmode="decimal" class="form-input"
-               value="${escAttr(moneyInputValue(state.cashFlow?.robinhoodChecking || 0))}"
+               value="${escAttr(moneyInputValue(cfRobinhoodChecking()))}"
                onchange="cfUpdateChecking(this.value)" onblur="formatMoneyInput(this)"
                style="width:100%;padding-left:1.35rem;text-align:right;font-size:.84rem;font-weight:700;color:${color}">
       </div>
@@ -7969,8 +7974,9 @@ function cfAutoRow(item, color) {
 
 async function cfUpdateChecking(value) {
   const amount = parseMoney(value);
-  state.cashFlow.robinhoodChecking = isFinite(amount) && amount >= 0 ? amount : 0;
-  await saveCashFlow();
+  if (!state.savings) await loadSavings();
+  state.savings.accounts.robinhoodChecking = isFinite(amount) && amount >= 0 ? amount : 0;
+  await saveSavings();
   _renderCashFlowHtml();
 }
 
