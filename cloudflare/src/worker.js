@@ -94,6 +94,8 @@ async function handleDataApi(request, env) {
   if (action === 'fetch_esai_tax_summary') return handleFetchEsaiTaxSummary(body);
   if (action === 'get_budget') return handleGetBudget(env);
   if (action === 'save_budget') return handleSaveBudget(env, body.data);
+  if (action === 'get_cash_flow') return handleGetCashFlow(env, body.year);
+  if (action === 'save_cash_flow') return handleSaveCashFlow(env, body.year, body.data);
   if (action === 'refresh_usda_food_benchmark') return handleRefreshUsdaFoodBenchmark();
   if (action === 'get_mom_budget') return handleGetMomBudget(env);
   if (action === 'save_mom_budget') return handleSaveMomBudget(env, body.data);
@@ -783,6 +785,41 @@ async function handleSaveBudget(env, data) {
   }
   await env.RENTALS.put('budget', JSON.stringify(data));
   return jsonResponse({ success: true });
+}
+
+// ── Cash Flow ────────────────────────────────────────────────────────────────
+
+async function handleGetCashFlow(env, year) {
+  if (!year || !/^\d{4}$/.test(String(year))) {
+    return jsonResponse({ error: 'Invalid year' }, 400);
+  }
+  const data = await env.RENTALS.get(`cash_flow:${year}`, 'json') || {};
+  return jsonResponse({ data });
+}
+
+async function handleSaveCashFlow(env, year, data) {
+  if (!year || !/^\d{4}$/.test(String(year))) {
+    return jsonResponse({ error: 'Invalid year' }, 400);
+  }
+  if (!data || typeof data !== 'object') {
+    return jsonResponse({ error: 'Missing data object' }, 400);
+  }
+
+  const sanitizeItems = items => Array.isArray(items) ? items.map(item => ({
+    id: item.id || crypto.randomUUID(),
+    date: String(item.date || '').trim().slice(0, 10),
+    name: String(item.name || '').trim().slice(0, 160),
+    amount: (typeof item.amount === 'number' && isFinite(item.amount) && item.amount >= 0) ? item.amount : 0,
+    note: String(item.note || '').trim().slice(0, 300),
+  })).filter(item => item.name || item.amount > 0) : [];
+
+  const saved = {
+    year: Number(year),
+    income: sanitizeItems(data.income),
+    expenses: sanitizeItems(data.expenses),
+  };
+  await env.RENTALS.put(`cash_flow:${year}`, JSON.stringify(saved));
+  return jsonResponse({ success: true, data: saved });
 }
 
 // ── USDA Cost of Food report fetch + parse ────────────────────────────────────

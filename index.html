@@ -1229,6 +1229,7 @@
     </div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
       <button class="tp-header-btn" id="budget-btn" onclick="switchView('budget')">Monthly Budget</button>
+      <button class="tp-header-btn" id="cash-flow-btn" onclick="switchView('cash-flow')">2026 Cash Flow</button>
       <button class="tp-header-btn" id="tax-planning-btn" onclick="switchView('tax-planning')">Tax Planning</button>
       <button class="tp-header-btn" id="savings-btn" onclick="switchView('savings')">💰 Savings</button>
       <button class="tp-header-btn" id="mom-budget-btn" onclick="switchView('mom-budget')">Mom Budget</button>
@@ -1579,7 +1580,8 @@ const MAINTENANCE_BASIS_PROPERTIES = new Set(['6AL', '95EB', ...PRIMARY_PROPERTI
 const MOVE_IN_PURCHASE_PROPERTY = '4781MC';
 const MOVE_IN_PURCHASE_DEFAULT_DATE = '2027-02-01';
 const PRIMARY_VIEWS = new Set(['investment-return', 'maintenance']);
-const GLOBAL_HEADER_VIEWS = new Set(['tax-planning', 'budget', 'mom-budget', 'solar', 'deductions', 'savings']);
+const GLOBAL_HEADER_VIEWS = new Set(['tax-planning', 'budget', 'cash-flow', 'mom-budget', 'solar', 'deductions', 'savings']);
+const CASH_FLOW_YEAR = 2026;
 const PROPERTY_TAB_RETURN_VIEWS = new Set(['portfolio', ...GLOBAL_HEADER_VIEWS]);
 const APP_TIME_ZONE = 'America/New_York';
 function appTodayParts(date = new Date()) {
@@ -1865,6 +1867,7 @@ const state = {
   pendingMaintPrompt: null,    // { date, amount, description, category } after expense save
   budget: null,                // loaded once, global (not per-property)
   momBudget: null,             // loaded once, global (not per-property)
+  cashFlow: null,              // loaded once, global 2026 cash-flow planner
   solar: { config: null, entries: null, summaries: null },
   savings: null                // loaded once, global (not per-property)
 };
@@ -2126,7 +2129,7 @@ function switchProperty(prop) {
   }
   document.getElementById('property-tabs').style.display = '';
   document.getElementById('view-nav').style.display = '';
-  ['tax-planning-btn', 'budget-btn', 'mom-budget-btn', 'solar-btn', 'deductions-btn', 'savings-btn', 'header-tools-summary']
+  ['tax-planning-btn', 'budget-btn', 'cash-flow-btn', 'mom-budget-btn', 'solar-btn', 'deductions-btn', 'savings-btn', 'header-tools-summary']
     .forEach(id => document.getElementById(id)?.classList.remove('active'));
   renderView();
 }
@@ -2142,6 +2145,7 @@ function switchView(view) {
   });
   const isTaxPlanning = view === 'tax-planning';
   const isBudget = view === 'budget';
+  const isCashFlow = view === 'cash-flow';
   const isMomBudget = view === 'mom-budget';
   const isSolar = view === 'solar';
   const isDeductions = view === 'deductions';
@@ -2157,6 +2161,8 @@ function switchView(view) {
   if (tpBtn) tpBtn.classList.toggle('active', isTaxPlanning);
   const budgetBtn = document.getElementById('budget-btn');
   if (budgetBtn) budgetBtn.classList.toggle('active', isBudget);
+  const cashFlowBtn = document.getElementById('cash-flow-btn');
+  if (cashFlowBtn) cashFlowBtn.classList.toggle('active', isCashFlow);
   const momBudgetBtn = document.getElementById('mom-budget-btn');
   if (momBudgetBtn) momBudgetBtn.classList.toggle('active', isMomBudget);
   const solarBtn = document.getElementById('solar-btn');
@@ -2186,6 +2192,7 @@ async function renderView() {
       case 'portfolio':     await renderPortfolio();    break;
       case 'tax-planning':  await renderTaxPlanning();   break;
       case 'budget':        await renderBudget();        break;
+      case 'cash-flow':     await renderCashFlow();      break;
       case 'mom-budget':    await renderMomBudget();     break;
       case 'solar':         await renderSolar();         break;
       case 'deductions':    await renderDeductions();    break;
@@ -7662,6 +7669,212 @@ async function envRENTALS_put(data) {
   await callApi({ action: 'save_deductions', data });
 }
 
+// ── View: 2026 Cash Flow ─────────────────────────────────────────────────────
+
+let _cfEdit = null; // { type: 'income' | 'expenses', id }
+
+function cfNewId(prefix = 'cf') {
+  return crypto.randomUUID ? crypto.randomUUID() : `${prefix}_${Math.random().toString(36).slice(2)}`;
+}
+
+function normalizeCashFlow(raw) {
+  const normalizeItems = items => Array.isArray(items) ? items.map(item => ({
+    id: item.id || cfNewId(),
+    date: String(item.date || '').slice(0, 10),
+    name: String(item.name || '').trim(),
+    amount: tpN(item.amount),
+    note: String(item.note || '').trim()
+  })).filter(item => item.name || item.amount) : [];
+
+  return {
+    year: CASH_FLOW_YEAR,
+    income: normalizeItems(raw?.income),
+    expenses: normalizeItems(raw?.expenses)
+  };
+}
+
+async function loadCashFlow() {
+  if (state.cashFlow) return;
+  const result = await callApi({ action: 'get_cash_flow', year: CASH_FLOW_YEAR });
+  state.cashFlow = normalizeCashFlow(result.data || {});
+}
+
+async function saveCashFlow() {
+  await callApi({ action: 'save_cash_flow', year: CASH_FLOW_YEAR, data: state.cashFlow });
+}
+
+async function renderCashFlow() {
+  await loadCashFlow();
+  _renderCashFlowHtml();
+}
+
+function cfTotals() {
+  const income = (state.cashFlow?.income || []).reduce((s, item) => s + tpN(item.amount), 0);
+  const expenses = (state.cashFlow?.expenses || []).reduce((s, item) => s + tpN(item.amount), 0);
+  return { income, expenses, excess: income - expenses };
+}
+
+function _renderCashFlowHtml() {
+  const cf = state.cashFlow;
+  const totals = cfTotals();
+  const excessPositive = totals.excess >= 0;
+  const stat = (label, value, color, sub = '') => `
+    <div style="padding:1rem 1.1rem;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius)">
+      <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.25rem">${label}</div>
+      <div style="font-size:1.55rem;font-weight:800;line-height:1;color:${color}">${fmtSigned(value)}</div>
+      ${sub ? `<div style="font-size:.76rem;color:var(--text-muted);margin-top:.35rem">${sub}</div>` : ''}
+    </div>`;
+
+  document.getElementById('app').innerHTML = `
+    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="switchView('current-year')" style="flex-shrink:0;background:linear-gradient(135deg,#f59e0b,#d97706);color:white;border:none;box-shadow:0 2px 8px rgba(245,158,11,0.35)">Back to Properties</button>
+      <div style="flex:1;min-width:220px">
+        <div style="font-size:1.2rem;font-weight:700">${CASH_FLOW_YEAR} Cash Flow</div>
+        <div style="font-size:.8rem;color:var(--text-muted)">Track expected income and expense events, then see what is left over.</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.85rem;margin-bottom:1rem">
+      ${stat('Income Events', totals.income, 'var(--success)', `${cf.income.length} item${cf.income.length === 1 ? '' : 's'}`)}
+      ${stat('Expense Events', totals.expenses, 'var(--danger)', `${cf.expenses.length} item${cf.expenses.length === 1 ? '' : 's'}`)}
+      <div style="padding:1rem 1.1rem;background:${excessPositive ? 'rgba(16,185,129,.10)' : 'rgba(220,38,38,.08)'};border:1px solid ${excessPositive ? 'rgba(16,185,129,.35)' : 'rgba(220,38,38,.30)'};border-radius:var(--radius)">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.25rem">${excessPositive ? 'Excess Left Over' : 'Shortfall'}</div>
+        <div style="font-size:1.75rem;font-weight:850;line-height:1;color:${excessPositive ? 'var(--success)' : 'var(--danger)'}">${fmtSigned(totals.excess)}</div>
+        <div style="font-size:.76rem;color:var(--text-muted);margin-top:.35rem">${fmt(totals.income)} income minus ${fmt(totals.expenses)} expenses</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1rem;align-items:start">
+      ${cfColumnHtml('income', 'Income', 'var(--success)')}
+      ${cfColumnHtml('expenses', 'Expenses', 'var(--danger)')}
+    </div>
+  `;
+}
+
+function cfColumnHtml(type, title, color) {
+  const items = (state.cashFlow?.[type] || []).slice().sort((a, b) => {
+    const ad = a.date || '9999-99-99';
+    const bd = b.date || '9999-99-99';
+    return ad.localeCompare(bd) || (a.name || '').localeCompare(b.name || '');
+  });
+  const total = items.reduce((s, item) => s + tpN(item.amount), 0);
+  const rows = items.map(item => (_cfEdit?.type === type && _cfEdit?.id === item.id)
+    ? cfEditRow(type, item)
+    : cfDisplayRow(type, item, color)).join('');
+  const addRow = (_cfEdit?.type === type && _cfEdit?.id === 'new') ? cfEditRow(type, { id: 'new' }) : '';
+
+  return `
+    <div class="card">
+      <div class="card-header" style="padding:.7rem 1rem;display:flex;justify-content:space-between;align-items:center;gap:.75rem;flex-wrap:wrap">
+        <div>
+          <div class="card-title">${title}</div>
+          <div style="font-size:.75rem;color:var(--text-muted);margin-top:.15rem">${fmt(total)} total</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="cfAdd('${type}')">+ Add</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:.86rem">
+          <thead>
+            <tr style="border-bottom:2px solid var(--border);text-align:left">
+              <th style="padding:.45rem .6rem;color:var(--text-muted);font-size:.72rem;text-transform:uppercase">Event</th>
+              <th style="padding:.45rem .6rem;color:var(--text-muted);font-size:.72rem;text-transform:uppercase">Date</th>
+              <th style="padding:.45rem .6rem;color:var(--text-muted);font-size:.72rem;text-transform:uppercase;text-align:right">Amount</th>
+              <th style="padding:.45rem .4rem"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${addRow}
+            ${rows || (addRow ? '' : `<tr><td colspan="4" style="padding:1.5rem;text-align:center;color:var(--text-muted)">No ${title.toLowerCase()} yet.</td></tr>`)}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function cfDisplayRow(type, item, color) {
+  return `<tr>
+    <td style="padding:.55rem .6rem;border-bottom:1px solid var(--border)">
+      <div style="font-weight:650">${escHtml(item.name || 'Untitled')}</div>
+      ${item.note ? `<div style="font-size:.72rem;color:var(--text-muted);margin-top:.1rem">${escHtml(item.note)}</div>` : ''}
+    </td>
+    <td style="padding:.55rem .6rem;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text-muted)">${item.date ? fmtDate(item.date) : 'Unscheduled'}</td>
+    <td style="padding:.55rem .6rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;font-weight:700;color:${color}">${fmt(item.amount || 0)}</td>
+    <td style="padding:.55rem .4rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap">
+      <button class="btn btn-ghost btn-sm" style="padding:.16rem .35rem;font-size:.75rem" onclick="cfEdit('${type}', '${escAttr(item.id)}')">Edit</button>
+      <button class="btn btn-ghost btn-sm" style="padding:.16rem .35rem;font-size:.75rem;color:var(--danger)" onclick="cfDelete('${type}', '${escAttr(item.id)}')">Delete</button>
+    </td>
+  </tr>`;
+}
+
+function cfEditRow(type, item) {
+  return `<tr style="background:var(--bg)">
+    <td style="padding:.45rem .6rem;border-bottom:1px solid var(--border)">
+      <input id="cf-edit-name" class="form-input" type="text" placeholder="Event name" value="${escAttr(item.name || '')}" style="width:100%;font-size:.84rem;margin-bottom:.3rem">
+      <input id="cf-edit-note" class="form-input" type="text" placeholder="Note (optional)" value="${escAttr(item.note || '')}" style="width:100%;font-size:.76rem">
+    </td>
+    <td style="padding:.45rem .6rem;border-bottom:1px solid var(--border);min-width:140px">
+      <input id="cf-edit-date" class="form-input" type="date" value="${escAttr(item.date || '')}" style="width:100%;font-size:.84rem">
+    </td>
+    <td style="padding:.45rem .6rem;border-bottom:1px solid var(--border);min-width:125px">
+      <input id="cf-edit-amount" class="form-input" type="text" inputmode="decimal" placeholder="0.00" value="${escAttr(moneyInputValue(item.amount))}" onblur="formatMoneyInput(this)" style="width:100%;font-size:.84rem;text-align:right">
+    </td>
+    <td style="padding:.45rem .4rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap">
+      <button class="btn btn-primary btn-sm" style="padding:.3rem .55rem" onclick="cfSave('${type}', '${escAttr(item.id || 'new')}')">Save</button>
+      <button class="btn btn-ghost btn-sm" style="padding:.3rem .55rem" onclick="cfCancel()">Cancel</button>
+    </td>
+  </tr>`;
+}
+
+function cfAdd(type) {
+  _cfEdit = { type, id: 'new' };
+  _renderCashFlowHtml();
+}
+
+function cfEdit(type, id) {
+  if (!state.cashFlow?.[type]?.some(item => item.id === id)) return;
+  _cfEdit = { type, id };
+  _renderCashFlowHtml();
+}
+
+function cfCancel() {
+  _cfEdit = null;
+  _renderCashFlowHtml();
+}
+
+async function cfSave(type, id) {
+  if (!['income', 'expenses'].includes(type)) return;
+  const name = (document.getElementById('cf-edit-name')?.value || '').trim();
+  const note = (document.getElementById('cf-edit-note')?.value || '').trim();
+  const date = (document.getElementById('cf-edit-date')?.value || '').trim();
+  const amount = parseMoney(document.getElementById('cf-edit-amount')?.value);
+  if (!name) { alert('Event name is required.'); return; }
+  if (!isFinite(amount) || amount < 0) { alert('Amount must be zero or greater.'); return; }
+
+  if (id === 'new') {
+    state.cashFlow[type].push({ id: cfNewId(), date, name, amount, note });
+  } else {
+    const item = state.cashFlow[type].find(x => x.id === id);
+    if (item) Object.assign(item, { date, name, amount, note });
+  }
+  _cfEdit = null;
+  await saveCashFlow();
+  _renderCashFlowHtml();
+}
+
+async function cfDelete(type, id) {
+  const item = state.cashFlow?.[type]?.find(x => x.id === id);
+  if (!item) return;
+  showBrandedNotice({
+    title: 'Delete Cash Flow Event',
+    type: 'danger',
+    message: `"${item.name}" (${fmt(item.amount || 0)}) will be removed from ${CASH_FLOW_YEAR} ${type}.`,
+    confirmLabel: 'Delete',
+    onConfirm: async () => {
+      state.cashFlow[type] = state.cashFlow[type].filter(x => x.id !== id);
+      await saveCashFlow();
+      _renderCashFlowHtml();
+    }
+  });
+}
+
 // ── View: Savings ────────────────────────────────────────────────────────────
 
 const DEFAULT_SAVINGS_OBLIGATIONS = [
@@ -9874,6 +10087,11 @@ window.mbDeleteTemplateItem    = mbDeleteTemplateItem;
 window.mbToggleTemplateLock    = mbToggleTemplateLock;
 window.mbUpdateVariable        = mbUpdateVariable;
 window.mbToggleVariableLock    = mbToggleVariableLock;
+window.cfAdd                   = cfAdd;
+window.cfEdit                  = cfEdit;
+window.cfCancel                = cfCancel;
+window.cfSave                  = cfSave;
+window.cfDelete                = cfDelete;
 
 // Close modals on Escape
 document.addEventListener('keydown', e => {
