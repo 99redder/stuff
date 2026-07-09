@@ -7685,6 +7685,7 @@ async function envRENTALS_put(data) {
 // ── View: 2026 Cash Flow ─────────────────────────────────────────────────────
 
 let _cfEdit = null; // { type: 'income' | 'expenses', id }
+let _cfExpenseSort = 'amount'; // 'amount' | 'date'
 const _cfExpandedIncome = new Set();
 
 function cfNewId(prefix = 'cf') {
@@ -7698,6 +7699,11 @@ function cfIncomeExpanded(id) {
 function cfToggleIncomeDetails(id) {
   if (_cfExpandedIncome.has(id)) _cfExpandedIncome.delete(id);
   else _cfExpandedIncome.add(id);
+  _renderCashFlowHtml();
+}
+
+function cfSetExpenseSort(sort) {
+  _cfExpenseSort = sort === 'date' ? 'date' : 'amount';
   _renderCashFlowHtml();
 }
 
@@ -7856,11 +7862,16 @@ function _renderCashFlowHtml() {
 }
 
 function cfColumnHtml(type, title, color, autoItems = []) {
-  const items = (state.cashFlow?.[type] || []).slice().sort((a, b) => {
-    const ad = a.date || '9999-99-99';
-    const bd = b.date || '9999-99-99';
-    return ad.localeCompare(bd) || (a.name || '').localeCompare(b.name || '');
-  });
+  const items = (state.cashFlow?.[type] || []).slice();
+  if (type === 'expenses' && _cfExpenseSort === 'amount') {
+    items.sort((a, b) => tpN(b.amount) - tpN(a.amount) || (a.name || '').localeCompare(b.name || ''));
+  } else {
+    items.sort((a, b) => {
+      const ad = a.date || '9999-99-99';
+      const bd = b.date || '9999-99-99';
+      return ad.localeCompare(bd) || (a.name || '').localeCompare(b.name || '');
+    });
+  }
   const pinnedTotal = type === 'income' ? tpN(state.cashFlow?.robinhoodChecking) : 0;
   const total = pinnedTotal + [...autoItems, ...items].reduce((s, item) => s + tpN(item.amount), 0);
   const pinnedRow = type === 'income' ? cfPinnedCheckingRow(color) : '';
@@ -7870,6 +7881,13 @@ function cfColumnHtml(type, title, color, autoItems = []) {
     : cfDisplayRow(type, item, color)).join('');
   const addRow = (_cfEdit?.type === type && _cfEdit?.id === 'new') ? cfEditRow(type, { id: 'new' }) : '';
 
+  const sortControls = type === 'expenses' ? `
+    <div style="display:flex;align-items:center;gap:.25rem;flex-wrap:wrap">
+      <span style="font-size:.68rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;margin-right:.15rem">Sort</span>
+      <button class="btn btn-ghost btn-sm" style="padding:.2rem .45rem;font-size:.72rem;opacity:${_cfExpenseSort === 'amount' ? 1 : .5};background:${_cfExpenseSort === 'amount' ? 'var(--primary-light)' : 'transparent'};color:${_cfExpenseSort === 'amount' ? 'var(--primary)' : 'var(--text-muted)'}" onclick="cfSetExpenseSort('amount')">Amount</button>
+      <button class="btn btn-ghost btn-sm" style="padding:.2rem .45rem;font-size:.72rem;opacity:${_cfExpenseSort === 'date' ? 1 : .5};background:${_cfExpenseSort === 'date' ? 'var(--primary-light)' : 'transparent'};color:${_cfExpenseSort === 'date' ? 'var(--primary)' : 'var(--text-muted)'}" onclick="cfSetExpenseSort('date')">Date</button>
+    </div>` : '';
+
   return `
     <div class="card">
       <div class="card-header" style="padding:.7rem 1rem;display:flex;justify-content:space-between;align-items:center;gap:.75rem;flex-wrap:wrap">
@@ -7877,7 +7895,10 @@ function cfColumnHtml(type, title, color, autoItems = []) {
           <div class="card-title">${title}</div>
           <div style="font-size:.75rem;color:var(--text-muted);margin-top:.15rem">${fmt(total)} total</div>
         </div>
-        <button class="btn btn-primary btn-sm" onclick="cfAdd('${type}')">+ Add</button>
+        <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+          ${sortControls}
+          <button class="btn btn-primary btn-sm" onclick="cfAdd('${type}')">+ Add</button>
+        </div>
       </div>
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:.86rem">
@@ -10279,6 +10300,7 @@ window.cfSave                  = cfSave;
 window.cfDelete                = cfDelete;
 window.cfUpdateChecking        = cfUpdateChecking;
 window.cfToggleIncomeDetails   = cfToggleIncomeDetails;
+window.cfSetExpenseSort        = cfSetExpenseSort;
 
 // Close modals on Escape
 document.addEventListener('keydown', e => {
