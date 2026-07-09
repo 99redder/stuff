@@ -1932,6 +1932,10 @@ function moneyInputValue(value) {
   return parseMoney(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function fmtSigned(amount) {
+  return `${amount < 0 ? '−' : ''}${fmt(amount)}`;
+}
+
 function formatMoneyInput(id) {
   const el = typeof id === 'string' ? document.getElementById(id) : id;
   if (!el) return;
@@ -3523,7 +3527,7 @@ async function renderInvestmentReturn() {
     if (sched.length) cumulativeDepreciation = sched[sched.length - 1].cumulative;
   }
   // Primary residences: no depreciation recapture (never rented), no capital gains tax (§121 exclusion)
-  const depreciationRecaptureTax = isPrimaryResidence ? 0 : cumulativeDepreciation * 0.25;
+  let depreciationRecaptureTax = 0;
 
   // ── Sale Value / Net Proceeds ─────────────────────────────────────────────
   const defaultSaleState = PROPERTY_SALE_STATE[prop] || saleCloseout?.saleState || 'NH';
@@ -3543,12 +3547,13 @@ async function renderInvestmentReturn() {
   if (saleValue) {
     saleClosingAmt = isSold ? saleCloseout.saleClosingCosts : saleClosingEstimateTotal(prop, saleValue, draftBreakdown);
     grossAfterClosing = saleValue - saleClosingAmt;
-    // Capital gain = gross proceeds - total invested (depr recapture taxed separately)
-    capitalGain = Math.max(0, grossAfterClosing - totalCapitalInvested);
-    primaryResidenceExclusion = isPrimaryResidence ? Math.min(capitalGain, PRIMARY_RESIDENCE_GAIN_EXCLUSION) : 0;
-    taxableCapitalGain = isSold ? (saleCloseout.taxableCapitalGain ?? Math.max(0, capitalGain - primaryResidenceExclusion)) : Math.max(0, capitalGain - primaryResidenceExclusion);
-    federalCapGainsTax = isSold ? saleCloseout.federalCapGainsTax : taxableCapitalGain * 0.15;
-    stateCapGainsTax   = isSold ? saleCloseout.stateCapGainsTax : taxableCapitalGain * (stateCapGainsPct / 100);
+    const saleTax = calcSaleCapitalTaxAmounts(grossAfterClosing, totalCapitalInvested, cumulativeDepreciation, isPrimaryResidence);
+    capitalGain = saleTax.capitalGain;
+    primaryResidenceExclusion = saleTax.primaryExclusion;
+    taxableCapitalGain = saleTax.taxableGain;
+    depreciationRecaptureTax = saleTax.depreciationRecapture * 0.25;
+    federalCapGainsTax = isSold ? saleCloseout.federalCapGainsTax : Math.max(0, taxableCapitalGain) * 0.15;
+    stateCapGainsTax   = isSold ? saleCloseout.stateCapGainsTax : Math.max(0, taxableCapitalGain) * (stateCapGainsPct / 100);
     if (isSold) primaryResidenceExclusion = saleCloseout.primaryResidenceExclusion ?? primaryResidenceExclusion;
     netSaleProceeds = isSold ? saleCloseout.netSaleProceeds : grossAfterClosing - depreciationRecaptureTax - (federalCapGainsTax || 0) - (stateCapGainsTax || 0);
   }
@@ -3695,10 +3700,12 @@ async function renderInvestmentReturn() {
           ${row(isSold ? 'Final Sale Price' : 'Closeout Sale Price', saleValue, 'var(--success)')}
           ${row(isSold ? '− Actual Sale Closing Costs' : '− Sale Closing Costs (Close Out estimate)', saleClosingAmt, 'var(--danger)')}
           ${isPrimaryResidence
-            ? `${row('Capital Gain', capitalGain, capitalGain >= 0 ? 'var(--success)' : 'var(--danger)')}
+            ? `${row('Capital Gain/Loss', capitalGain, capitalGain >= 0 ? 'var(--success)' : 'var(--danger)')}
           ${row('− §121 Primary Residence Exclusion', primaryResidenceExclusion, 'var(--success)')}
-          ${row('Taxable Capital Gain', taxableCapitalGain, taxableCapitalGain > 0 ? 'var(--danger)' : 'var(--text-muted)')}`
-            : `${row('− Depreciation Recapture Tax (25%)', depreciationRecaptureTax > 0 ? depreciationRecaptureTax : 0, 'var(--danger)')}`
+          ${row('Taxable Capital Gain/Loss', taxableCapitalGain, taxableCapitalGain > 0 ? 'var(--danger)' : taxableCapitalGain < 0 ? 'var(--success)' : 'var(--text-muted)')}`
+            : `${row('Capital Gain/Loss', capitalGain, capitalGain >= 0 ? 'var(--success)' : 'var(--danger)')}
+          ${row('Taxable LT Capital Gain/Loss', taxableCapitalGain, taxableCapitalGain > 0 ? 'var(--danger)' : taxableCapitalGain < 0 ? 'var(--success)' : 'var(--text-muted)')}
+          ${row('− Depreciation Recapture Tax (25%)', depreciationRecaptureTax > 0 ? depreciationRecaptureTax : 0, 'var(--danger)')}`
           }
           ${row('− Federal Capital Gains Tax (15%)', federalCapGainsTax, 'var(--danger)')}
           ${stateCapGainsPct > 0 ? row(`− MD State/Local Capital Gains Tax (${stateCapGainsPct}%)`, stateCapGainsTax, 'var(--danger)') : ''}
@@ -3765,9 +3772,9 @@ async function renderInvestmentReturn() {
             ${row('Final Sale Price', saleCloseout.salePrice, 'var(--success)')}
             ${finalBreakdownRows || row('− Actual Sale Closing Costs', saleCloseout.saleClosingCosts, 'var(--danger)')}
             ${row('Total Sale Closing Costs', saleCloseout.saleClosingCosts, 'var(--danger)', false, true)}
-            ${row('Capital Gain', saleCloseout.capitalGain, saleCloseout.capitalGain >= 0 ? 'var(--success)' : 'var(--danger)')}
+            ${row('Capital Gain/Loss', saleCloseout.capitalGain, saleCloseout.capitalGain >= 0 ? 'var(--success)' : 'var(--danger)')}
             ${isPrimaryResidence ? row('− §121 Primary Residence Exclusion', saleCloseout.primaryResidenceExclusion || 0, 'var(--success)') : ''}
-            ${isPrimaryResidence ? row('Taxable Capital Gain', saleCloseout.taxableCapitalGain || 0, (saleCloseout.taxableCapitalGain || 0) > 0 ? 'var(--danger)' : 'var(--text-muted)') : ''}
+            ${row('Taxable LT Capital Gain/Loss', saleCloseout.taxableCapitalGain || 0, (saleCloseout.taxableCapitalGain || 0) > 0 ? 'var(--danger)' : (saleCloseout.taxableCapitalGain || 0) < 0 ? 'var(--success)' : 'var(--text-muted)')}
             ${row('− Federal Capital Gains Tax (15%)', saleCloseout.federalCapGainsTax, 'var(--danger)')}
             ${row(`− MD State/Local Capital Gains Tax (${saleCloseout.stateCapGainsPct}%)`, saleCloseout.stateCapGainsTax, 'var(--danger)')}
             ${!isPrimaryResidence ? row('− Depreciation Recapture Tax (25%)', saleCloseout.depreciationRecaptureTax, 'var(--danger)') : ''}
@@ -3976,15 +3983,15 @@ async function closeOutInvestmentSale() {
     const sched = calcDepreciationSchedule(dc.costBasis, dc.placedInService);
     if (sched.length) cumulativeDepreciation = sched[sched.length - 1].cumulative;
   }
-  const depreciationRecaptureTax = isPrimaryResidence ? 0 : cumulativeDepreciation * 0.25;
-
   const grossAfterClosing = salePrice - saleClosingCosts;
-  const capitalGain = Math.max(0, grossAfterClosing - totalCapitalInvested);
-  const primaryResidenceExclusion = isPrimaryResidence ? Math.min(capitalGain, PRIMARY_RESIDENCE_GAIN_EXCLUSION) : 0;
-  const taxableCapitalGain = Math.max(0, capitalGain - primaryResidenceExclusion);
+  const saleTax = calcSaleCapitalTaxAmounts(grossAfterClosing, totalCapitalInvested, cumulativeDepreciation, isPrimaryResidence);
+  const capitalGain = saleTax.capitalGain;
+  const primaryResidenceExclusion = saleTax.primaryExclusion;
+  const taxableCapitalGain = saleTax.taxableGain;
+  const depreciationRecaptureTax = saleTax.depreciationRecapture * 0.25;
   const stateCapGainsPct = ((typeof inv.stateCapGainsPct === 'number' && inv.stateCapGainsPct > 0) ? inv.stateCapGainsPct : 8.95);
-  const federalCapGainsTax = taxableCapitalGain * 0.15;
-  const stateCapGainsTax = taxableCapitalGain * (stateCapGainsPct / 100);
+  const federalCapGainsTax = Math.max(0, taxableCapitalGain) * 0.15;
+  const stateCapGainsTax = Math.max(0, taxableCapitalGain) * (stateCapGainsPct / 100);
   const netSaleProceeds = grossAfterClosing - depreciationRecaptureTax - federalCapGainsTax - stateCapGainsTax;
 
   let allYearsIncome = 0, allYearsExpenses = 0;
@@ -4018,7 +4025,7 @@ async function closeOutInvestmentSale() {
     type: 'danger',
     message:
       `Closing costs: ${fmt(saleClosingCosts)}\n` +
-      `${isPrimaryResidence ? `Taxable gain after §121 exclusion: ${fmt(taxableCapitalGain)}\n` : ''}` +
+      `${isPrimaryResidence ? `Taxable gain/loss after §121 exclusion: ${fmtSigned(taxableCapitalGain)}\n` : `Taxable LT gain/loss: ${fmtSigned(taxableCapitalGain)}\n`}` +
       `Final net proceeds: ${fmt(netSaleProceeds)}\n` +
       `Total return: ${totalReturn < 0 ? '−' : ''}${fmt(Math.abs(totalReturn))}\n\n` +
       `This will lock this property and make all records historical/read-only.`,
@@ -7034,19 +7041,19 @@ async function renderTaxPlanning() {
         <div style="display:flex;justify-content:space-between;gap:1rem"><span>Sale price</span><strong>${fmt(tp.property_sale_price || 0)}</strong></div>
         <div style="display:flex;justify-content:space-between;gap:1rem"><span>Closing costs</span><span>${fmt(tp.property_sale_closing_costs || 0)}</span></div>
         <div style="display:flex;justify-content:space-between;gap:1rem"><span>Total basis / capital invested</span><span>${fmt(tp.property_sale_basis || 0)}</span></div>
-        <div style="display:flex;justify-content:space-between;gap:1rem"><span>Capital gain before exclusion</span><span>${fmt(tp.property_sale_capital_gain || 0)}</span></div>
+        <div style="display:flex;justify-content:space-between;gap:1rem"><span>Capital gain/loss before exclusion</span><span style="color:${tp.property_sale_capital_gain < 0 ? 'var(--danger)' : 'inherit'}">${fmtSigned(tp.property_sale_capital_gain || 0)}</span></div>
         ${(tp.property_sale_primary_exclusion || 0) > 0 ? `<div style="display:flex;justify-content:space-between;gap:1rem"><span>§121 exclusion</span><span>(${fmt(tp.property_sale_primary_exclusion || 0)})</span></div>` : ''}
         <div style="display:flex;justify-content:space-between;gap:1rem"><span>Depreciation recapture</span><span>${fmt(tp.property_sale_depr_recapture || 0)}</span></div>
-        <div style="display:flex;justify-content:space-between;gap:1rem;border-top:1px solid var(--border);padding-top:.4rem;margin-top:.4rem"><span>Taxable long-term capital gain added to federal worksheet</span><strong style="color:var(--success)">${fmt(tp.property_sale_taxable_gain || 0)}</strong></div>
+        <div style="display:flex;justify-content:space-between;gap:1rem;border-top:1px solid var(--border);padding-top:.4rem;margin-top:.4rem"><span>Taxable long-term capital gain/loss added to federal worksheet</span><strong style="color:${tp.property_sale_taxable_gain < 0 ? 'var(--danger)' : 'var(--success)'}">${fmtSigned(tp.property_sale_taxable_gain || 0)}</strong></div>
         <div style="display:flex;justify-content:space-between;gap:1rem"><span>Depreciation recapture taxed federally at 25%</span><strong style="color:var(--danger)">${fmt((tp.property_sale_depr_recapture || 0) * 0.25)}</strong></div>
-        <div style="display:flex;justify-content:space-between;gap:1rem"><span>State/local taxable gain + recapture included in Maryland AGI</span><strong style="color:var(--success)">${fmt((tp.property_sale_taxable_gain || 0) + (tp.property_sale_depr_recapture || 0))}</strong></div>
+        <div style="display:flex;justify-content:space-between;gap:1rem"><span>State/local taxable gain/loss + recapture included in Maryland AGI</span><strong style="color:${((tp.property_sale_taxable_gain || 0) + (tp.property_sale_depr_recapture || 0)) < 0 ? 'var(--danger)' : 'var(--success)'}">${fmtSigned((tp.property_sale_taxable_gain || 0) + (tp.property_sale_depr_recapture || 0))}</strong></div>
         <div class="tp-note" style="margin-top:.5rem">Imported from ${escHtml(selectedSaleProp)} ${
           selectedSale?.source === 'Actual sale closeout' ? 'final sale closeout'
             : selectedSale?.source === 'Draft sale closeout' ? 'draft sale closeout'
               : 'hypothetical sale estimate'
         } in the property tab.</div>
       </div>`
-    : `<div class="tp-note" style="margin-top:.5rem">Select a property to import its property-tab sale estimate/closeout. This adds taxable long-term gain and depreciation recapture to the tax plan.</div>`;
+    : `<div class="tp-note" style="margin-top:.5rem">Select a property to import its property-tab sale estimate/closeout. This adds taxable long-term gain/loss and depreciation recapture to the tax plan.</div>`;
 
   // Second property sale details
   const propertySale2Details = selectedSale2Prop && tp.property_sale_2_imported
@@ -7056,12 +7063,12 @@ async function renderTaxPlanning() {
         <div style="display:flex;justify-content:space-between;gap:1rem"><span>Sale price</span><strong>${fmt(tp.property_sale_2_price || 0)}</strong></div>
         <div style="display:flex;justify-content:space-between;gap:1rem"><span>Closing costs</span><span>${fmt(tp.property_sale_2_closing_costs || 0)}</span></div>
         <div style="display:flex;justify-content:space-between;gap:1rem"><span>Total basis / capital invested</span><span>${fmt(tp.property_sale_2_basis || 0)}</span></div>
-        <div style="display:flex;justify-content:space-between;gap:1rem"><span>Capital gain before exclusion</span><span>${fmt(tp.property_sale_2_capital_gain || 0)}</span></div>
+        <div style="display:flex;justify-content:space-between;gap:1rem"><span>Capital gain/loss before exclusion</span><span style="color:${tp.property_sale_2_capital_gain < 0 ? 'var(--danger)' : 'inherit'}">${fmtSigned(tp.property_sale_2_capital_gain || 0)}</span></div>
         ${(tp.property_sale_2_primary_exclusion || 0) > 0 ? `<div style="display:flex;justify-content:space-between;gap:1rem"><span>§121 exclusion</span><span>(${fmt(tp.property_sale_2_primary_exclusion || 0)})</span></div>` : ''}
         <div style="display:flex;justify-content:space-between;gap:1rem"><span>Depreciation recapture</span><span>${fmt(tp.property_sale_2_depr_recapture || 0)}</span></div>
-        <div style="display:flex;justify-content:space-between;gap:1rem;border-top:1px solid var(--border);padding-top:.4rem;margin-top:.4rem"><span>Taxable long-term capital gain added to federal worksheet</span><strong style="color:var(--success)">${fmt(tp.property_sale_2_taxable_gain || 0)}</strong></div>
+        <div style="display:flex;justify-content:space-between;gap:1rem;border-top:1px solid var(--border);padding-top:.4rem;margin-top:.4rem"><span>Taxable long-term capital gain/loss added to federal worksheet</span><strong style="color:${tp.property_sale_2_taxable_gain < 0 ? 'var(--danger)' : 'var(--success)'}">${fmtSigned(tp.property_sale_2_taxable_gain || 0)}</strong></div>
         <div style="display:flex;justify-content:space-between;gap:1rem"><span>Depreciation recapture taxed federally at 25%</span><strong style="color:var(--danger)">${fmt((tp.property_sale_2_depr_recapture || 0) * 0.25)}</strong></div>
-        <div style="display:flex;justify-content:space-between;gap:1rem"><span>State/local taxable gain + recapture included in Maryland AGI</span><strong style="color:var(--success)">${fmt((tp.property_sale_2_taxable_gain || 0) + (tp.property_sale_2_depr_recapture || 0))}</strong></div>
+        <div style="display:flex;justify-content:space-between;gap:1rem"><span>State/local taxable gain/loss + recapture included in Maryland AGI</span><strong style="color:${((tp.property_sale_2_taxable_gain || 0) + (tp.property_sale_2_depr_recapture || 0)) < 0 ? 'var(--danger)' : 'var(--success)'}">${fmtSigned((tp.property_sale_2_taxable_gain || 0) + (tp.property_sale_2_depr_recapture || 0))}</strong></div>
         <div class="tp-note" style="margin-top:.5rem">Imported from ${escHtml(selectedSale2Prop)} ${
           selectedSale2?.source === 'Actual sale closeout' ? 'final sale closeout'
             : selectedSale2?.source === 'Draft sale closeout' ? 'draft sale closeout'
@@ -9096,6 +9103,29 @@ function tpSyncImportedPropertySale(tp, saleNum, details) {
   return changed;
 }
 
+function calcSaleCapitalTaxAmounts(grossAfterClosing, basis, cumulativeDepreciation, isPrimaryResidence) {
+  const capitalGain = grossAfterClosing - basis;
+  if (isPrimaryResidence) {
+    const primaryExclusion = Math.min(Math.max(0, capitalGain), PRIMARY_RESIDENCE_GAIN_EXCLUSION);
+    return {
+      capitalGain,
+      primaryExclusion,
+      depreciationRecapture: 0,
+      taxableGain: Math.max(0, capitalGain - primaryExclusion)
+    };
+  }
+
+  const adjustedBasis = basis - cumulativeDepreciation;
+  const realizedGain = grossAfterClosing - adjustedBasis;
+  const depreciationRecapture = Math.min(Math.max(0, realizedGain), cumulativeDepreciation);
+  return {
+    capitalGain,
+    primaryExclusion: 0,
+    depreciationRecapture,
+    taxableGain: realizedGain - depreciationRecapture
+  };
+}
+
 function calcPropertySaleTaxDetails(prop) {
   if (!PROPERTIES.includes(prop)) return null;
   const inv = state.data[prop]?.investment || {};
@@ -9131,19 +9161,13 @@ function calcPropertySaleTaxDetails(prop) {
     const sched = calcDepreciationSchedule(dc.costBasis, dc.placedInService);
     if (sched.length) cumulativeDepreciation = sched[sched.length - 1].cumulative;
   }
-  const depreciationRecapture = isPrimaryResidence ? 0 : (isSold && saleCloseout.depreciationRecaptureTax != null ? saleCloseout.depreciationRecaptureTax / 0.25 : cumulativeDepreciation);
-
   const basis = purchasePrice + purchaseClosing + cumulativeImprovements;
   // Match the property tab's sale math: finalized sales use actual closeout
   // amounts; unsold properties use the in-progress closeout sale-price/costs.
   const saleClosingCosts = isSold ? (saleCloseout.saleClosingCosts || 0)
     : saleClosingEstimateTotal(prop, salePrice, draftBreakdown);
   const grossAfterClosing = salePrice - saleClosingCosts;
-  const capitalGain = Math.max(0, grossAfterClosing - basis);
-  const primaryExclusion = isPrimaryResidence ? Math.min(capitalGain, PRIMARY_RESIDENCE_GAIN_EXCLUSION) : 0;
-  const taxableGain = isSold
-    ? (saleCloseout.taxableCapitalGain ?? Math.max(0, capitalGain - primaryExclusion))
-    : Math.max(0, capitalGain - primaryExclusion);
+  const saleTax = calcSaleCapitalTaxAmounts(grossAfterClosing, basis, cumulativeDepreciation, isPrimaryResidence);
 
   return {
     prop,
@@ -9151,10 +9175,10 @@ function calcPropertySaleTaxDetails(prop) {
     salePrice,
     saleClosingCosts,
     basis,
-    capitalGain,
-    primaryExclusion,
-    depreciationRecapture,
-    taxableGain
+    capitalGain: saleTax.capitalGain,
+    primaryExclusion: saleTax.primaryExclusion,
+    depreciationRecapture: saleTax.depreciationRecapture,
+    taxableGain: saleTax.taxableGain
   };
 }
 
@@ -9456,6 +9480,10 @@ function tpUpdateResults(tp) {
     const disp = deduct ? `(${fmt(amt)})` : fmt(amt);
     return `<div class="tp-row ${cls}"><span>${escHtml(lbl)}</span><span>${disp}</span></div>`;
   };
+  const rowSigned = (lbl, amt, cls = '') => {
+    if (Math.abs(amt) < 0.005) return '';
+    return `<div class="tp-row ${cls}"><span>${escHtml(lbl)}</span><span>${fmtSigned(amt)}</span></div>`;
+  };
   const sec = lbl => `<div class="tp-row sec">${escHtml(lbl)}</div>`;
 
   const fedPos = r.fedOwed > 0.005;
@@ -9472,9 +9500,9 @@ function tpUpdateResults(tp) {
       ${r.rentalDepr > 0 ? row('Less Depreciation', r.rentalDepr, 'in', true) : ''}
       ${row('Interest & Dividends', r.interest + r.dividends + r.cryptoInc, 'in')}
       ${r.stGains !== 0 ? row('ST Capital Gains', r.stGains, 'in') : ''}
-      ${r.propertySaleTaxableGain > 0 ? row(`Property Sale LT Gain (${propertySaleLabel})`, r.propertySaleTaxableGain, 'in') : ''}
+      ${r.propertySaleTaxableGain !== 0 ? rowSigned(`Property Sale LT Gain/Loss (${propertySaleLabel})`, r.propertySaleTaxableGain, r.propertySaleTaxableGain < 0 ? 'in amount-expense' : 'in') : ''}
       ${r.propertySaleDepRecapture > 0 ? row(`Property Depreciation Recapture (${propertySaleLabel})`, r.propertySaleDepRecapture, 'in') : ''}
-      ${r.ltGains !== 0 ? row('Total LT Capital Gains', r.ltGains, 'in') : ''}
+      ${r.ltGains !== 0 ? rowSigned('Total LT Capital Gains/Losses', r.ltGains, r.ltGains < 0 ? 'in amount-expense' : 'in') : ''}
       ${row('Gross Income', r.grossIncome, 'sub')}
 
       ${sec('Adjustments')}
@@ -9509,7 +9537,7 @@ function tpUpdateResults(tp) {
       </div>
 
       ${sec('Maryland State & Local Tax')}
-      ${(r.propertySaleTaxableGain + r.propertySaleDepRecapture) > 0 ? row(`Property Sale Gain + Recapture Included in State AGI (${propertySaleLabel})`, r.propertySaleTaxableGain + r.propertySaleDepRecapture, 'in') : ''}
+      ${(r.propertySaleTaxableGain + r.propertySaleDepRecapture) !== 0 ? rowSigned(`Property Sale Gain/Loss + Recapture Included in State AGI (${propertySaleLabel})`, r.propertySaleTaxableGain + r.propertySaleDepRecapture, (r.propertySaleTaxableGain + r.propertySaleDepRecapture) < 0 ? 'in amount-expense' : 'in') : ''}
       ${md.navyExempt > 0 ? row(`Less Navy Retirement (exempt, cap $${md.exemptCap.toLocaleString()})`, md.navyExempt, 'in', true) : ''}
       ${md.md529 > 0 ? row('Less 529 Contributions', md.md529, 'in', true) : ''}
       ${row('Maryland AGI', md.mdAgi, 'in')}
