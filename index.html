@@ -7685,9 +7685,20 @@ async function envRENTALS_put(data) {
 // ── View: 2026 Cash Flow ─────────────────────────────────────────────────────
 
 let _cfEdit = null; // { type: 'income' | 'expenses', id }
+const _cfExpandedIncome = new Set();
 
 function cfNewId(prefix = 'cf') {
   return crypto.randomUUID ? crypto.randomUUID() : `${prefix}_${Math.random().toString(36).slice(2)}`;
+}
+
+function cfIncomeExpanded(id) {
+  return _cfExpandedIncome.has(id);
+}
+
+function cfToggleIncomeDetails(id) {
+  if (_cfExpandedIncome.has(id)) _cfExpandedIncome.delete(id);
+  else _cfExpandedIncome.add(id);
+  _renderCashFlowHtml();
 }
 
 function normalizeCashFlow(raw) {
@@ -7890,16 +7901,17 @@ function cfColumnHtml(type, title, color, autoItems = []) {
 }
 
 function cfPinnedCheckingRow(color) {
+  const id = 'pinned-robinhood-checking';
+  const expanded = cfIncomeExpanded(id);
   return `<tr style="background:rgba(16,185,129,.08)">
-    <td style="padding:.55rem .6rem;border-bottom:1px solid var(--border)">
+    <td colspan="2" style="padding:.55rem .6rem;border-bottom:${expanded ? 'none' : '1px solid var(--border)'}">
       <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" style="padding:.05rem .25rem;font-size:.75rem;line-height:1" onclick="cfToggleIncomeDetails('${id}')" title="${expanded ? 'Hide details' : 'Show details'}">${expanded ? '▾' : '▸'}</button>
         <span style="font-weight:700">Robinhood Checking Current Balance</span>
         <span style="display:inline-block;padding:.08rem .38rem;border-radius:999px;background:rgba(16,185,129,.14);color:var(--success);font-size:.66rem;font-weight:750;text-transform:uppercase">Pinned</span>
       </div>
-      <div style="font-size:.72rem;color:var(--text-muted);margin-top:.1rem">Editable cash-on-hand starting point for ${CASH_FLOW_YEAR} cash flow.</div>
     </td>
-    <td style="padding:.55rem .6rem;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text-muted)">Current</td>
-    <td style="padding:.55rem .6rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;min-width:150px">
+    <td style="padding:.55rem .6rem;border-bottom:${expanded ? 'none' : '1px solid var(--border)'};text-align:right;white-space:nowrap;min-width:150px">
       <div style="position:relative">
         <span style="position:absolute;left:.55rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
         <input type="text" inputmode="decimal" class="form-input"
@@ -7908,24 +7920,30 @@ function cfPinnedCheckingRow(color) {
                style="width:100%;padding-left:1.35rem;text-align:right;font-size:.84rem;font-weight:700;color:${color}">
       </div>
     </td>
-    <td style="padding:.55rem .4rem;border-bottom:1px solid var(--border);text-align:right;color:var(--text-muted);font-size:.72rem;white-space:nowrap">Editable</td>
-  </tr>`;
+    <td style="padding:.55rem .4rem;border-bottom:${expanded ? 'none' : '1px solid var(--border)'};text-align:right;color:var(--text-muted);font-size:.72rem;white-space:nowrap">Editable</td>
+  </tr>
+  ${expanded ? `<tr style="background:rgba(16,185,129,.08)"><td colspan="4" style="padding:0 .6rem .65rem 2.25rem;border-bottom:1px solid var(--border);font-size:.72rem;color:var(--text-muted)">Editable cash-on-hand starting point for ${CASH_FLOW_YEAR} cash flow. Date: Current.</td></tr>` : ''}`;
 }
 
 function cfAutoRow(item, color) {
+  const expanded = cfIncomeExpanded(item.id);
   const amountColor = item.amount > 0 ? color : 'var(--text-muted)';
   return `<tr style="background:var(--surface)">
-    <td style="padding:.55rem .6rem;border-bottom:1px solid var(--border)">
+    <td colspan="2" style="padding:.55rem .6rem;border-bottom:${expanded ? 'none' : '1px solid var(--border)'}">
       <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" style="padding:.05rem .25rem;font-size:.75rem;line-height:1" onclick="cfToggleIncomeDetails('${escAttr(item.id)}')" title="${expanded ? 'Hide details' : 'Show details'}">${expanded ? '▾' : '▸'}</button>
         <span style="font-weight:650">${escHtml(item.name || 'Untitled')}</span>
         <span style="display:inline-block;padding:.08rem .38rem;border-radius:999px;background:rgba(37,99,235,.10);color:var(--primary);font-size:.66rem;font-weight:750;text-transform:uppercase">Auto</span>
       </div>
-      ${item.note ? `<div style="font-size:.72rem;color:var(--text-muted);margin-top:.1rem">${escHtml(item.note)}</div>` : ''}
     </td>
-    <td style="padding:.55rem .6rem;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text-muted)">${item.date ? fmtDate(item.date) : 'Worksheet'}</td>
-    <td style="padding:.55rem .6rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;font-weight:700;color:${amountColor}">${fmt(item.amount || 0)}</td>
-    <td style="padding:.55rem .4rem;border-bottom:1px solid var(--border);text-align:right;color:var(--text-muted);font-size:.72rem;white-space:nowrap">Property page</td>
-  </tr>`;
+    <td style="padding:.55rem .6rem;border-bottom:${expanded ? 'none' : '1px solid var(--border)'};text-align:right;white-space:nowrap;font-weight:700;color:${amountColor}">${fmt(item.amount || 0)}</td>
+    <td style="padding:.55rem .4rem;border-bottom:${expanded ? 'none' : '1px solid var(--border)'};text-align:right;color:var(--text-muted);font-size:.72rem;white-space:nowrap">Auto</td>
+  </tr>
+  ${expanded ? `<tr style="background:var(--surface)"><td colspan="4" style="padding:0 .6rem .65rem 2.25rem;border-bottom:1px solid var(--border);font-size:.72rem;color:var(--text-muted)">
+    <div>Date: ${item.date ? fmtDate(item.date) : 'Worksheet'}</div>
+    ${item.note ? `<div>${escHtml(item.note)}</div>` : ''}
+    <div>Source: property page sale worksheet</div>
+  </td></tr>` : ''}`;
 }
 
 async function cfUpdateChecking(value) {
@@ -7936,6 +7954,27 @@ async function cfUpdateChecking(value) {
 }
 
 function cfDisplayRow(type, item, color) {
+  if (type === 'income') {
+    const expanded = cfIncomeExpanded(item.id);
+    return `<tr>
+      <td colspan="2" style="padding:.55rem .6rem;border-bottom:${expanded ? 'none' : '1px solid var(--border)'}">
+        <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" style="padding:.05rem .25rem;font-size:.75rem;line-height:1" onclick="cfToggleIncomeDetails('${escAttr(item.id)}')" title="${expanded ? 'Hide details' : 'Show details'}">${expanded ? '▾' : '▸'}</button>
+          <span style="font-weight:650">${escHtml(item.name || 'Untitled')}</span>
+        </div>
+      </td>
+      <td style="padding:.55rem .6rem;border-bottom:${expanded ? 'none' : '1px solid var(--border)'};text-align:right;white-space:nowrap;font-weight:700;color:${color}">${fmt(item.amount || 0)}</td>
+      <td style="padding:.55rem .4rem;border-bottom:${expanded ? 'none' : '1px solid var(--border)'};text-align:right;color:var(--text-muted);font-size:.72rem;white-space:nowrap">Manual</td>
+    </tr>
+    ${expanded ? `<tr><td colspan="4" style="padding:0 .6rem .65rem 2.25rem;border-bottom:1px solid var(--border);font-size:.72rem;color:var(--text-muted)">
+      <div>Date: ${item.date ? fmtDate(item.date) : 'Unscheduled'}</div>
+      ${item.note ? `<div>${escHtml(item.note)}</div>` : ''}
+      <div style="display:flex;gap:.35rem;margin-top:.4rem">
+        <button class="btn btn-ghost btn-sm" style="padding:.16rem .35rem;font-size:.75rem" onclick="cfEdit('${type}', '${escAttr(item.id)}')">Edit</button>
+        <button class="btn btn-ghost btn-sm" style="padding:.16rem .35rem;font-size:.75rem;color:var(--danger)" onclick="cfDelete('${type}', '${escAttr(item.id)}')">Delete</button>
+      </div>
+    </td></tr>` : ''}`;
+  }
   return `<tr>
     <td style="padding:.55rem .6rem;border-bottom:1px solid var(--border)">
       <div style="font-weight:650">${escHtml(item.name || 'Untitled')}</div>
@@ -10239,6 +10278,7 @@ window.cfCancel                = cfCancel;
 window.cfSave                  = cfSave;
 window.cfDelete                = cfDelete;
 window.cfUpdateChecking        = cfUpdateChecking;
+window.cfToggleIncomeDetails   = cfToggleIncomeDetails;
 
 // Close modals on Escape
 document.addEventListener('keydown', e => {
