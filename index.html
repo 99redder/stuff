@@ -7942,13 +7942,13 @@ function cfPinnedCheckingRow(color) {
         <span style="position:absolute;left:.55rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
         <input type="text" inputmode="decimal" class="form-input"
                value="${escAttr(moneyInputValue(cfRobinhoodChecking()))}"
-               onchange="cfUpdateChecking(this.value)" onblur="formatMoneyInput(this)"
-               style="width:100%;padding-left:1.35rem;text-align:right;font-size:.84rem;font-weight:700;color:${color}">
+               disabled
+               style="width:100%;padding-left:1.35rem;text-align:right;font-size:.84rem;font-weight:700;color:${color};background:var(--bg);cursor:not-allowed">
       </div>
     </td>
-    <td style="padding:.55rem .4rem;border-bottom:${expanded ? 'none' : '1px solid var(--border)'};text-align:right;color:var(--text-muted);font-size:.72rem;white-space:nowrap">Editable</td>
+    <td style="padding:.55rem .4rem;border-bottom:${expanded ? 'none' : '1px solid var(--border)'};text-align:right;color:var(--text-muted);font-size:.72rem;white-space:nowrap">Locked</td>
   </tr>
-  ${expanded ? `<tr style="background:rgba(16,185,129,.08)"><td colspan="4" style="padding:0 .6rem .65rem 2.25rem;border-bottom:1px solid var(--border);font-size:.72rem;color:var(--text-muted)">Editable cash-on-hand starting point for ${CASH_FLOW_YEAR} cash flow. Date: Current.</td></tr>` : ''}`;
+  ${expanded ? `<tr style="background:rgba(16,185,129,.08)"><td colspan="4" style="padding:0 .6rem .65rem 2.25rem;border-bottom:1px solid var(--border);font-size:.72rem;color:var(--text-muted)">Pulled from Savings tab Robinhood Checking. Edit it in Savings. Date: Current.</td></tr>` : ''}`;
 }
 
 function cfAutoRow(item, color) {
