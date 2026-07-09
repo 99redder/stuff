@@ -1583,7 +1583,8 @@ const PRIMARY_VIEWS = new Set(['investment-return', 'maintenance']);
 const GLOBAL_HEADER_VIEWS = new Set(['tax-planning', 'budget', 'cash-flow', 'mom-budget', 'solar', 'deductions', 'savings']);
 const CASH_FLOW_YEAR = 2026;
 const CASH_FLOW_AUTO_PROCEEDS_PROPS = ['6AL', '95EB', '731WO'];
-const CASH_FLOW_MORTGAGE_PAYOFFS = { '731WO': 135000 };
+const PROPERTY_MORTGAGE_PAYOFFS = { '731WO': 135000 };
+const CASH_FLOW_MORTGAGE_PAYOFFS = PROPERTY_MORTGAGE_PAYOFFS;
 const PROPERTY_TAB_RETURN_VIEWS = new Set(['portfolio', ...GLOBAL_HEADER_VIEWS]);
 const APP_TIME_ZONE = 'America/New_York';
 function appTodayParts(date = new Date()) {
@@ -3544,6 +3545,10 @@ async function renderInvestmentReturn() {
   const draftBreakdown = closeoutDraft?.breakdown?.items ? closeoutDraft.breakdown : null;
   const saleValue = isSold ? saleCloseout.salePrice : (closeoutDraft.price || null);
   const initialCloseoutPrice = closeoutDraft.price || saleValue || '';
+  const savedMortgagePayoff = saleCloseout?.mortgagePayoff;
+  const mortgagePayoff = isSold && typeof savedMortgagePayoff === 'number'
+    ? savedMortgagePayoff
+    : (PROPERTY_MORTGAGE_PAYOFFS[prop] || 0);
 
   let netSaleProceeds     = null;
   let saleClosingAmt      = null;
@@ -3564,7 +3569,9 @@ async function renderInvestmentReturn() {
     federalCapGainsTax = isSold ? saleCloseout.federalCapGainsTax : Math.max(0, taxableCapitalGain) * 0.15;
     stateCapGainsTax   = isSold ? saleCloseout.stateCapGainsTax : Math.max(0, taxableCapitalGain) * (stateCapGainsPct / 100);
     if (isSold) primaryResidenceExclusion = saleCloseout.primaryResidenceExclusion ?? primaryResidenceExclusion;
-    netSaleProceeds = isSold ? saleCloseout.netSaleProceeds : grossAfterClosing - depreciationRecaptureTax - (federalCapGainsTax || 0) - (stateCapGainsTax || 0);
+    netSaleProceeds = isSold
+      ? saleCloseout.netSaleProceeds - (typeof savedMortgagePayoff === 'number' ? 0 : mortgagePayoff)
+      : grossAfterClosing - depreciationRecaptureTax - (federalCapGainsTax || 0) - (stateCapGainsTax || 0) - mortgagePayoff;
   }
 
   // ── All-Years Cash Flow ───────────────────────────────────────────────────
@@ -3718,6 +3725,7 @@ async function renderInvestmentReturn() {
           }
           ${row('− Federal Capital Gains Tax (15%)', federalCapGainsTax, 'var(--danger)')}
           ${stateCapGainsPct > 0 ? row(`− MD State/Local Capital Gains Tax (${stateCapGainsPct}%)`, stateCapGainsTax, 'var(--danger)') : ''}
+          ${mortgagePayoff > 0 ? row('− Mortgage Payoff', mortgagePayoff, 'var(--danger)') : ''}
           ${row('Estimated Net Proceeds', netSaleProceeds, netSaleProceeds !== null ? 'var(--success)' : 'var(--text-muted)', false, true)}
         </table>
         ${saleValue === null ? `<div style="padding:.5rem .75rem;color:var(--text-muted);font-size:0.85rem">Enter a final sale price in the Close Out Property Sale card to calculate estimated proceeds.</div>` : ''}
@@ -3787,7 +3795,8 @@ async function renderInvestmentReturn() {
             ${row('− Federal Capital Gains Tax (15%)', saleCloseout.federalCapGainsTax, 'var(--danger)')}
             ${row(`− MD State/Local Capital Gains Tax (${saleCloseout.stateCapGainsPct}%)`, saleCloseout.stateCapGainsTax, 'var(--danger)')}
             ${!isPrimaryResidence ? row('− Depreciation Recapture Tax (25%)', saleCloseout.depreciationRecaptureTax, 'var(--danger)') : ''}
-            ${row('Final Net Sale Proceeds', saleCloseout.netSaleProceeds, 'var(--success)', false, true)}
+            ${mortgagePayoff > 0 ? row('− Mortgage Payoff', mortgagePayoff, 'var(--danger)') : ''}
+            ${row('Final Net Sale Proceeds', netSaleProceeds, 'var(--success)', false, true)}
           </table>
           ${saleCloseout.notes ? `<div style="margin-top:.6rem;color:var(--text-muted);font-size:.85rem">Notes: ${escHtml(saleCloseout.notes)}</div>` : ''}
         ` : `
@@ -4001,7 +4010,8 @@ async function closeOutInvestmentSale() {
   const stateCapGainsPct = ((typeof inv.stateCapGainsPct === 'number' && inv.stateCapGainsPct > 0) ? inv.stateCapGainsPct : 8.95);
   const federalCapGainsTax = Math.max(0, taxableCapitalGain) * 0.15;
   const stateCapGainsTax = Math.max(0, taxableCapitalGain) * (stateCapGainsPct / 100);
-  const netSaleProceeds = grossAfterClosing - depreciationRecaptureTax - federalCapGainsTax - stateCapGainsTax;
+  const mortgagePayoff = PROPERTY_MORTGAGE_PAYOFFS[prop] || 0;
+  const netSaleProceeds = grossAfterClosing - depreciationRecaptureTax - federalCapGainsTax - stateCapGainsTax - mortgagePayoff;
 
   let allYearsIncome = 0, allYearsExpenses = 0;
   for (const [yr, d] of Object.entries(summs)) {
@@ -4035,6 +4045,7 @@ async function closeOutInvestmentSale() {
     message:
       `Closing costs: ${fmt(saleClosingCosts)}\n` +
       `${isPrimaryResidence ? `Taxable gain/loss after §121 exclusion: ${fmtSigned(taxableCapitalGain)}\n` : `Taxable LT gain/loss: ${fmtSigned(taxableCapitalGain)}\n`}` +
+      `${mortgagePayoff > 0 ? `Mortgage payoff: ${fmt(mortgagePayoff)}\n` : ''}` +
       `Final net proceeds: ${fmt(netSaleProceeds)}\n` +
       `Total return: ${totalReturn < 0 ? '−' : ''}${fmt(Math.abs(totalReturn))}\n\n` +
       `This will lock this property and make all records historical/read-only.`,
@@ -4047,7 +4058,7 @@ async function closeOutInvestmentSale() {
             saleDate, salePrice, saleClosingCosts, saleState: closingBreakdown.saleState,
             saleClosingBreakdown: closingBreakdown, grossAfterClosing, totalCapitalInvested,
             cumulativeImprovements, cumulativeDepreciation, capitalGain, federalCapGainsTax,
-            stateCapGainsTax, stateCapGainsPct, depreciationRecaptureTax, netSaleProceeds,
+            stateCapGainsTax, stateCapGainsPct, depreciationRecaptureTax, mortgagePayoff, netSaleProceeds,
             primaryResidenceExclusion, taxableCapitalGain,
             propertyAppreciation, cumNetCashFlow, totalReturn, roiPct,
             annualizedROI, yearsHeld, notes
@@ -7786,7 +7797,9 @@ function cfPropertySaleProceedsItem(prop) {
   const netSaleProceeds = isSold
     ? (saleCloseout.netSaleProceeds || 0)
     : grossAfterClosing - depreciationRecaptureTax - federalCapGainsTax - stateCapGainsTax;
-  const cashFlowProceeds = netSaleProceeds - mortgagePayoff;
+  const cashFlowProceeds = isSold && typeof saleCloseout.mortgagePayoff === 'number'
+    ? netSaleProceeds
+    : netSaleProceeds - mortgagePayoff;
 
   return {
     ...base,
