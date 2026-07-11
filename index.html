@@ -1602,8 +1602,7 @@ const PRIMARY_VIEWS = new Set(['investment-return', 'maintenance']);
 const GLOBAL_HEADER_VIEWS = new Set(['tax-planning', 'net-worth', 'budget', 'cash-flow', 'mom-budget', 'solar', 'deductions', 'savings']);
 const CASH_FLOW_YEAR = 2026;
 const CASH_FLOW_AUTO_PROCEEDS_PROPS = ['6AL', '95EB', '731WO'];
-const PROPERTY_MORTGAGE_PAYOFFS = { '731WO': 135000 };
-const CASH_FLOW_MORTGAGE_PAYOFFS = PROPERTY_MORTGAGE_PAYOFFS;
+const PROPERTY_MORTGAGE_PAYOFF_FALLBACKS = { '731WO': 135000 };
 const PROPERTY_TAB_RETURN_VIEWS = new Set(['portfolio', ...GLOBAL_HEADER_VIEWS]);
 const APP_TIME_ZONE = 'America/New_York';
 function appTodayParts(date = new Date()) {
@@ -3527,6 +3526,7 @@ async function renderInvestmentReturn() {
   const loadKeys = ['transactions', 'summaries', 'depreciation', 'investment'];
   if (MAINTENANCE_BASIS_PROPERTIES.has(prop)) loadKeys.push('maintenance');
   await Promise.all(loadKeys.map(k => ensureLoaded(prop, k)));
+  if (prop === '731WO') await ensureNetWorthLoaded(true);
 
   const inv    = state.data[prop].investment || {};
   const saleCloseout = inv.saleCloseout || null;
@@ -3580,9 +3580,11 @@ async function renderInvestmentReturn() {
   const saleValue = isSold ? saleCloseout.salePrice : (closeoutDraft.price || null);
   const initialCloseoutPrice = closeoutDraft.price || saleValue || '';
   const savedMortgagePayoff = saleCloseout?.mortgagePayoff;
+  const liveMortgage = propertyMortgagePayoff(prop);
   const mortgagePayoff = isSold && typeof savedMortgagePayoff === 'number'
     ? savedMortgagePayoff
-    : (PROPERTY_MORTGAGE_PAYOFFS[prop] || 0);
+    : liveMortgage.amount;
+  const mortgagePayoffLabel = !isSold && liveMortgage.live ? '− Mortgage Payoff (Plaid)' : '− Mortgage Payoff';
 
   let netSaleProceeds     = null;
   let saleClosingAmt      = null;
@@ -3759,7 +3761,7 @@ async function renderInvestmentReturn() {
           }
           ${row('− Federal Capital Gains Tax (15%)', federalCapGainsTax, 'var(--danger)')}
           ${stateCapGainsPct > 0 ? row(`− MD State/Local Capital Gains Tax (${stateCapGainsPct}%)`, stateCapGainsTax, 'var(--danger)') : ''}
-          ${mortgagePayoff > 0 ? row('− Mortgage Payoff', mortgagePayoff, 'var(--danger)') : ''}
+          ${mortgagePayoff > 0 ? row(mortgagePayoffLabel, mortgagePayoff, 'var(--danger)') : ''}
           ${row('Estimated Net Proceeds', netSaleProceeds, netSaleProceeds !== null ? 'var(--success)' : 'var(--text-muted)', false, true)}
         </table>
         ${saleValue === null ? `<div style="padding:.5rem .75rem;color:var(--text-muted);font-size:0.85rem">Enter a final sale price in the Close Out Property Sale card to calculate estimated proceeds.</div>` : ''}
@@ -3829,7 +3831,7 @@ async function renderInvestmentReturn() {
             ${row('− Federal Capital Gains Tax (15%)', saleCloseout.federalCapGainsTax, 'var(--danger)')}
             ${row(`− MD State/Local Capital Gains Tax (${saleCloseout.stateCapGainsPct}%)`, saleCloseout.stateCapGainsTax, 'var(--danger)')}
             ${!isPrimaryResidence ? row('− Depreciation Recapture Tax (25%)', saleCloseout.depreciationRecaptureTax, 'var(--danger)') : ''}
-            ${mortgagePayoff > 0 ? row('− Mortgage Payoff', mortgagePayoff, 'var(--danger)') : ''}
+            ${mortgagePayoff > 0 ? row(mortgagePayoffLabel, mortgagePayoff, 'var(--danger)') : ''}
             ${row('Final Net Sale Proceeds', netSaleProceeds, 'var(--success)', false, true)}
           </table>
           ${saleCloseout.notes ? `<div style="margin-top:.6rem;color:var(--text-muted);font-size:.85rem">Notes: ${escHtml(saleCloseout.notes)}</div>` : ''}
@@ -3985,6 +3987,7 @@ async function closeOutInvestmentSale() {
   const loadKeys = ['transactions', 'summaries', 'depreciation', 'investment'];
   if (MAINTENANCE_BASIS_PROPERTIES.has(prop)) loadKeys.push('maintenance');
   await Promise.all(loadKeys.map(k => ensureLoaded(prop, k)));
+  if (prop === '731WO') await ensureNetWorthLoaded(true);
 
   const errEl = document.getElementById('sale-closeout-error');
   if (errEl) errEl.classList.add('hidden');
@@ -4044,7 +4047,7 @@ async function closeOutInvestmentSale() {
   const stateCapGainsPct = ((typeof inv.stateCapGainsPct === 'number' && inv.stateCapGainsPct > 0) ? inv.stateCapGainsPct : 8.95);
   const federalCapGainsTax = Math.max(0, taxableCapitalGain) * 0.15;
   const stateCapGainsTax = Math.max(0, taxableCapitalGain) * (stateCapGainsPct / 100);
-  const mortgagePayoff = PROPERTY_MORTGAGE_PAYOFFS[prop] || 0;
+  const mortgagePayoff = propertyMortgagePayoff(prop).amount;
   const netSaleProceeds = grossAfterClosing - depreciationRecaptureTax - federalCapGainsTax - stateCapGainsTax - mortgagePayoff;
 
   let allYearsIncome = 0, allYearsExpenses = 0;
@@ -7771,6 +7774,7 @@ async function saveCashFlow() {
 async function renderCashFlow() {
   await loadCashFlow();
   await loadSavings();
+  await ensureNetWorthLoaded(true);
   await Promise.all(CASH_FLOW_AUTO_PROCEEDS_PROPS.flatMap(prop => {
     const keys = ['transactions', 'summaries', 'depreciation', 'investment'];
     if (MAINTENANCE_BASIS_PROPERTIES.has(prop)) keys.push('maintenance');
@@ -7803,14 +7807,15 @@ function cfPropertySaleProceedsItem(prop) {
   const draftBreakdown = closeoutDraft?.breakdown?.items ? closeoutDraft.breakdown : null;
   const salePrice = isSold ? saleCloseout.salePrice : (closeoutDraft.price || 0);
   const date = isSold ? (saleCloseout.saleDate || '') : (closeoutDraft.date || '');
-  const mortgagePayoff = CASH_FLOW_MORTGAGE_PAYOFFS[prop] || 0;
+  const mortgageInfo = propertyMortgagePayoff(prop);
+  const mortgagePayoff = mortgageInfo.amount;
   const base = {
     id: `auto-sale-${prop}`,
     auto: true,
     date,
     name: `${prop} Sale Net Proceeds After Taxes${mortgagePayoff ? ' & Mortgage Payoff' : ''}`,
     amount: 0,
-    note: `Auto from ${prop} Investment Return sale worksheet after closing costs and estimated sale taxes${mortgagePayoff ? `, less ${fmt(mortgagePayoff)} mortgage payoff` : ''}`
+    note: `Auto from ${prop} Investment Return sale worksheet after closing costs and estimated sale taxes${mortgagePayoff ? `, less ${fmt(mortgagePayoff)} ${mortgageInfo.live ? 'live Plaid ' : ''}mortgage payoff` : ''}`
   };
   if (!salePrice) {
     return { ...base, note: `${base.note} - enter a sale price to calculate` };
@@ -8117,6 +8122,33 @@ async function cfDelete(type, id) {
 
 let _nwEditor = null;
 let _nwAutoRefreshStarted = false;
+let _nwRefreshPromise = null;
+
+async function ensureNetWorthLoaded(refreshIfStale = false) {
+  if (!state.netWorth) {
+    try { state.netWorth = (await callApi({ action: 'get_net_worth' })).data; }
+    catch { return; }
+  }
+  const age = Date.now() - Date.parse(state.netWorth.plaidRefreshedAt || 0);
+  if (refreshIfStale && age > 6 * 60 * 60 * 1000) {
+    if (!_nwRefreshPromise) {
+      _nwRefreshPromise = callApi({ action: 'refresh_net_worth_plaid' })
+        .then(result => { state.netWorth = result.data; })
+        .finally(() => { _nwRefreshPromise = null; });
+    }
+    try { await _nwRefreshPromise; } catch { /* retain saved data or payoff fallback */ }
+  }
+}
+
+function propertyMortgagePayoff(prop) {
+  if (prop === '731WO') {
+    const account = (state.netWorth?.plaidAccounts || []).find(item =>
+      item.side === 'liability' && item.subtype === 'mortgage' && Number(item.value) >= 0
+    );
+    if (account) return { amount: Number(account.value), live: true };
+  }
+  return { amount: PROPERTY_MORTGAGE_PAYOFF_FALLBACKS[prop] || 0, live: false };
+}
 
 function nwPercentile(value, anchors) {
   const amount = Math.max(0, Number(value) || 0);
@@ -8219,12 +8251,12 @@ function _renderNetWorthHtml() {
 }
 
 async function renderNetWorth() {
-  if (!state.netWorth) state.netWorth = (await callApi({action:'get_net_worth'})).data;
+  await ensureNetWorthLoaded(false);
   _renderNetWorthHtml();
   const age = Date.now() - Date.parse(state.netWorth.plaidRefreshedAt || 0);
   if (!_nwAutoRefreshStarted && age > 6*60*60*1000) {
     _nwAutoRefreshStarted = true;
-    callApi({action:'refresh_net_worth_plaid'}).then(result => { state.netWorth=result.data; if(state.currentView==='net-worth') _renderNetWorthHtml(); }).catch(()=>{});
+    ensureNetWorthLoaded(true).then(() => { if(state.currentView==='net-worth') _renderNetWorthHtml(); }).catch(()=>{});
   }
 }
 
