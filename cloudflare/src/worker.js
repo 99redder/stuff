@@ -1748,19 +1748,34 @@ function normalizeNetWorth(raw) {
     valuationSource: String(vehicle.valuationSource || '').slice(0, 80),
   })).filter(vehicle => vehicle.make && vehicle.model && vehicle.year >= 1900) : [];
   const plaidAccounts = Array.isArray(data.plaidAccounts) ? data.plaidAccounts.slice(0, 200) : [];
+  const propertyAssets = Array.isArray(data.propertyAssets) ? data.propertyAssets.slice(0, 20).map(item => ({
+    id: String(item.id || '').slice(0, 80),
+    name: String(item.name || '').trim().slice(0, 160),
+    value: Number.isFinite(Number(item.value)) ? Number(item.value) : 0,
+    salePrice: Number.isFinite(Number(item.salePrice)) ? Number(item.salePrice) : 0,
+    saleClosingCosts: Number.isFinite(Number(item.saleClosingCosts)) ? Number(item.saleClosingCosts) : 0,
+    mortgagePayoff: Number.isFinite(Number(item.mortgagePayoff)) ? Number(item.mortgagePayoff) : 0,
+    federalTax: Number.isFinite(Number(item.federalTax)) ? Number(item.federalTax) : 0,
+    stateTax: Number.isFinite(Number(item.stateTax)) ? Number(item.stateTax) : 0,
+    depreciationRecaptureTax: Number.isFinite(Number(item.depreciationRecaptureTax)) ? Number(item.depreciationRecaptureTax) : 0,
+    source: String(item.source || '').slice(0, 100),
+  })).filter(item => item.id && item.name) : [];
   const history = Array.isArray(data.history) ? data.history.slice(-730) : [];
-  return { manualItems, vehicles, plaidAccounts, plaidRefreshedAt: data.plaidRefreshedAt || '', history };
+  return { manualItems, vehicles, propertyAssets, plaidAccounts, plaidRefreshedAt: data.plaidRefreshedAt || '', history };
 }
 
 function netWorthTotals(data) {
   let assets = 0;
   let liabilities = 0;
+  const mortgageIncludedInProperty = data.propertyAssets.some(property => property.mortgagePayoff > 0);
   for (const item of data.manualItems) (item.side === 'liability' ? liabilities += item.value : assets += item.value);
   for (const vehicle of data.vehicles) assets += vehicle.value;
+  for (const property of data.propertyAssets) assets += property.value;
   for (const account of data.plaidAccounts) {
     const value = Math.max(0, Number(account.value) || 0);
-    if (account.side === 'liability') liabilities += value;
-    else assets += value;
+    if (account.side === 'liability') {
+      if (!(mortgageIncludedInProperty && account.subtype === 'mortgage')) liabilities += value;
+    } else assets += value;
   }
   return { assets, liabilities, netWorth: assets - liabilities };
 }
@@ -1784,6 +1799,7 @@ async function handleSaveNetWorth(env, incoming) {
   const submitted = normalizeNetWorth(incoming);
   current.manualItems = submitted.manualItems;
   current.vehicles = submitted.vehicles;
+  current.propertyAssets = submitted.propertyAssets;
   addNetWorthSnapshot(current);
   await env.RENTALS.put(NET_WORTH_KEY, JSON.stringify(current));
   return jsonResponse({ success: true, data: current });

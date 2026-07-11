@@ -8173,11 +8173,17 @@ function nwGlobalPercentile(value) {
 }
 
 function nwTotals() {
-  const data = state.netWorth || { manualItems:[], vehicles:[], plaidAccounts:[] };
+  const data = state.netWorth || { manualItems:[], vehicles:[], propertyAssets:[], plaidAccounts:[] };
   let assets = 0, liabilities = 0;
   data.manualItems.forEach(item => item.side === 'liability' ? liabilities += Number(item.value)||0 : assets += Number(item.value)||0);
   data.vehicles.forEach(item => assets += Number(item.value)||0);
-  data.plaidAccounts.forEach(item => item.side === 'liability' ? liabilities += Number(item.value)||0 : assets += Number(item.value)||0);
+  (data.propertyAssets || []).forEach(item => assets += Number(item.value)||0);
+  const mortgageIncludedInProperty = (data.propertyAssets || []).some(item => Number(item.mortgagePayoff) > 0);
+  data.plaidAccounts.forEach(item => {
+    if (item.side === 'liability') {
+      if (!(mortgageIncludedInProperty && item.subtype === 'mortgage')) liabilities += Number(item.value)||0;
+    } else assets += Number(item.value)||0;
+  });
   return { assets, liabilities, netWorth: assets - liabilities };
 }
 
@@ -8207,6 +8213,60 @@ function nwLine(item, source, editable, kind='manual') {
   </details>`;
 }
 
+function nwPropertyLine(item) {
+  const detail = `${item.source} · Sale amount ${fmt(item.salePrice)} · Closing costs ${fmt(item.saleClosingCosts)} · Mortgage payoff ${fmt(item.mortgagePayoff)} · Federal tax ${fmt(item.federalTax)} · State/local tax ${fmt(item.stateTax)} · Depreciation recapture tax ${fmt(item.depreciationRecaptureTax)}`;
+  const valueLabel = `${item.value < 0 ? '−' : ''}${fmt(Math.abs(item.value))}`;
+  return `<details class="nw-line"><summary><span>${escHtml(item.name)}</span><span>${valueLabel}</span></summary><div class="nw-line-body">${escHtml(detail)}<div style="margin-top:.5rem;font-weight:700;color:${item.value < 0 ? 'var(--danger)' : 'var(--success)'}">Net Worth uses net proceeds: ${valueLabel}</div></div></details>`;
+}
+
+function nwBuildPropertyAssets() {
+  return PROPERTIES.map(prop => {
+    const details = calcPropertySaleTaxDetails(prop);
+    if (!details) return {
+      id: `property-${prop}`,
+      name: `${prop} Property`,
+      value: 0,
+      salePrice: 0,
+      saleClosingCosts: 0,
+      mortgagePayoff: propertyMortgagePayoff(prop).amount,
+      federalTax: 0,
+      stateTax: 0,
+      depreciationRecaptureTax: 0,
+      source: 'No closeout sale amount entered',
+    };
+    const saleCloseout = state.data[prop]?.investment?.saleCloseout || null;
+    const isSold = !!saleCloseout?.closedAt;
+    const mortgageInfo = propertyMortgagePayoff(prop);
+    const savedMortgage = saleCloseout?.mortgagePayoff;
+    const mortgagePayoff = isSold && typeof savedMortgage === 'number' ? savedMortgage : mortgageInfo.amount;
+    const depreciationRecaptureTax = isSold
+      ? Number(saleCloseout.depreciationRecaptureTax) || 0
+      : Math.max(0, Number(details.depreciationRecapture) || 0) * 0.25;
+    const federalTax = isSold
+      ? Number(saleCloseout.federalCapGainsTax) || 0
+      : Math.max(0, Number(details.taxableGain) || 0) * 0.15;
+    const stateRate = Number(state.data[prop]?.investment?.stateCapGainsPct) || 8.95;
+    const stateTax = isSold
+      ? Number(saleCloseout.stateCapGainsTax) || 0
+      : Math.max(0, Number(details.taxableGain) || 0) * (stateRate / 100);
+    const netProceeds = isSold && Number.isFinite(Number(saleCloseout.netSaleProceeds))
+      ? Number(saleCloseout.netSaleProceeds) - (typeof savedMortgage === 'number' ? 0 : mortgagePayoff)
+      : details.salePrice - details.saleClosingCosts - mortgagePayoff - federalTax - stateTax - depreciationRecaptureTax;
+    return {
+      id: `property-${prop}`,
+      name: `${prop} Property`,
+      value: netProceeds,
+      salePrice: details.salePrice,
+      saleClosingCosts: details.saleClosingCosts,
+      mortgagePayoff,
+      federalTax,
+      stateTax,
+      depreciationRecaptureTax,
+      source: details.source,
+    };
+  });
+}
+
 function nwEditorHtml() {
   if (!_nwEditor) return '';
   const isVehicle = _nwEditor.kind === 'vehicle';
@@ -8232,12 +8292,13 @@ function _renderNetWorthHtml() {
   const data = state.netWorth;
   const totals = nwTotals();
   const assets = [
+    ...(data.propertyAssets || []).map(nwPropertyLine),
     ...data.plaidAccounts.filter(a=>a.side!=='liability').map(a=>nwLine(a,'Plaid · read-only',false)),
     ...data.vehicles.map(a=>nwLine(a, a.valuedAt ? `Vehicle estimate updated ${a.valuedAt.slice(0,10)}` : 'Vehicle', true, 'vehicle')),
     ...data.manualItems.filter(a=>a.side!=='liability').map(a=>nwLine(a,'Manual',true))
   ].join('');
   const liabilities = [
-    ...data.plaidAccounts.filter(a=>a.side==='liability').map(a=>nwLine(a,'Plaid · read-only',false)),
+    ...data.plaidAccounts.filter(a=>a.side==='liability').map(a=>nwLine(a,a.subtype==='mortgage'&&(data.propertyAssets||[]).some(p=>Number(p.mortgagePayoff)>0)?'Plaid · already deducted in 731WO net proceeds · not subtracted twice':'Plaid · read-only',false)),
     ...data.manualItems.filter(a=>a.side==='liability').map(a=>nwLine(a,'Manual',true))
   ].join('');
   const us = nwUsPercentile(totals.netWorth), global = nwGlobalPercentile(totals.netWorth);
@@ -8252,6 +8313,16 @@ function _renderNetWorthHtml() {
 
 async function renderNetWorth() {
   await ensureNetWorthLoaded(false);
+  await Promise.all(PROPERTIES.flatMap(prop => {
+    const keys = ['transactions', 'summaries', 'depreciation', 'investment'];
+    if (MAINTENANCE_BASIS_PROPERTIES.has(prop)) keys.push('maintenance');
+    return keys.map(key => ensureLoaded(prop, key));
+  }));
+  const propertyAssets = nwBuildPropertyAssets();
+  if (JSON.stringify(propertyAssets) !== JSON.stringify(state.netWorth.propertyAssets || [])) {
+    state.netWorth.propertyAssets = propertyAssets;
+    state.netWorth = (await callApi({ action: 'save_net_worth', data: state.netWorth })).data;
+  }
   _renderNetWorthHtml();
   const age = Date.now() - Date.parse(state.netWorth.plaidRefreshedAt || 0);
   if (!_nwAutoRefreshStarted && age > 6*60*60*1000) {
