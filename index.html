@@ -8395,11 +8395,22 @@ function nwEditorHtml() {
       <div class="form-group"><label>Model year</label><input id="nw-year" type="number" value="${escAttr(item.year||'')}" oninput="nwScheduleTrimLoad()"></div>
       <div class="form-group"><label>Mileage</label><input id="nw-mileage" type="number" value="${escAttr(item.mileage||'')}"></div>
       <div class="form-group"><label>Current value</label><input id="nw-value" inputmode="decimal" value="${escAttr(item.value||'')}"></div>` : `
-      <div class="form-group"><label>Category</label><input id="nw-category" value="${escAttr(item.category||'')}" placeholder="Real estate, retirement, mortgage…"></div>
+      <div class="form-group"><label>Category</label><select id="nw-category" class="form-input">${nwManualCategoryOptions(_nwEditor.side,item.category)}</select></div>
       <div class="form-group"><label>Value</label><input id="nw-value" inputmode="decimal" value="${escAttr(item.value||'')}"></div>
       <div class="form-group wide"><label>Details</label><input id="nw-notes" value="${escAttr(item.notes||'')}"></div>`}
     <div class="wide"><button class="btn btn-primary" onclick="nwSaveEditor()">${isVehicle?'Save & value automatically':'Save'}</button></div>
   </div>`;
+}
+
+function nwManualCategoryOptions(side, selected) {
+  const defaults = side === 'liability'
+    ? ['Credit Cards','Mortgage','Personal Loans','Auto Loans','Student Loans','Taxes Owed','Other Liabilities']
+    : ['Cash & Banking','Stocks & Investments','Crypto','Bonds & Fixed Income','Real Estate','Vehicles','Retirement','Other Assets'];
+  const existing = (state.netWorth?.manualItems || []).filter(item=>item.side===side).map(item=>String(item.category||'').trim()).filter(Boolean);
+  const choices = [...new Set([...defaults,...existing])];
+  const current = String(selected||'').trim();
+  if(current && !choices.includes(current))choices.push(current);
+  return choices.map(category=>`<option value="${escAttr(category)}"${category===current?' selected':''}>${escHtml(category)}</option>`).join('');
 }
 
 function _renderNetWorthHtml() {
