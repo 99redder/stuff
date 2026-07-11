@@ -17,6 +17,7 @@ const SESSION_COOKIE = 'rentals_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 12; // 12 hours
 const LOGIN_WINDOW_SECONDS = 15 * 60;
 const LOGIN_MAX_FAILURES = 5;
+const LOGIN_BURST_RETRY_SECONDS = 60;
 const MAX_API_REQUEST_BYTES = 1_000_000;
 const MAX_UPSTREAM_JSON_BYTES = 1_000_000;
 const MAX_USDA_PDF_BYTES = 5_000_000;
@@ -256,13 +257,21 @@ async function handleVerifyPassword(request, env, password) {
   if (!stored) return jsonResponse({ error: 'Password not configured on server' }, 500);
 
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  if (!(await authBurstAllowed(env, ip))) {
+    return jsonResponse({ error: 'Too many login attempts. Try again shortly.' }, 429, {
+      'Retry-After': String(LOGIN_BURST_RETRY_SECONDS),
+    });
+  }
+
   const failKey = `auth_fail:${ip}`;
   const failures = parseInt(await env.RENTALS.get(failKey) || '0', 10) || 0;
   if (failures >= LOGIN_MAX_FAILURES) {
-    return jsonResponse({ error: 'Too many failed login attempts. Try again later.' }, 429);
+    return jsonResponse({ error: 'Too many failed login attempts. Try again later.' }, 429, {
+      'Retry-After': String(LOGIN_WINDOW_SECONDS),
+    });
   }
 
-  if (password !== stored) {
+  if (!timingSafeEqualStrings(String(password || ''), stored)) {
     await env.RENTALS.put(failKey, String(failures + 1), { expirationTtl: LOGIN_WINDOW_SECONDS });
     return jsonResponse({ ok: false });
   }
@@ -270,7 +279,12 @@ async function handleVerifyPassword(request, env, password) {
   await env.RENTALS.delete(failKey);
   const token = crypto.randomUUID() + '-' + crypto.randomUUID();
   const sessionKey = `session:${await sha256Hex(token)}`;
-  await env.RENTALS.put(sessionKey, JSON.stringify({ createdAt: new Date().toISOString(), ip }), { expirationTtl: SESSION_TTL_SECONDS });
+  const passwordVersion = await sessionPasswordVersion(token, stored);
+  await env.RENTALS.put(sessionKey, JSON.stringify({
+    createdAt: new Date().toISOString(),
+    ip,
+    passwordVersion,
+  }), { expirationTtl: SESSION_TTL_SECONDS });
 
   return jsonResponse({ ok: true }, 200, {
     'Set-Cookie': `${SESSION_COOKIE}=${token}; Max-Age=${SESSION_TTL_SECONDS}; Path=/; HttpOnly; Secure; SameSite=None`,
@@ -382,11 +396,24 @@ async function handleFetchEsaiTaxSummary(body) {
 
 async function isAuthenticated(request, env) {
   const token = getSessionToken(request);
-  if (token) {
-    const session = await env.RENTALS.get(`session:${await sha256Hex(token)}`);
-    if (session) return true;
+  if (!token || !env.ADMIN_PASSWORD) return false;
+
+  const session = await env.RENTALS.get(`session:${await sha256Hex(token)}`, 'json');
+  if (!session || typeof session.passwordVersion !== 'string') return false;
+
+  const currentVersion = await sessionPasswordVersion(token, env.ADMIN_PASSWORD);
+  return timingSafeEqualStrings(session.passwordVersion, currentVersion);
+}
+
+async function authBurstAllowed(env, ip) {
+  if (!env.AUTH_RATELIMIT) return true;
+  try {
+    const result = await env.AUTH_RATELIMIT.limit({ key: `login:${ip}` });
+    return result.success;
+  } catch (error) {
+    console.warn(JSON.stringify({ event: 'auth_rate_limit_error', message: error.message }));
+    return true;
   }
-  return false;
 }
 
 function getSessionToken(request) {
@@ -406,6 +433,20 @@ async function sha256Hex(input) {
   const bytes = new TextEncoder().encode(input);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function sessionPasswordVersion(token, password) {
+  return sha256Hex(`${token}\0${password}`);
+}
+
+function timingSafeEqualStrings(left, right) {
+  const encoder = new TextEncoder();
+  const leftBytes = encoder.encode(left);
+  const rightBytes = encoder.encode(right);
+  const lengthsMatch = leftBytes.byteLength === rightBytes.byteLength;
+  return lengthsMatch
+    ? crypto.subtle.timingSafeEqual(leftBytes, rightBytes)
+    : !crypto.subtle.timingSafeEqual(leftBytes, leftBytes);
 }
 
 async function isPropertySold(env, property) {
