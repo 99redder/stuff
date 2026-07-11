@@ -8261,6 +8261,7 @@ function nwLabeledPlaidAccount(item) {
   const alreadyLabeled = rawName.toLowerCase().startsWith(institution.toLowerCase())
     || (institution === 'Navy Federal' && /nfcu/i.test(rawName));
   let name = alreadyLabeled ? rawName : `${institution} ${rawName}`;
+  name = name.replace(/\btraditional\b/gi,'Traditional');
   if (institution === 'Navy Federal' && item.subtype === 'mortgage' && !/\(731WO\)/i.test(name)) name += ' (731WO)';
   return { ...item, institution, name };
 }

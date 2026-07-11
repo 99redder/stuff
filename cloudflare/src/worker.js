@@ -2054,6 +2054,7 @@ async function refreshNetWorthPlaid(env) {
       const alreadyLabeled = rawName.toLowerCase().startsWith(institution.toLowerCase())
         || (institution === 'Navy Federal' && /nfcu/i.test(rawName));
       let displayName = alreadyLabeled ? rawName : `${institution} ${rawName}`;
+      displayName = displayName.replace(/\btraditional\b/gi,'Traditional');
       if (institution === 'Navy Federal' && account.subtype === 'mortgage' && !/\(731WO\)/i.test(displayName)) {
         displayName += ' (731WO)';
       }
