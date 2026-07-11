@@ -130,8 +130,7 @@
   const sum = (items, fn=x=>n(x.amount)) => (items||[]).reduce((t,x)=>t+fn(x),0);
 
   async function api(body) {
-    const token = sessionStorage.getItem('rentals_session_token') || '';
-    const res = await fetch(API,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json',...(token?{'X-Session':token}:{})},body:JSON.stringify(body)});
+    const res = await fetch(API,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const data = await res.json().catch(()=>({}));
     if (res.status===401) { showLogin(); throw new Error('Your session expired. Please sign in again.'); }
     if (!res.ok) throw new Error(data.error || 'Unable to load data');
@@ -142,7 +141,7 @@
     const res = await fetch(API,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'verify_password',password})});
     const data = await res.json().catch(()=>({}));
     if (!res.ok || !data.ok) throw new Error(data.error || 'Incorrect password');
-    if (data.sessionToken) sessionStorage.setItem('rentals_session_token',data.sessionToken);
+    sessionStorage.removeItem('rentals_session_token');
   }
 
   function showLogin(){ sessionStorage.removeItem('rentals_session_token'); $('#app').classList.add('hidden'); $('#login').classList.remove('hidden'); }
@@ -159,6 +158,7 @@
       if(state.view==='budget' && (force||!state.data.budget)) state.data.budget=(await api({action:'get_budget'})).data||{};
       if(state.view==='tax' && (force||!state.data.tax)) state.data.tax=(await api({action:'get_tax_planning',year:String(YEAR)})).data||{};
       if(state.view==='savings' && (force||!state.data.savings)) state.data.savings=(await api({action:'get_savings'})).data||{};
+      if((state.view==='savings'||state.view==='cashflow') && (force||!state.data.robinhood)) state.data.robinhood=await api({action:'get_robinhood_balance',refresh:force});
       if(state.view==='mom' && (force||!state.data.mom)) state.data.mom=(await api({action:'get_mom_budget'})).data||{};
       if((state.view==='cashflow'||state.view==='properties'||state.view==='tax') && (force||!state.data.transactions)){
         const results=await Promise.all(PROPERTIES.map(property=>api({action:'get_transactions',property})));
@@ -186,7 +186,7 @@
     const rentalRows=[...RENTALS].map(prop=>({prop,...txnTotals(yearTxns(prop))}));
     const total={income:sum(rentalRows,x=>x.income),expenses:sum(rentalRows,x=>x.expenses)}; total.net=total.income-total.expenses;
     return `<div class="hero"><div class="hero-label">2026 net rental cash flow</div><div class="hero-value">${money(total.net)}</div><div class="hero-note">Recorded income less recorded expenses</div></div>
-      <div class="grid">${stat('Income',money(total.income),'2026 YTD','good')}${stat('Expenses',money(total.expenses),'2026 YTD','bad')}${stat('Net',money(total.net),'3 rentals',tone(total.net))}</div>
+      <div class="grid">${stat('Income',money(total.income),'2026 YTD','good')}${stat('Expenses',money(total.expenses),'2026 YTD','bad')}${stat('Net',money(total.net),'3 rentals',tone(total.net))}${state.data.robinhood?stat('Robinhood checking',money(state.data.robinhood.balance),state.data.robinhood.stale?'cached balance':'live balance','good'):''}</div>
       ${card('By property',rentalRows.map(x=>row(x.prop,money(x.net),`${money(x.income)} in · ${money(x.expenses)} out`,tone(x.net))).join(''),'2026')}`;
   }
 
@@ -203,12 +203,13 @@
 
   function renderSavings(){
     const s=state.data.savings||{}; const accounts=s.accounts||{}; const obligations=s.obligations||[]; const paidMap=s.payments?.[String(YEAR)]||{};
-    const liquid=n(accounts.robinhoodChecking??accounts.robinhood)+n(accounts.robinhoodBrokerage??accounts.ibkr); let annual=0,paid=0,outstanding=0;
+    const liveChecking=state.data.robinhood&&Number.isFinite(Number(state.data.robinhood.balance))?n(state.data.robinhood.balance):n(accounts.robinhoodChecking??accounts.robinhood);
+    const liquid=liveChecking+n(accounts.robinhoodBrokerage??accounts.ibkr); let annual=0,paid=0,outstanding=0;
     const progress=obligations.map(o=>{const ppy=o.kind==='static'?1:(o.paymentsPerYear===2?2:1);const slots=(paidMap[o.id]||[]).slice(0,ppy);while(slots.length<ppy)slots.push(false);const count=slots.filter(Boolean).length;const left=n(o.amount)/ppy*(ppy-count);annual+=n(o.amount);paid+=n(o.amount)-left;outstanding+=left;return{o,left,count,ppy};});
     const delta=liquid-annual;
     return `<div class="hero"><div class="hero-label">Funding ${delta>=0?'surplus':'shortfall'}</div><div class="hero-value">${delta>=0?'+':'−'}${money(Math.abs(delta))}</div><div class="hero-note">Available accounts versus total 2026 obligations</div></div>
       <div class="grid">${stat('Available',money(liquid),'liquid accounts','good')}${stat('Outstanding',money(outstanding),`${money(paid)} cleared`,'bad')}${stat('Annual total',money(annual),`${obligations.length} obligations`)}</div>
-      ${card('Account balances',Object.entries(accounts).map(([k,v])=>row(k.replace(/([A-Z])/g,' $1').replace(/^./,c=>c.toUpperCase()),money(v))).join(''))}
+      ${card('Account balances',row('Robinhood Checking',money(liveChecking),state.data.robinhood?`${state.data.robinhood.stale?'Cached':'Live'} · ${new Date(state.data.robinhood.refreshedAt).toLocaleString()}`:'Manual fallback')+Object.entries(accounts).filter(([k])=>!['robinhoodChecking','robinhood'].includes(k)).map(([k,v])=>row(k.replace(/([A-Z])/g,' $1').replace(/^./,c=>c.toUpperCase()),money(v))).join(''))}
       ${card('Obligations',progress.sort((a,b)=>b.left-a.left).map(({o,left,count,ppy})=>row(o.name,money(left),`${o.kind==='static'?(count?'Funded':'Unfunded'):`${count} of ${ppy} paid`} · ${money(o.amount)} total`,left?'bad':'good')).join(''),'2026')}`;
   }
 
@@ -251,6 +252,7 @@
   document.addEventListener('visibilitychange',()=>{if(!document.hidden&&state.lastSync&&Date.now()-state.lastSync.getTime()>60000)loadView(true)});
   window.addEventListener('online',()=>loadView(true));
   if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  sessionStorage.removeItem('rentals_session_token');
   (async()=>{try{await api({action:'verify_session'});showApp();loadView()}catch{showLogin()}})();
   </script>
 </body>

@@ -117,6 +117,7 @@ async function handleDataApi(request, env) {
   // Savings — global
   if (action === 'get_savings')  return handleGetSavings(env);
   if (action === 'save_savings') return handleSaveSavings(env, body.data);
+  if (action === 'get_robinhood_balance') return handleGetRobinhoodBalance(env, body.refresh === true);
   // Note: Fair Share settings live inside the `budget` KV record
   // (data.fairShare), saved via save_budget — no dedicated action/key.
 
@@ -1625,6 +1626,89 @@ async function handleSaveDeductions(env, data) {
 async function handleGetSavings(env) {
   const data = await env.RENTALS.get('savings', 'json') || {};
   return jsonResponse({ data });
+}
+
+// ── Plaid / Robinhood Checking ───────────────────────────────────────────────
+
+const ROBINHOOD_BALANCE_CACHE_KEY = 'plaid:robinhood_checking_balance';
+const ROBINHOOD_BALANCE_CACHE_MS = 5 * 60 * 1000;
+
+async function handleGetRobinhoodBalance(env, forceRefresh) {
+  const cached = await env.RENTALS.get(ROBINHOOD_BALANCE_CACHE_KEY, 'json');
+  const cachedAt = cached?.refreshedAt ? Date.parse(cached.refreshedAt) : 0;
+  const cacheIsFresh = cachedAt > 0 && Date.now() - cachedAt < ROBINHOOD_BALANCE_CACHE_MS;
+
+  if (!forceRefresh && cacheIsFresh) {
+    return jsonResponse({ ...cached, source: 'cache', stale: false });
+  }
+
+  if (!env.PLAID_CLIENT_ID || !env.PLAID_SECRET || !env.PLAID_ACCESS_TOKEN || !env.PLAID_ACCOUNT_ID) {
+    if (cached) return jsonResponse({ ...cached, source: 'cache', stale: true, warning: 'Live balance is not configured.' });
+    return jsonResponse({ error: 'Live Robinhood balance is not configured' }, 503);
+  }
+
+  try {
+    const response = await fetch('https://production.plaid.com/accounts/balance/get', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'PLAID-CLIENT-ID': env.PLAID_CLIENT_ID,
+        'PLAID-SECRET': env.PLAID_SECRET,
+        'Plaid-Version': '2020-09-14',
+      },
+      body: JSON.stringify({
+        access_token: env.PLAID_ACCESS_TOKEN,
+        options: { account_ids: [env.PLAID_ACCOUNT_ID] },
+      }),
+    });
+
+    const data = await readJsonLimited(response, MAX_UPSTREAM_JSON_BYTES);
+    if (!response.ok) throw new Error(`Plaid balance request failed (${response.status})`);
+
+    const account = Array.isArray(data.accounts)
+      ? data.accounts.find(item => item.account_id === env.PLAID_ACCOUNT_ID)
+      : null;
+    if (!account) throw new Error('Configured Robinhood checking account was not returned');
+
+    const current = Number(account.balances?.current);
+    const available = Number(account.balances?.available);
+    const balance = Number.isFinite(current) ? current : available;
+    if (!Number.isFinite(balance)) throw new Error('Robinhood checking balance was unavailable');
+
+    const result = {
+      balance,
+      current: Number.isFinite(current) ? current : null,
+      available: Number.isFinite(available) ? available : null,
+      refreshedAt: new Date().toISOString(),
+      source: 'live',
+      stale: false,
+    };
+
+    await Promise.all([
+      env.RENTALS.put(ROBINHOOD_BALANCE_CACHE_KEY, JSON.stringify(result)),
+      syncRobinhoodCheckingFallback(env, balance),
+    ]);
+    return jsonResponse(result);
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'plaid_balance_error', message: error instanceof Error ? error.message : String(error) }));
+    if (cached) {
+      return jsonResponse({
+        ...cached,
+        source: 'cache',
+        stale: true,
+        warning: 'Plaid could not refresh the balance. Showing the last successful value.',
+      });
+    }
+    return jsonResponse({ error: 'Unable to refresh Robinhood checking balance' }, 502);
+  }
+}
+
+async function syncRobinhoodCheckingFallback(env, balance) {
+  const savings = await env.RENTALS.get('savings', 'json');
+  if (!savings || typeof savings !== 'object') return;
+  const accounts = savings.accounts && typeof savings.accounts === 'object' ? savings.accounts : {};
+  savings.accounts = { ...accounts, robinhoodChecking: balance };
+  await env.RENTALS.put('savings', JSON.stringify(savings));
 }
 
 async function handleSaveSavings(env, data) {

@@ -1961,6 +1961,14 @@ function fmtDate(iso) {
   return `${months[parseInt(m, 10) - 1]} ${parseInt(d, 10)}, ${y}`;
 }
 
+function fmtDateTime(iso) {
+  const date = new Date(iso);
+  if (!iso || Number.isNaN(date.getTime())) return 'unknown';
+  return date.toLocaleString('en-US', {
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+  });
+}
+
 function isPropertyClosed(prop = state.currentProperty) {
   return !!state.data[prop]?.investment?.saleCloseout?.closedAt;
 }
@@ -8163,9 +8171,32 @@ async function loadSavings() {
     obligations,
     payments: (raw.payments && typeof raw.payments === 'object') ? raw.payments : {},
   };
+  await refreshRobinhoodBalance(false);
   if (justSeeded || migrated) {
     await saveSavings();
   }
+}
+
+async function refreshRobinhoodBalance(forceRefresh = false) {
+  try {
+    const result = await callApi({ action: 'get_robinhood_balance', refresh: forceRefresh });
+    if (Number.isFinite(Number(result.balance))) {
+      state.robinhoodBalance = result;
+      state.savings.accounts.robinhoodChecking = Number(result.balance);
+    }
+    return result;
+  } catch {
+    state.robinhoodBalance = null;
+    return null;
+  }
+}
+
+async function savRefreshRobinhoodBalance() {
+  const btn = document.getElementById('sav-refresh-robinhood');
+  if (btn) { btn.disabled = true; btn.textContent = 'Refreshing…'; }
+  await refreshRobinhoodBalance(true);
+  _renderSavingsHtml();
+  if (state.currentView === 'cash-flow') _renderCashFlowHtml();
 }
 
 async function saveSavings() {
@@ -8295,14 +8326,20 @@ function _renderSavingsHtml() {
       </div>
       <div style="padding:1rem;display:flex;flex-direction:column;gap:.85rem">
         <div>
-          <label style="display:block;font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Robinhood Checking</label>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.25rem">
+            <label style="display:block;font-size:.78rem;font-weight:600;color:var(--text-muted);margin:0">Robinhood Checking</label>
+            <button type="button" class="btn btn-ghost btn-sm" id="sav-refresh-robinhood" onclick="savRefreshRobinhoodBalance()" style="padding:.12rem .4rem;font-size:.7rem">Refresh live</button>
+          </div>
           <div style="position:relative">
             <span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
             <input type="text" inputmode="decimal" id="sav-acct-robinhood-checking" class="form-input"
                    value="${escAttr(moneyInputValue(s.accounts.robinhoodChecking || 0))}"
-                   onchange="savUpdateAccount('robinhoodChecking', this.value)" onblur="formatMoneyInput(this)"
-                   style="width:100%;padding-left:1.5rem;font-size:1.05rem;font-weight:600">
+                   disabled
+                   style="width:100%;padding-left:1.5rem;font-size:1.05rem;font-weight:600;background:var(--bg);cursor:not-allowed">
           </div>
+          <div style="font-size:.68rem;color:var(--text-muted);margin-top:.28rem">${state.robinhoodBalance
+            ? `${state.robinhoodBalance.stale ? 'Cached' : 'Live'} · updated ${fmtDateTime(state.robinhoodBalance.refreshedAt)}`
+            : 'Manual fallback shown · live balance unavailable'}</div>
         </div>
         <div>
           <label style="display:block;font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Robinhood Brokerage</label>
