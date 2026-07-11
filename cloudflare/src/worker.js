@@ -17,6 +17,7 @@ const SESSION_COOKIE = 'rentals_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 12; // 12 hours
 const LOGIN_WINDOW_SECONDS = 15 * 60;
 const LOGIN_MAX_FAILURES = 5;
+const MAX_API_REQUEST_BYTES = 1_000_000;
 const MAX_UPSTREAM_JSON_BYTES = 1_000_000;
 const MAX_USDA_PDF_BYTES = 5_000_000;
 
@@ -82,10 +83,18 @@ async function runScheduledRobinhoodRefresh(env, scheduledTime) {
 }
 
 async function handleDataApi(request, env) {
+  const contentType = request.headers.get('Content-Type') || '';
+  if (!/^application\/json(?:\s*;|\s*$)/i.test(contentType)) {
+    return jsonResponse({ error: 'Content-Type must be application/json' }, 415);
+  }
+
   let body;
   try {
-    body = await request.json();
-  } catch {
+    body = await readJsonLimited(request, MAX_API_REQUEST_BYTES);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) {
+      return jsonResponse({ error: 'Request body is too large' }, 413);
+    }
     return jsonResponse({ error: 'Invalid JSON body' }, 400);
   }
 
@@ -1790,10 +1799,12 @@ async function handleSaveSavings(env, data) {
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
+class BodyTooLargeError extends Error {}
+
 async function readBytesLimited(response, maxBytes) {
   const lengthHeader = response.headers.get('Content-Length');
   if (lengthHeader && Number(lengthHeader) > maxBytes) {
-    throw new Error(`Upstream response is too large (${lengthHeader} bytes)`);
+    throw new BodyTooLargeError(`Body is too large (${lengthHeader} bytes)`);
   }
   if (!response.body) throw new Error('Upstream response did not include a readable body');
 
@@ -1806,7 +1817,7 @@ async function readBytesLimited(response, maxBytes) {
     total += value.byteLength;
     if (total > maxBytes) {
       try { await reader.cancel(); } catch (_) { /* ignore cancel failure */ }
-      throw new Error(`Upstream response exceeded ${maxBytes} bytes`);
+      throw new BodyTooLargeError(`Body exceeded ${maxBytes} bytes`);
     }
     chunks.push(value);
   }

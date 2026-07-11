@@ -9,7 +9,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "dependencies": {
-    "wrangler": "^4.81.1"
+  "devDependencies": {
+    "wrangler": "^4.110.0"
   }
 }
