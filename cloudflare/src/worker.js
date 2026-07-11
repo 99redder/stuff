@@ -1882,7 +1882,27 @@ async function refreshNetWorthPlaid(env) {
     };
   }));
   const liabilityTypes = new Set(['credit', 'loan']);
-  const institutionNames = { ins_54: 'Robinhood', ins_15: 'Navy Federal' };
+  const institutionNames = {};
+  const institutionIds = [...new Set(responses.map(item => item.institutionId).filter(Boolean))];
+  await Promise.all(institutionIds.map(async institutionId => {
+    try {
+      const response = await fetch('https://production.plaid.com/institutions/get_by_id', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'PLAID-CLIENT-ID': env.PLAID_CLIENT_ID,
+          'PLAID-SECRET': env.PLAID_SECRET,
+          'Plaid-Version': '2020-09-14',
+        },
+        body: JSON.stringify({ institution_id: institutionId, country_codes: ['US'] }),
+      });
+      const payload = await readJsonLimited(response, MAX_UPSTREAM_JSON_BYTES);
+      const providerName = response.ok ? String(payload.institution?.name || '').trim() : '';
+      if (/navy federal/i.test(providerName)) institutionNames[institutionId] = 'Navy Federal';
+      else if (/robinhood/i.test(providerName)) institutionNames[institutionId] = 'Robinhood';
+      else if (providerName) institutionNames[institutionId] = providerName.slice(0, 80);
+    } catch { /* retain the generic Plaid fallback if metadata is unavailable */ }
+  }));
   const accounts = responses.flatMap(({ institutionId, accounts: itemAccounts }) => {
     const institution = institutionNames[institutionId] || 'Plaid';
     return itemAccounts.map(account => {
