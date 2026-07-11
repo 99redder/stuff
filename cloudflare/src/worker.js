@@ -1686,7 +1686,7 @@ async function handleGetRobinhoodBalance(env, forceRefresh) {
 
     await Promise.all([
       env.RENTALS.put(ROBINHOOD_BALANCE_CACHE_KEY, JSON.stringify(result)),
-      syncRobinhoodCheckingFallback(env, balance),
+      syncRobinhoodCheckingSavings(env, balance),
     ]);
     return jsonResponse(result);
   } catch (error) {
@@ -1703,7 +1703,7 @@ async function handleGetRobinhoodBalance(env, forceRefresh) {
   }
 }
 
-async function syncRobinhoodCheckingFallback(env, balance) {
+async function syncRobinhoodCheckingSavings(env, balance) {
   const savings = await env.RENTALS.get('savings', 'json');
   if (!savings || typeof savings !== 'object') return;
   const accounts = savings.accounts && typeof savings.accounts === 'object' ? savings.accounts : {};
@@ -1717,10 +1717,18 @@ async function handleSaveSavings(env, data) {
   }
 
   const accounts = (data.accounts && typeof data.accounts === 'object') ? data.accounts : {};
+  const existingSavings = await env.RENTALS.get('savings', 'json') || {};
+  const cachedPlaid = await env.RENTALS.get(ROBINHOOD_BALANCE_CACHE_KEY, 'json');
+  const plaidChecking = typeof cachedPlaid?.balance === 'number' ? cachedPlaid.balance : NaN;
+  const savedChecking = typeof existingSavings?.accounts?.robinhoodChecking === 'number'
+    ? existingSavings.accounts.robinhoodChecking
+    : NaN;
   const sanitizedAccounts = {
-    robinhoodChecking: (typeof accounts.robinhoodChecking === 'number' && isFinite(accounts.robinhoodChecking))
-      ? accounts.robinhoodChecking
-      : ((typeof accounts.robinhood === 'number' && isFinite(accounts.robinhood)) ? accounts.robinhood : 0),
+    // Robinhood Checking is server-owned and can only be changed by a successful
+    // Plaid balance pull. Ignore all client-supplied checking values.
+    robinhoodChecking: Number.isFinite(plaidChecking)
+      ? plaidChecking
+      : (Number.isFinite(savedChecking) ? savedChecking : 0),
     robinhoodBrokerage: (typeof accounts.robinhoodBrokerage === 'number' && isFinite(accounts.robinhoodBrokerage))
       ? accounts.robinhoodBrokerage
       : ((typeof accounts.ibkr === 'number' && isFinite(accounts.ibkr)) ? accounts.ibkr : 0),

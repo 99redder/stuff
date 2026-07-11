@@ -203,13 +203,13 @@
 
   function renderSavings(){
     const s=state.data.savings||{}; const accounts=s.accounts||{}; const obligations=s.obligations||[]; const paidMap=s.payments?.[String(YEAR)]||{};
-    const liveChecking=state.data.robinhood&&Number.isFinite(Number(state.data.robinhood.balance))?n(state.data.robinhood.balance):n(accounts.robinhoodChecking??accounts.robinhood);
+    const liveChecking=state.data.robinhood&&Number.isFinite(Number(state.data.robinhood.balance))?n(state.data.robinhood.balance):n(accounts.robinhoodChecking);
     const liquid=liveChecking+n(accounts.robinhoodBrokerage??accounts.ibkr); let annual=0,paid=0,outstanding=0;
     const progress=obligations.map(o=>{const ppy=o.kind==='static'?1:(o.paymentsPerYear===2?2:1);const slots=(paidMap[o.id]||[]).slice(0,ppy);while(slots.length<ppy)slots.push(false);const count=slots.filter(Boolean).length;const left=n(o.amount)/ppy*(ppy-count);annual+=n(o.amount);paid+=n(o.amount)-left;outstanding+=left;return{o,left,count,ppy};});
     const delta=liquid-annual;
     return `<div class="hero"><div class="hero-label">Funding ${delta>=0?'surplus':'shortfall'}</div><div class="hero-value">${delta>=0?'+':'−'}${money(Math.abs(delta))}</div><div class="hero-note">Available accounts versus total 2026 obligations</div></div>
       <div class="grid">${stat('Available',money(liquid),'liquid accounts','good')}${stat('Outstanding',money(outstanding),`${money(paid)} cleared`,'bad')}${stat('Annual total',money(annual),`${obligations.length} obligations`)}</div>
-      ${card('Account balances',row('Robinhood Checking',money(liveChecking),state.data.robinhood?`${state.data.robinhood.stale?'Cached':'Live'} · ${new Date(state.data.robinhood.refreshedAt).toLocaleString()}`:'Manual fallback')+Object.entries(accounts).filter(([k])=>!['robinhoodChecking','robinhood'].includes(k)).map(([k,v])=>row(k.replace(/([A-Z])/g,' $1').replace(/^./,c=>c.toUpperCase()),money(v))).join(''))}
+      ${card('Account balances',row('Robinhood Checking',money(liveChecking),state.data.robinhood?`${state.data.robinhood.stale?'Cached':'Live'} · ${new Date(state.data.robinhood.refreshedAt).toLocaleString()}`:'Last synchronized Plaid balance')+Object.entries(accounts).filter(([k])=>!['robinhoodChecking','robinhood'].includes(k)).map(([k,v])=>row(k.replace(/([A-Z])/g,' $1').replace(/^./,c=>c.toUpperCase()),money(v))).join(''))}
       ${card('Obligations',progress.sort((a,b)=>b.left-a.left).map(({o,left,count,ppy})=>row(o.name,money(left),`${o.kind==='static'?(count?'Funded':'Unfunded'):`${count} of ${ppy} paid`} · ${money(o.amount)} total`,left?'bad':'good')).join(''),'2026')}`;
   }
 

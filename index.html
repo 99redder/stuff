@@ -7980,14 +7980,6 @@ function cfAutoRow(item, color) {
   </td></tr>` : ''}`;
 }
 
-async function cfUpdateChecking(value) {
-  const amount = parseMoney(value);
-  if (!state.savings) await loadSavings();
-  state.savings.accounts.robinhoodChecking = isFinite(amount) && amount >= 0 ? amount : 0;
-  await saveSavings();
-  _renderCashFlowHtml();
-}
-
 function cfDisplayRow(type, item, color) {
   if (type === 'income') {
     const expanded = cfIncomeExpanded(item.id);
@@ -8330,16 +8322,10 @@ function _renderSavingsHtml() {
             <label style="display:block;font-size:.78rem;font-weight:600;color:var(--text-muted);margin:0">Robinhood Checking</label>
             <button type="button" class="btn btn-ghost btn-sm" id="sav-refresh-robinhood" onclick="savRefreshRobinhoodBalance()" style="padding:.12rem .4rem;font-size:.7rem">Refresh live</button>
           </div>
-          <div style="position:relative">
-            <span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
-            <input type="text" inputmode="decimal" id="sav-acct-robinhood-checking" class="form-input"
-                   value="${escAttr(moneyInputValue(s.accounts.robinhoodChecking || 0))}"
-                   disabled
-                   style="width:100%;padding-left:1.5rem;font-size:1.05rem;font-weight:600;background:var(--bg);cursor:not-allowed">
-          </div>
+          <div style="padding:.68rem .75rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);font-size:1.05rem;font-weight:700">${fmt(s.accounts.robinhoodChecking || 0)}</div>
           <div style="font-size:.68rem;color:var(--text-muted);margin-top:.28rem">${state.robinhoodBalance
             ? `${state.robinhoodBalance.stale ? 'Cached' : 'Live'} · updated ${fmtDateTime(state.robinhoodBalance.refreshedAt)}`
-            : 'Manual fallback shown · live balance unavailable'}</div>
+            : 'Last synchronized Plaid balance · live refresh unavailable'}</div>
         </div>
         <div>
           <label style="display:block;font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Robinhood Brokerage</label>
@@ -8519,6 +8505,7 @@ function _savEditRow(o) {
 }
 
 async function savUpdateAccount(key, value) {
+  if (key !== 'robinhoodBrokerage') return;
   const v = parseMoney(value);
   state.savings.accounts[key] = isFinite(v) && v >= 0 ? v : 0;
   await saveSavings();
@@ -10341,7 +10328,6 @@ window.cfEdit                  = cfEdit;
 window.cfCancel                = cfCancel;
 window.cfSave                  = cfSave;
 window.cfDelete                = cfDelete;
-window.cfUpdateChecking        = cfUpdateChecking;
 window.cfToggleIncomeDetails   = cfToggleIncomeDetails;
 window.cfSetExpenseSort        = cfSetExpenseSort;
 
