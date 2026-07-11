@@ -1888,9 +1888,13 @@ async function refreshNetWorthPlaid(env) {
       const alreadyLabeled = institution === 'Robinhood'
         ? /robinhood/i.test(rawName)
         : institution === 'Navy Federal' && /(navy federal|nfcu)/i.test(rawName);
+      let displayName = alreadyLabeled ? rawName : `${institution} ${rawName}`;
+      if (institution === 'Navy Federal' && account.subtype === 'mortgage' && !/\(731WO\)/i.test(displayName)) {
+        displayName += ' (731WO)';
+      }
       return {
         id: String(account.account_id || ''),
-        name: (alreadyLabeled ? rawName : `${institution} ${rawName}`).slice(0, 160),
+        name: displayName.slice(0, 160),
         institution,
         officialName: String(account.official_name || '').slice(0, 200),
         mask: String(account.mask || '').slice(-4),
