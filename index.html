@@ -8258,9 +8258,8 @@ function nwLabeledPlaidAccount(item) {
   if (item.subtype === 'mortgage') return { ...item, institution:'Navy Federal', name:'Navy Federal Mortgage (731WO)' };
   if (!institution && item.subtype === 'crypto exchange') institution = 'Robinhood';
   if (!institution) return item;
-  const alreadyLabeled = institution === 'Robinhood'
-    ? /robinhood/i.test(rawName)
-    : institution === 'Navy Federal' && /(navy federal|nfcu)/i.test(rawName);
+  const alreadyLabeled = rawName.toLowerCase().startsWith(institution.toLowerCase())
+    || (institution === 'Navy Federal' && /nfcu/i.test(rawName));
   let name = alreadyLabeled ? rawName : `${institution} ${rawName}`;
   if (institution === 'Navy Federal' && item.subtype === 'mortgage' && !/\(731WO\)/i.test(name)) name += ' (731WO)';
   return { ...item, institution, name };

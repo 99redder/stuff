@@ -2006,9 +2006,8 @@ async function refreshNetWorthPlaid(env) {
       const officialName = String(account.official_name || '').trim();
       const genericName = /^(checking|savings|credit card|account)$/i.test(accountName);
       const rawName = String((genericName && officialName) ? officialName : (accountName || officialName || 'Account')).trim();
-      const alreadyLabeled = institution === 'Robinhood'
-        ? /robinhood/i.test(rawName)
-        : institution === 'Navy Federal' && /(navy federal|nfcu)/i.test(rawName);
+      const alreadyLabeled = rawName.toLowerCase().startsWith(institution.toLowerCase())
+        || (institution === 'Navy Federal' && /nfcu/i.test(rawName));
       let displayName = alreadyLabeled ? rawName : `${institution} ${rawName}`;
       if (institution === 'Navy Federal' && account.subtype === 'mortgage' && !/\(731WO\)/i.test(displayName)) {
         displayName += ' (731WO)';
