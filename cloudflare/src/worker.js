@@ -1859,8 +1859,18 @@ function addNetWorthSnapshot(data) {
   data.history = data.history.slice(-730);
 }
 
+function applyKnownPlaidAccountLabels(data, env) {
+  if (!env.PLAID_ACCOUNT_ID) return data;
+  data.plaidAccounts = data.plaidAccounts.map(account => {
+    if (account.id !== env.PLAID_ACCOUNT_ID) return account;
+    const rawName = String(account.name || 'Checking').replace(/^Plaid\s+/i, '').replace(/^Robinhood\s+/i, '').trim() || 'Checking';
+    return { ...account, institution:'Robinhood', name:`Robinhood ${rawName}`.slice(0,160) };
+  });
+  return data;
+}
+
 async function handleGetNetWorth(env) {
-  return jsonResponse({ data: normalizeNetWorth(await env.RENTALS.get(NET_WORTH_KEY, 'json')) });
+  return jsonResponse({ data: applyKnownPlaidAccountLabels(normalizeNetWorth(await env.RENTALS.get(NET_WORTH_KEY, 'json')),env) });
 }
 
 async function handleSaveNetWorth(env, incoming) {
@@ -1984,8 +1994,8 @@ async function refreshNetWorthPlaid(env) {
     } catch { /* retain the generic Plaid fallback if metadata is unavailable */ }
   }));
   const accounts = responses.flatMap(({ institutionId, accounts: itemAccounts }) => {
-    const institution = institutionNames[institutionId] || 'Plaid';
     return itemAccounts.map(account => {
+      const institution = account.account_id === env.PLAID_ACCOUNT_ID ? 'Robinhood' : (institutionNames[institutionId] || 'Plaid');
       const rawName = String(account.name || account.official_name || 'Account').trim();
       const alreadyLabeled = institution === 'Robinhood'
         ? /robinhood/i.test(rawName)
