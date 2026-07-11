@@ -19,6 +19,10 @@ const LOGIN_WINDOW_SECONDS = 15 * 60;
 const LOGIN_MAX_FAILURES = 5;
 const LOGIN_BURST_RETRY_SECONDS = 60;
 const MAX_API_REQUEST_BYTES = 1_000_000;
+const MAX_API_JSON_DEPTH = 12;
+const MAX_API_ARRAY_ITEMS = 5_000;
+const MAX_API_OBJECT_KEYS = 2_000;
+const MAX_API_STRING_LENGTH = 100_000;
 const MAX_UPSTREAM_JSON_BYTES = 1_000_000;
 const MAX_USDA_PDF_BYTES = 5_000_000;
 
@@ -36,6 +40,8 @@ const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'no-referrer',
+  'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'; sandbox",
+  'Permissions-Policy': 'camera=(), geolocation=(), microphone=(), payment=()',
 };
 
 export default {
@@ -74,7 +80,7 @@ export default {
 };
 
 async function runScheduledRobinhoodRefresh(env, scheduledTime) {
-  const response = await handleGetRobinhoodBalance(env, true);
+  const response = await handleGetRobinhoodBalance(env, true, 'scheduled');
   console.log(JSON.stringify({
     event: 'scheduled_robinhood_balance_refresh',
     scheduledTime: new Date(scheduledTime).toISOString(),
@@ -99,6 +105,9 @@ async function handleDataApi(request, env) {
     return jsonResponse({ error: 'Invalid JSON body' }, 400);
   }
 
+  const envelopeError = validateApiEnvelope(body);
+  if (envelopeError) return jsonResponse({ error: envelopeError }, 400);
+
   const { action } = body;
 
   // Password check — creates an HttpOnly session cookie on success.
@@ -113,6 +122,9 @@ async function handleDataApi(request, env) {
     return jsonResponse({ ok }, ok ? 200 : 401);
   }
   if (action === 'get_mom_budget_public_summary') {
+    if (request.headers.get('Origin') !== ALLOWED_ORIGIN) {
+      return jsonResponse({ error: 'Origin required' }, 403);
+    }
     return handleGetMomBudgetPublicSummary(request, env, body.month);
   }
 
@@ -150,7 +162,7 @@ async function handleDataApi(request, env) {
   // Savings — global
   if (action === 'get_savings')  return handleGetSavings(env);
   if (action === 'save_savings') return handleSaveSavings(env, body.data);
-  if (action === 'get_robinhood_balance') return handleGetRobinhoodBalance(env, body.refresh === true);
+  if (action === 'get_robinhood_balance') return handleGetRobinhoodBalance(env, body.refresh === true, 'client');
   // Note: Fair Share settings live inside the `budget` KV record
   // (data.fairShare), saved via save_budget — no dedicated action/key.
 
@@ -1705,14 +1717,33 @@ async function handleGetSavings(env) {
 
 const ROBINHOOD_BALANCE_CACHE_KEY = 'plaid:robinhood_checking_balance';
 const ROBINHOOD_BALANCE_CACHE_MS = 5 * 60 * 1000;
+const PLAID_FORCE_REFRESH_MIN_MS = 60 * 1000;
 
-async function handleGetRobinhoodBalance(env, forceRefresh) {
+async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client') {
   const cached = await env.RENTALS.get(ROBINHOOD_BALANCE_CACHE_KEY, 'json');
   const cachedAt = cached?.refreshedAt ? Date.parse(cached.refreshedAt) : 0;
-  const cacheIsFresh = cachedAt > 0 && Date.now() - cachedAt < ROBINHOOD_BALANCE_CACHE_MS;
+  const cacheAge = cachedAt > 0 ? Date.now() - cachedAt : Infinity;
+  const cacheIsFresh = cacheAge < ROBINHOOD_BALANCE_CACHE_MS;
 
   if (!forceRefresh && cacheIsFresh) {
     return jsonResponse({ ...cached, source: 'cache', stale: false });
+  }
+
+  if (forceRefresh && cacheAge < PLAID_FORCE_REFRESH_MIN_MS) {
+    return jsonResponse({
+      ...cached,
+      source: 'cache',
+      stale: false,
+      refreshLimited: true,
+      retryAfter: Math.ceil((PLAID_FORCE_REFRESH_MIN_MS - cacheAge) / 1000),
+    });
+  }
+
+  if (forceRefresh && source === 'client' && !(await plaidRefreshAllowed(env))) {
+    if (cached) {
+      return jsonResponse({ ...cached, source: 'cache', stale: cacheAge >= ROBINHOOD_BALANCE_CACHE_MS, refreshLimited: true });
+    }
+    return jsonResponse({ error: 'Live balance refresh limit reached. Try again shortly.' }, 429, { 'Retry-After': '60' });
   }
 
   if (!env.PLAID_CLIENT_ID || !env.PLAID_SECRET || !env.PLAID_ACCESS_TOKEN || !env.PLAID_ACCOUNT_ID) {
@@ -1773,6 +1804,17 @@ async function handleGetRobinhoodBalance(env, forceRefresh) {
       });
     }
     return jsonResponse({ error: 'Unable to refresh Robinhood checking balance' }, 502);
+  }
+}
+
+async function plaidRefreshAllowed(env) {
+  if (!env.PLAID_RATELIMIT) return true;
+  try {
+    const { success } = await env.PLAID_RATELIMIT.limit({ key: 'robinhood-balance-refresh' });
+    return success;
+  } catch (error) {
+    console.warn(JSON.stringify({ event: 'plaid_rate_limit_error', message: error instanceof Error ? error.message : String(error) }));
+    return true;
   }
 }
 
@@ -1841,6 +1883,37 @@ async function handleSaveSavings(env, data) {
 // ── Helper ────────────────────────────────────────────────────────────────────
 
 class BodyTooLargeError extends Error {}
+
+function validateApiEnvelope(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return 'JSON body must be an object';
+  if (typeof body.action !== 'string' || !/^[a-z0-9_]{1,64}$/.test(body.action)) return 'Invalid action';
+  return validateJsonShape(body, 0);
+}
+
+function validateJsonShape(value, depth) {
+  if (depth > MAX_API_JSON_DEPTH) return 'JSON body is nested too deeply';
+  if (typeof value === 'string') {
+    return value.length <= MAX_API_STRING_LENGTH ? '' : 'JSON string value is too long';
+  }
+  if (value === null || typeof value !== 'object') return '';
+  if (Array.isArray(value)) {
+    if (value.length > MAX_API_ARRAY_ITEMS) return 'JSON array has too many items';
+    for (const item of value) {
+      const error = validateJsonShape(item, depth + 1);
+      if (error) return error;
+    }
+    return '';
+  }
+
+  const keys = Object.keys(value);
+  if (keys.length > MAX_API_OBJECT_KEYS) return 'JSON object has too many fields';
+  for (const key of keys) {
+    if (key === '__proto__' || key === 'prototype' || key === 'constructor') return 'Unsafe JSON field name';
+    const error = validateJsonShape(value[key], depth + 1);
+    if (error) return error;
+  }
+  return '';
+}
 
 async function readBytesLimited(response, maxBytes) {
   const lengthHeader = response.headers.get('Content-Length');

@@ -22,6 +22,12 @@ name = "AUTH_RATELIMIT"
 namespace_id = "1002"
 simple = { limit = 10, period = 60 }
 
+# Protect Plaid's paid real-time Balance endpoint from parallel/repeated refreshes.
+[[ratelimits]]
+name = "PLAID_RATELIMIT"
+namespace_id = "1003"
+simple = { limit = 4, period = 60 }
+
 # Cloudflare cron is UTC. These two times cover 6:00 AM America/New_York
 # year-round; the scheduled handler checks Eastern local time so only the
 # correct trigger runs through EST/EDT changes.
