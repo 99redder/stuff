@@ -171,6 +171,7 @@ async function handleDataApi(request, env) {
   if (action === 'get_net_worth') return handleGetNetWorth(env);
   if (action === 'save_net_worth') return handleSaveNetWorth(env, body.data);
   if (action === 'refresh_net_worth_plaid') return handleRefreshNetWorthPlaid(env);
+  if (action === 'get_vehicle_trims') return handleGetVehicleTrims(body);
   if (action === 'value_net_worth_vehicle') return handleValueNetWorthVehicle(env, body.vehicle);
   // Note: Fair Share settings live inside the `budget` KV record
   // (data.fairShare), saved via save_budget — no dedicated action/key.
@@ -1955,6 +1956,34 @@ async function handleValueNetWorthVehicle(env, vehicle) {
   const value = Number(payload.valuationPrice);
   if (!Number.isFinite(value) || value < 0) return jsonResponse({ error: 'Vehicle valuation was unavailable' }, 502);
   return jsonResponse({ value, currency: payload.currency || 'USD', valuedAt: new Date().toISOString(), source: trimMatched ? 'CarAPI.dev trim match' : 'CarAPI.dev base model' });
+}
+
+async function handleGetVehicleTrims(body) {
+  const make = String(body?.make || '').trim().slice(0, 80);
+  const model = String(body?.model || '').trim().slice(0, 80);
+  const year = Math.round(Number(body?.year) || 0);
+  if (!make || !model || year < 1900 || year > new Date().getUTCFullYear() + 1) {
+    return jsonResponse({ error: 'Make, model, and model year are required' }, 400);
+  }
+  const url = new URL('https://carapi.app/api/trims/v2');
+  url.searchParams.set('year', String(year));
+  url.searchParams.set('make', make);
+  url.searchParams.set('model', model);
+  url.searchParams.set('limit', '1000');
+  try {
+    const response = await fetch(url.toString(), {
+      headers: { Accept: 'application/json' },
+      cf: { cacheTtl: 86400, cacheEverything: true },
+    });
+    const payload = await readJsonLimited(response, MAX_UPSTREAM_JSON_BYTES);
+    if (!response.ok) return jsonResponse({ error: `Vehicle trim lookup failed (${response.status})` }, 502);
+    const trims = [...new Set((Array.isArray(payload.data) ? payload.data : [])
+      .map(row => String(row?.trim || row?.submodel || '').trim())
+      .filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    return jsonResponse({ trims });
+  } catch {
+    return jsonResponse({ error: 'Vehicle trim lookup is temporarily unavailable' }, 502);
+  }
 }
 
 // ── Plaid / Robinhood Checking ───────────────────────────────────────────────

@@ -8153,6 +8153,8 @@ async function cfDelete(type, id) {
 // ── View: Net Worth ──────────────────────────────────────────────────────────
 
 let _nwEditor = null;
+let _nwTrimTimer = null;
+const _nwTrimCache = new Map();
 let _nwAutoRefreshStarted = false;
 let _nwRefreshPromise = null;
 let _nwTaxPlanning = null;
@@ -8339,10 +8341,10 @@ function nwEditorHtml() {
     <div class="wide" style="display:flex;justify-content:space-between;align-items:center"><strong>${item.id?'Edit':'Add'} ${isVehicle?'vehicle':_nwEditor.side}</strong><button class="btn btn-ghost btn-sm" onclick="nwCancelEdit()">Cancel</button></div>
     <div class="form-group"><label>Name</label><input id="nw-name" value="${escAttr(item.name||'')}" placeholder="${isVehicle?'Family SUV':'Account or property'}"></div>
     ${isVehicle ? `
-      <div class="form-group"><label>Make</label><input id="nw-make" value="${escAttr(item.make||'')}"></div>
-      <div class="form-group"><label>Model</label><input id="nw-model" value="${escAttr(item.model||'')}"></div>
-      <div class="form-group"><label>Trim / type</label><input id="nw-trim" value="${escAttr(item.trim||'')}" placeholder="S, EX, Limited, XLE…"></div>
-      <div class="form-group"><label>Model year</label><input id="nw-year" type="number" value="${escAttr(item.year||'')}"></div>
+      <div class="form-group"><label>Make</label><input id="nw-make" value="${escAttr(item.make||'')}" oninput="nwScheduleTrimLoad()"></div>
+      <div class="form-group"><label>Model</label><input id="nw-model" value="${escAttr(item.model||'')}" oninput="nwScheduleTrimLoad()"></div>
+      <div class="form-group"><label>Trim / type</label><input id="nw-trim" list="nw-trim-options" value="${escAttr(item.trim||'')}" placeholder="Select or type a trim" autocomplete="off"><datalist id="nw-trim-options"></datalist><div class="tp-note" id="nw-trim-status">Enter make, model, and year to load trims.</div></div>
+      <div class="form-group"><label>Model year</label><input id="nw-year" type="number" value="${escAttr(item.year||'')}" oninput="nwScheduleTrimLoad()"></div>
       <div class="form-group"><label>Mileage</label><input id="nw-mileage" type="number" value="${escAttr(item.mileage||'')}"></div>
       <div class="form-group"><label>Current value</label><input id="nw-value" inputmode="decimal" value="${escAttr(item.value||'')}"></div>` : `
       <div class="form-group"><label>Category</label><input id="nw-category" value="${escAttr(item.category||'')}" placeholder="Real estate, retirement, mortgage…"></div>
@@ -8373,6 +8375,7 @@ function _renderNetWorthHtml() {
     <div class="nw-layout"><section class="card"><div class="card-header"><div><div class="card-title">Assets</div><div class="tp-note">${fmt(totals.assets)}</div></div><div class="nw-actions"><button class="btn btn-primary btn-sm" onclick="nwAdd('asset')">+ Manual asset</button><button class="btn btn-secondary btn-sm" onclick="nwAddVehicle()">+ Vehicle</button></div></div><div class="card-body">${assets||'<div class="tp-note">No assets added yet.</div>'}</div></section><section class="card"><div class="card-header"><div><div class="card-title">Liabilities</div><div class="tp-note">${fmt(totals.liabilities)}</div></div><button class="btn btn-primary btn-sm" onclick="nwAdd('liability')">+ Manual liability</button></div><div class="card-body">${liabilities||'<div class="tp-note">No liabilities added yet.</div>'}</div></section></div>
     <section class="card" style="margin-top:1rem"><div class="card-header"><div class="card-title">Net Worth Trajectory</div></div><div class="card-body">${nwChart(data.history)}</div></section>
     <div class="nw-source" style="margin-top:.8rem">Percentiles are estimates, not financial advice. U.S.: Federal Reserve Survey of Consumer Finances (2022 dollars). Global: UBS Global Wealth Report 2026 (2025 wealth bands).</div>`;
+  if(_nwEditor?.kind==='vehicle') requestAnimationFrame(nwLoadVehicleTrims);
 }
 
 async function renderNetWorth() {
@@ -8414,6 +8417,26 @@ function nwEdit(kind,id){
   });
 }
 function nwCancelEdit(){ _nwEditor=null; _renderNetWorthHtml(); }
+
+function nwScheduleTrimLoad(){
+  clearTimeout(_nwTrimTimer);
+  _nwTrimTimer=setTimeout(nwLoadVehicleTrims,350);
+}
+async function nwLoadVehicleTrims(){
+  const makeEl=document.getElementById('nw-make'),modelEl=document.getElementById('nw-model'),yearEl=document.getElementById('nw-year');
+  const list=document.getElementById('nw-trim-options'),status=document.getElementById('nw-trim-status');
+  if(!makeEl||!modelEl||!yearEl||!list||!status)return;
+  const make=makeEl.value.trim(),model=modelEl.value.trim(),year=Number(yearEl.value);
+  if(!make||!model||!year){list.replaceChildren();status.textContent='Enter make, model, and year to load trims.';return;}
+  const key=`${year}|${make.toLowerCase()}|${model.toLowerCase()}`;
+  status.textContent='Loading matching trims…';
+  try{
+    let trims=_nwTrimCache.get(key);
+    if(!trims){trims=(await callApi({action:'get_vehicle_trims',make,model,year})).trims||[];_nwTrimCache.set(key,trims);}
+    list.replaceChildren(...trims.map(trim=>{const option=document.createElement('option');option.value=trim;return option;}));
+    status.textContent=trims.length?`${trims.length} matching trim${trims.length===1?'':'s'} available. Select one from the dropdown.`:'No catalog matches found. You can type the trim to preserve an uncommon or older model.';
+  }catch(e){list.replaceChildren();status.textContent='Trim suggestions are unavailable right now; you can still type the trim.';}
+}
 
 async function nwPersist(){ const result=await callApi({action:'save_net_worth',data:state.netWorth}); state.netWorth=result.data; _nwEditor=null; _renderNetWorthHtml(); }
 async function nwSaveEditor(){
