@@ -92,6 +92,11 @@ async function runScheduledRobinhoodRefresh(env, scheduledTime) {
   } catch (error) {
     console.error(JSON.stringify({ event: 'scheduled_net_worth_refresh_error', message: error instanceof Error ? error.message : String(error) }));
   }
+  try {
+    await refreshTreasuryPortfolio(env);
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'scheduled_treasury_refresh_error', message: error instanceof Error ? error.message : String(error) }));
+  }
 }
 
 async function handleDataApi(request, env) {
@@ -1757,6 +1762,36 @@ async function handleGetSavings(env) {
 // ── Net Worth ────────────────────────────────────────────────────────────────
 
 const NET_WORTH_KEY = 'net_worth';
+const TREASURY_BONDS = [
+  { cusip:'912810UA4', coupon:4.625, par:39600, annualInterest:1831.50, maturity:'2054-05-15', term:'30-Year' },
+  { cusip:'912810UG1', coupon:4.625, par:14000, annualInterest:647.50, maturity:'2055-02-15', term:'30-Year' },
+  { cusip:'912810UK2', coupon:4.750, par:10000, annualInterest:475.00, maturity:'2055-05-15', term:'30-Year' },
+  { cusip:'912810TX6', coupon:4.250, par:11000, annualInterest:467.50, maturity:'2054-02-15', term:'30-Year' },
+  { cusip:'912810TW8', coupon:4.750, par:9600, annualInterest:456.00, maturity:'2043-11-15', term:'20-Year' },
+  { cusip:'912810UB2', coupon:4.625, par:7000, annualInterest:323.75, maturity:'2044-05-15', term:'20-Year' },
+  { cusip:'912810TV0', coupon:4.750, par:6800, annualInterest:323.00, maturity:'2053-11-15', term:'30-Year' },
+  { cusip:'912810TZ1', coupon:4.500, par:6000, annualInterest:270.00, maturity:'2044-02-15', term:'20-Year' },
+  { cusip:'912810UL0', coupon:5.000, par:5000, annualInterest:250.00, maturity:'2045-05-15', term:'20-Year' },
+  { cusip:'912810UE6', coupon:4.500, par:5000, annualInterest:225.00, maturity:'2054-11-15', term:'30-Year' },
+  { cusip:'912810UJ5', coupon:4.750, par:1000, annualInterest:47.50, maturity:'2045-02-15', term:'20-Year' },
+];
+
+function defaultTreasuryPortfolio(saved = {}) {
+  const holdings = TREASURY_BONDS.map(bond => {
+    const prior = Array.isArray(saved.holdings) ? saved.holdings.find(item => item.cusip === bond.cusip) : null;
+    return { ...bond, marketValue:Number.isFinite(Number(prior?.marketValue)) ? Number(prior.marketValue) : bond.par, price:Number.isFinite(Number(prior?.price)) ? Number(prior.price) : 100 };
+  });
+  return {
+    name:'U.S. Treasury Bonds (20 & 30 Year)',
+    par:115000,
+    annualInterest:5316.75,
+    value:holdings.reduce((sum,bond)=>sum+bond.marketValue,0),
+    yieldDate:String(saved.yieldDate || ''),
+    valuedAt:String(saved.valuedAt || ''),
+    source:'U.S. Treasury daily par yield curve estimate',
+    holdings,
+  };
+}
 
 function normalizeNetWorth(raw) {
   const data = raw && typeof raw === 'object' ? raw : {};
@@ -1794,7 +1829,7 @@ function normalizeNetWorth(raw) {
     source: String(item.source || '').slice(0, 100),
   })).filter(item => item.id && item.name) : [];
   const history = Array.isArray(data.history) ? data.history.slice(-730) : [];
-  return { manualItems, vehicles, propertyAssets, plaidAccounts, plaidRefreshedAt: data.plaidRefreshedAt || '', history };
+  return { manualItems, vehicles, propertyAssets, plaidAccounts, treasuryPortfolio:defaultTreasuryPortfolio(data.treasuryPortfolio), plaidRefreshedAt: data.plaidRefreshedAt || '', history };
 }
 
 function netWorthTotals(data) {
@@ -1804,6 +1839,7 @@ function netWorthTotals(data) {
   for (const item of data.manualItems) (item.side === 'liability' ? liabilities += item.value : assets += item.value);
   for (const vehicle of data.vehicles) assets += vehicle.value;
   for (const property of data.propertyAssets) assets += property.value;
+  assets += Number(data.treasuryPortfolio?.value) || 0;
   for (const account of data.plaidAccounts) {
     const value = Math.max(0, Number(account.value) || 0);
     if (account.side === 'liability') {
@@ -1836,6 +1872,50 @@ async function handleSaveNetWorth(env, incoming) {
   addNetWorthSnapshot(current);
   await env.RENTALS.put(NET_WORTH_KEY, JSON.stringify(current));
   return jsonResponse({ success: true, data: current });
+}
+
+function treasuryYieldForYears(years, yields) {
+  if (years <= 20) return yields.y20;
+  if (years >= 30) return yields.y30;
+  return yields.y20 + (yields.y30 - yields.y20) * ((years - 20) / 10);
+}
+
+function estimateTreasuryBondValue(bond, asOf, yields) {
+  const maturity = new Date(`${bond.maturity}T00:00:00Z`);
+  const years = Math.max(0, (maturity.getTime() - asOf.getTime()) / (365.25 * 86400000));
+  if (!years) return { marketValue:bond.par, price:100 };
+  const periods = Math.max(1, Math.round(years * 2));
+  const marketYield = treasuryYieldForYears(years, yields) / 100 / 2;
+  const couponPayment = bond.par * (bond.coupon / 100) / 2;
+  const discount = Math.pow(1 + marketYield, periods);
+  const marketValue = couponPayment * (1 - (1 / discount)) / marketYield + bond.par / discount;
+  return { marketValue:Math.round(marketValue * 100) / 100, price:Math.round((marketValue / bond.par * 100) * 1000) / 1000 };
+}
+
+async function refreshTreasuryPortfolio(env) {
+  const year = new Date().getUTCFullYear();
+  const url = `https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/${year}/all?type=daily_treasury_yield_curve&field_tdr_date_value=${year}&page&_format=csv`;
+  const response = await fetch(url, { headers:{ Accept:'text/csv' }, cf:{ cacheTtl:3600 } });
+  if (!response.ok) throw new Error(`Treasury yield request failed (${response.status})`);
+  const csv = await readTextLimited(response, 500_000);
+  const lines = csv.trim().split(/\r?\n/);
+  const headers = lines[0]?.split(',').map(value => value.replaceAll('"','').trim()) || [];
+  const values = lines[1]?.split(',').map(value => value.replaceAll('"','').trim()) || [];
+  const yieldDate = values[headers.indexOf('Date')] || '';
+  const y20 = Number(values[headers.indexOf('20 Yr')]);
+  const y30 = Number(values[headers.indexOf('30 Yr')]);
+  if (!yieldDate || !Number.isFinite(y20) || !Number.isFinite(y30) || y20 <= 0 || y30 <= 0) throw new Error('Treasury yield data was unavailable');
+  const asOf = new Date(`${yieldDate.replace(/(\d{2})\/(\d{2})\/(\d{4})/,'$3-$1-$2')}T00:00:00Z`);
+  const holdings = TREASURY_BONDS.map(bond => ({ ...bond, ...estimateTreasuryBondValue(bond,asOf,{y20,y30}) }));
+  const data = normalizeNetWorth(await env.RENTALS.get(NET_WORTH_KEY, 'json'));
+  data.treasuryPortfolio = {
+    name:'U.S. Treasury Bonds (20 & 30 Year)', par:115000, annualInterest:5316.75,
+    value:Math.round(holdings.reduce((sum,bond)=>sum+bond.marketValue,0)*100)/100,
+    yieldDate, valuedAt:new Date().toISOString(), source:'U.S. Treasury daily par yield curve estimate', holdings,
+  };
+  addNetWorthSnapshot(data);
+  await env.RENTALS.put(NET_WORTH_KEY, JSON.stringify(data));
+  return data;
 }
 
 function plaidAccessTokens(env) {
@@ -1939,7 +2019,11 @@ async function refreshNetWorthPlaid(env) {
 
 async function handleRefreshNetWorthPlaid(env) {
   try {
-    return jsonResponse({ data: await refreshNetWorthPlaid(env) });
+    await refreshNetWorthPlaid(env);
+    let data;
+    try { data = await refreshTreasuryPortfolio(env); }
+    catch { data = normalizeNetWorth(await env.RENTALS.get(NET_WORTH_KEY, 'json')); }
+    return jsonResponse({ data });
   } catch (error) {
     return jsonResponse({ error: error instanceof Error ? error.message : 'Plaid refresh failed' }, 502);
   }

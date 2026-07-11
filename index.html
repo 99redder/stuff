@@ -8216,6 +8216,7 @@ function nwTotals() {
   data.manualItems.forEach(item => item.side === 'liability' ? liabilities += Number(item.value)||0 : assets += Number(item.value)||0);
   data.vehicles.forEach(item => assets += Number(item.value)||0);
   (data.propertyAssets || []).forEach(item => assets += Number(item.value)||0);
+  assets += Number(data.treasuryPortfolio?.value) || 0;
   const mortgageIncludedInProperty = (data.propertyAssets || []).some(item => Number(item.mortgagePayoff) > 0);
   data.plaidAccounts.forEach(item => {
     if (item.side === 'liability') {
@@ -8270,9 +8271,16 @@ function nwPropertyLine(item) {
   return `<details class="nw-line"><summary><span>${escHtml(item.name)}</span><span>${valueLabel}</span></summary><div class="nw-line-body">${escHtml(detail)}<div style="margin-top:.5rem;font-weight:700;color:${item.value < 0 ? 'var(--danger)' : 'var(--success)'}">Net Worth uses net proceeds: ${valueLabel}</div></div></details>`;
 }
 
+function nwTreasuryLine(item) {
+  const rows=(item.holdings||[]).map(bond=>`<tr><td>${escHtml(bond.cusip)}</td><td>${Number(bond.coupon).toFixed(3)}%</td><td>${fmt(Number(bond.par)||0)}</td><td>${fmt(Number(bond.marketValue)||0)}</td><td>${escHtml(bond.maturity||'')}</td></tr>`).join('');
+  const updated=item.yieldDate?`Official yield date ${item.yieldDate}`:'Awaiting first market-value refresh';
+  return `<details class="nw-line"><summary><span>${escHtml(item.name)}</span><span>${fmt(Number(item.value)||0)}</span></summary><div class="nw-line-body"><div>${escHtml(item.source)} · ${escHtml(updated)} · Par ${fmt(Number(item.par)||0)} · Annual interest ${fmt(Number(item.annualInterest)||0)}</div><div style="overflow-x:auto;margin-top:.65rem"><table style="width:100%;border-collapse:collapse;font-size:.76rem"><thead><tr><th style="text-align:left">CUSIP</th><th style="text-align:right">Coupon</th><th style="text-align:right">Par</th><th style="text-align:right">Est. value</th><th style="text-align:right">Maturity</th></tr></thead><tbody>${rows}</tbody></table></div><div class="nw-source" style="margin-top:.6rem">Estimated from the official U.S. Treasury par yield curve; this is not an executable broker quote.</div></div></details>`;
+}
+
 function nwAssetType(item, origin) {
   if (origin === 'property') return 'Real Estate';
   if (origin === 'vehicle') return 'Vehicles';
+  if (origin === 'treasury') return 'Bonds & Fixed Income';
   const text = `${item.category||''} ${item.type||''} ${item.subtype||''} ${item.name||''}`.toLowerCase();
   if (/crypto|bitcoin|ethereum|digital asset/.test(text)) return 'Crypto';
   if (/brokerage|stock|equity|investment|401k|403b|ira|retirement|mutual fund|securities/.test(text)) return 'Stocks & Investments';
@@ -8284,6 +8292,7 @@ function nwAssetType(item, origin) {
 
 function nwRenderAssets(data) {
   const rows = [
+    ...(data.treasuryPortfolio ? [{ item:data.treasuryPortfolio, origin:'treasury', html:nwTreasuryLine(data.treasuryPortfolio) }] : []),
     ...(data.propertyAssets || []).map(item => ({ item, origin:'property', html:nwPropertyLine(item) })),
     ...data.plaidAccounts.filter(item=>item.side!=='liability').map(raw => { const item=nwLabeledPlaidAccount(raw); return { item, origin:'plaid', html:nwLine(item,'Plaid · read-only',false) }; }),
     ...data.vehicles.map(item => ({ item, origin:'vehicle', html:nwLine(item, `${item.year||''} ${item.make||''} ${item.model||''}${item.trim?` ${item.trim}`:''} · ${item.mileage?`${Number(item.mileage).toLocaleString()} miles · `:''}${item.valuedAt?`Estimate updated ${item.valuedAt.slice(0,10)}`:'Vehicle'}`, true, 'vehicle') })),
