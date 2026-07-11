@@ -1972,8 +1972,10 @@ async function refreshNetWorthPlaid(env) {
     };
   }));
   const liabilityTypes = new Set(['credit', 'loan']);
-  const institutionNames = {};
-  const institutionIds = [...new Set(responses.map(item => item.institutionId).filter(Boolean))];
+  // Confirmed production Item IDs from Plaid CLI. Metadata lookup remains as
+  // a fallback for any future institution linked to the app.
+  const institutionNames = { ins_54:'Robinhood', ins_15:'Navy Federal', ins_56:'Chase' };
+  const institutionIds = [...new Set(responses.map(item => item.institutionId).filter(id => id && !institutionNames[id]))];
   await Promise.all(institutionIds.map(async institutionId => {
     try {
       const response = await fetch('https://production.plaid.com/institutions/get_by_id', {
@@ -1996,7 +1998,10 @@ async function refreshNetWorthPlaid(env) {
   const accounts = responses.flatMap(({ institutionId, accounts: itemAccounts }) => {
     return itemAccounts.map(account => {
       const institution = account.account_id === env.PLAID_ACCOUNT_ID ? 'Robinhood' : (institutionNames[institutionId] || 'Plaid');
-      const rawName = String(account.name || account.official_name || 'Account').trim();
+      const accountName = String(account.name || '').trim();
+      const officialName = String(account.official_name || '').trim();
+      const genericName = /^(checking|savings|credit card|account)$/i.test(accountName);
+      const rawName = String((genericName && officialName) ? officialName : (accountName || officialName || 'Account')).trim();
       const alreadyLabeled = institution === 'Robinhood'
         ? /robinhood/i.test(rawName)
         : institution === 'Navy Federal' && /(navy federal|nfcu)/i.test(rawName);
@@ -2008,7 +2013,8 @@ async function refreshNetWorthPlaid(env) {
         id: String(account.account_id || ''),
         name: displayName.slice(0, 160),
         institution,
-        officialName: String(account.official_name || '').slice(0, 200),
+        institutionId,
+        officialName: officialName.slice(0, 200),
         mask: String(account.mask || '').slice(-4),
         type: String(account.type || ''),
         subtype: String(account.subtype || ''),
