@@ -1860,11 +1860,15 @@ function addNetWorthSnapshot(data) {
 }
 
 function applyKnownPlaidAccountLabels(data, env) {
-  if (!env.PLAID_ACCOUNT_ID) return data;
   data.plaidAccounts = data.plaidAccounts.map(account => {
-    if (account.id !== env.PLAID_ACCOUNT_ID) return account;
-    const rawName = String(account.name || 'Checking').replace(/^Plaid\s+/i, '').replace(/^Robinhood\s+/i, '').trim() || 'Checking';
-    return { ...account, institution:'Robinhood', name:`Robinhood ${rawName}`.slice(0,160) };
+    if (account.subtype === 'mortgage') {
+      return { ...account, institution:'Navy Federal', name:'Navy Federal Mortgage (731WO)' };
+    }
+    if (env.PLAID_ACCOUNT_ID && account.id === env.PLAID_ACCOUNT_ID) {
+      const rawName = String(account.name || 'Checking').replace(/^Plaid\s+/i, '').replace(/^Robinhood\s+/i, '').trim() || 'Checking';
+      return { ...account, institution:'Robinhood', name:`Robinhood ${rawName}`.slice(0,160) };
+    }
+    return account;
   });
   return data;
 }

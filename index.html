@@ -8255,6 +8255,7 @@ function nwLine(item, source, editable, kind='manual') {
 function nwLabeledPlaidAccount(item) {
   const rawName = String(item.name || 'Account').trim();
   let institution = String(item.institution || '').trim();
+  if (item.subtype === 'mortgage') return { ...item, institution:'Navy Federal', name:'Navy Federal Mortgage (731WO)' };
   if (!institution && item.subtype === 'crypto exchange') institution = 'Robinhood';
   if (!institution) return item;
   const alreadyLabeled = institution === 'Robinhood'
