@@ -1217,6 +1217,13 @@
     .nw-actions { display:flex; gap:.4rem; margin-top:.65rem; flex-wrap:wrap; }
     .nw-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.7rem; padding:1rem; margin-bottom:1rem; }
     .nw-form .wide { grid-column:1/-1; }
+    .nw-form.nw-highlight { animation:nw-editor-cue 1.15s ease-out; }
+    @keyframes nw-editor-cue {
+      0% { box-shadow:0 0 0 0 rgba(37,99,235,.55); border-color:var(--primary); background:var(--primary-light); }
+      45% { box-shadow:0 0 0 8px rgba(37,99,235,.14); border-color:var(--primary); }
+      100% { box-shadow:var(--shadow); border-color:var(--border); background:var(--surface); }
+    }
+    @media (prefers-reduced-motion:reduce) { .nw-form.nw-highlight { animation:none; border-color:var(--primary); } }
     .nw-chart { width:100%; height:220px; display:block; }
     .nw-source { font-size:.72rem; color:var(--text-muted); line-height:1.4; }
     @media (max-width:800px) { .nw-layout,.nw-hero { grid-template-columns:1fr; } }
@@ -8328,7 +8335,7 @@ function nwEditorHtml() {
   const isVehicle = _nwEditor.kind === 'vehicle';
   const list = isVehicle ? state.netWorth.vehicles : state.netWorth.manualItems;
   const item = list.find(row => row.id === _nwEditor.id) || {};
-  return `<div class="card nw-form">
+  return `<div class="card nw-form" id="nw-editor">
     <div class="wide" style="display:flex;justify-content:space-between;align-items:center"><strong>${item.id?'Edit':'Add'} ${isVehicle?'vehicle':_nwEditor.side}</strong><button class="btn btn-ghost btn-sm" onclick="nwCancelEdit()">Cancel</button></div>
     <div class="form-group"><label>Name</label><input id="nw-name" value="${escAttr(item.name||'')}" placeholder="${isVehicle?'Family SUV':'Account or property'}"></div>
     ${isVehicle ? `
@@ -8394,7 +8401,17 @@ async function renderNetWorth() {
 
 function nwAdd(side){ _nwEditor={kind:'manual',side}; _renderNetWorthHtml(); }
 function nwAddVehicle(){ _nwEditor={kind:'vehicle',side:'asset'}; _renderNetWorthHtml(); }
-function nwEdit(kind,id){ const item=(kind==='vehicle'?state.netWorth.vehicles:state.netWorth.manualItems).find(x=>x.id===id); _nwEditor={kind,id,side:item?.side||'asset'}; _renderNetWorthHtml(); }
+function nwEdit(kind,id){
+  const item=(kind==='vehicle'?state.netWorth.vehicles:state.netWorth.manualItems).find(x=>x.id===id);
+  _nwEditor={kind,id,side:item?.side||'asset'};
+  _renderNetWorthHtml();
+  if(kind==='vehicle') requestAnimationFrame(() => {
+    const editor=document.getElementById('nw-editor');
+    if(!editor)return;
+    editor.scrollIntoView({behavior:'smooth',block:'center'});
+    editor.classList.add('nw-highlight');
+  });
+}
 function nwCancelEdit(){ _nwEditor=null; _renderNetWorthHtml(); }
 
 async function nwPersist(){ const result=await callApi({action:'save_net_worth',data:state.netWorth}); state.netWorth=result.data; _nwEditor=null; _renderNetWorthHtml(); }
