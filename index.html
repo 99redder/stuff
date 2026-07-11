@@ -1894,6 +1894,7 @@ const state = {
   solar: { config: null, entries: null, summaries: null },
   savings: null,               // loaded once, global (not per-property)
   netWorth: null,
+  saleCloseoutDrafts: {},
   robinhoodBalance: null,
   robinhoodBalanceLoading: false
 };
@@ -2011,6 +2012,9 @@ function saleClosingDefault(def, salePrice, stateCode) {
 }
 
 function saleClosingEstimateTotal(prop, salePrice, draftBreakdown = null) {
+  if (Number.isFinite(Number(draftBreakdown?.closingCostsOverride))) {
+    return Number(draftBreakdown.closingCostsOverride);
+  }
   const stateCode = PROPERTY_SALE_STATE[prop] || 'NH';
   return saleClosingDefsForProperty(prop).reduce((sum, def) => {
     const prior = draftBreakdown?.items?.[def.code];
@@ -2021,10 +2025,18 @@ function saleClosingEstimateTotal(prop, salePrice, draftBreakdown = null) {
   }, 0);
 }
 
-let _saleCloseoutDrafts = Object.create(null);
+const _saleCloseoutDraftLoaded = new Set();
+const _saleCloseoutDraftSaveTimers = Object.create(null);
+
+async function ensureSaleCloseoutDraftLoaded(prop = state.currentProperty) {
+  if (_saleCloseoutDraftLoaded.has(prop)) return;
+  const result = await callApi({ action: 'get_sale_closeout_draft', property: prop });
+  state.saleCloseoutDrafts[prop] = result.draft || {};
+  _saleCloseoutDraftLoaded.add(prop);
+}
 
 function loadSaleCloseoutDraft(prop = state.currentProperty) {
-  return _saleCloseoutDrafts[prop] || {};
+  return state.saleCloseoutDrafts[prop] || {};
 }
 
 function saveSaleCloseoutDraft(prop = state.currentProperty) {
@@ -2032,11 +2044,20 @@ function saveSaleCloseoutDraft(prop = state.currentProperty) {
   const price = parseMoney(document.getElementById('sale-closeout-price')?.value);
   const notes = document.getElementById('sale-closeout-notes')?.value.trim() || '';
   const breakdown = getSaleClosingBreakdownFromForm(prop);
-  _saleCloseoutDrafts[prop] = { date, price, notes, breakdown };
+  const draft = { date, price, notes, breakdown };
+  state.saleCloseoutDrafts[prop] = draft;
+  _saleCloseoutDraftLoaded.add(prop);
+  clearTimeout(_saleCloseoutDraftSaveTimers[prop]);
+  _saleCloseoutDraftSaveTimers[prop] = setTimeout(() => {
+    callApi({ action: 'save_sale_closeout_draft', property: prop, draft }).catch(() => {});
+  }, 500);
 }
 
 function clearSaleCloseoutDraft(prop = state.currentProperty) {
-  delete _saleCloseoutDrafts[prop];
+  delete state.saleCloseoutDrafts[prop];
+  _saleCloseoutDraftLoaded.add(prop);
+  clearTimeout(_saleCloseoutDraftSaveTimers[prop]);
+  callApi({ action: 'delete_sale_closeout_draft', property: prop }).catch(() => {});
 }
 
 function parseSaleCurrency(value) {
@@ -3526,6 +3547,7 @@ async function renderInvestmentReturn() {
   const loadKeys = ['transactions', 'summaries', 'depreciation', 'investment'];
   if (MAINTENANCE_BASIS_PROPERTIES.has(prop)) loadKeys.push('maintenance');
   await Promise.all(loadKeys.map(k => ensureLoaded(prop, k)));
+  await ensureSaleCloseoutDraftLoaded(prop);
   if (prop === '731WO') await ensureNetWorthLoaded(true);
 
   const inv    = state.data[prop].investment || {};
@@ -3987,6 +4009,7 @@ async function closeOutInvestmentSale() {
   const loadKeys = ['transactions', 'summaries', 'depreciation', 'investment'];
   if (MAINTENANCE_BASIS_PROPERTIES.has(prop)) loadKeys.push('maintenance');
   await Promise.all(loadKeys.map(k => ensureLoaded(prop, k)));
+  await ensureSaleCloseoutDraftLoaded(prop);
   if (prop === '731WO') await ensureNetWorthLoaded(true);
 
   const errEl = document.getElementById('sale-closeout-error');
@@ -7048,6 +7071,7 @@ async function renderTaxPlanning() {
     if (MAINTENANCE_BASIS_PROPERTIES.has(p)) keys.push('maintenance');
     return keys.map(k => ensureLoaded(p, k));
   }));
+  await Promise.all(PROPERTIES.map(prop => ensureSaleCloseoutDraftLoaded(prop)));
 
   const rentalRows = rentalPropsOnly.map(prop => {
     const txns = (state.data[prop].transactions || []).filter(t => t.date.startsWith(String(CURRENT_YEAR)));
@@ -7775,6 +7799,7 @@ async function renderCashFlow() {
   await loadCashFlow();
   await loadSavings();
   await ensureNetWorthLoaded(true);
+  await Promise.all(CASH_FLOW_AUTO_PROCEEDS_PROPS.map(prop => ensureSaleCloseoutDraftLoaded(prop)));
   await Promise.all(CASH_FLOW_AUTO_PROCEEDS_PROPS.flatMap(prop => {
     const keys = ['transactions', 'summaries', 'depreciation', 'investment'];
     if (MAINTENANCE_BASIS_PROPERTIES.has(prop)) keys.push('maintenance');
@@ -8123,6 +8148,7 @@ async function cfDelete(type, id) {
 let _nwEditor = null;
 let _nwAutoRefreshStarted = false;
 let _nwRefreshPromise = null;
+let _nwTaxPlanning = null;
 
 async function ensureNetWorthLoaded(refreshIfStale = false) {
   if (!state.netWorth) {
@@ -8221,7 +8247,7 @@ function nwPropertyLine(item) {
 
 function nwBuildPropertyAssets() {
   return PROPERTIES.map(prop => {
-    const details = calcPropertySaleTaxDetails(prop);
+    const details = calcPropertySaleTaxDetails(prop) || nwTaxPlanningPropertyDetails(prop);
     if (!details) return {
       id: `property-${prop}`,
       name: `${prop} Property`,
@@ -8265,6 +8291,23 @@ function nwBuildPropertyAssets() {
       source: details.source,
     };
   });
+}
+
+function nwTaxPlanningPropertyDetails(prop) {
+  for (const prefix of ['property_sale', 'property_sale_2']) {
+    if (!_nwTaxPlanning?.[`${prefix}_imported`] || _nwTaxPlanning[`${prefix}_property`] !== prop) continue;
+    const salePrice = Number(_nwTaxPlanning[`${prefix}_price`]) || 0;
+    if (!salePrice) continue;
+    return {
+      prop,
+      source: 'Tax Planning imported closeout',
+      salePrice,
+      saleClosingCosts: Number(_nwTaxPlanning[`${prefix}_closing_costs`]) || 0,
+      depreciationRecapture: Number(_nwTaxPlanning[`${prefix}_depr_recapture`]) || 0,
+      taxableGain: Number(_nwTaxPlanning[`${prefix}_taxable_gain`]) || 0,
+    };
+  }
+  return null;
 }
 
 function nwEditorHtml() {
@@ -8313,11 +8356,16 @@ function _renderNetWorthHtml() {
 
 async function renderNetWorth() {
   await ensureNetWorthLoaded(false);
+  if (!_nwTaxPlanning) {
+    try { _nwTaxPlanning = (await callApi({ action: 'get_tax_planning', year: String(CURRENT_YEAR) })).data || {}; }
+    catch { _nwTaxPlanning = {}; }
+  }
   await Promise.all(PROPERTIES.flatMap(prop => {
     const keys = ['transactions', 'summaries', 'depreciation', 'investment'];
     if (MAINTENANCE_BASIS_PROPERTIES.has(prop)) keys.push('maintenance');
     return keys.map(key => ensureLoaded(prop, key));
   }));
+  await Promise.all(PROPERTIES.map(prop => ensureSaleCloseoutDraftLoaded(prop)));
   const propertyAssets = nwBuildPropertyAssets();
   if (JSON.stringify(propertyAssets) !== JSON.stringify(state.netWorth.propertyAssets || [])) {
     state.netWorth.propertyAssets = propertyAssets;
@@ -10387,7 +10435,13 @@ function clearSensitiveRuntimeState() {
   _tpSaveTimer = null;
   _tpCache = {};
   _tpLoaded = false;
-  _saleCloseoutDrafts = Object.create(null);
+  _nwTaxPlanning = null;
+  state.saleCloseoutDrafts = {};
+  _saleCloseoutDraftLoaded.clear();
+  for (const prop of Object.keys(_saleCloseoutDraftSaveTimers)) {
+    clearTimeout(_saleCloseoutDraftSaveTimers[prop]);
+    delete _saleCloseoutDraftSaveTimers[prop];
+  }
 }
 
 purgeLegacySensitiveBrowserStorage();

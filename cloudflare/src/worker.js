@@ -268,6 +268,15 @@ async function handleDataApi(request, env) {
     case 'close_investment':
       return handleCloseInvestment(env, property, body.closeout);
 
+    case 'get_sale_closeout_draft':
+      return handleGetSaleCloseoutDraft(env, property);
+
+    case 'save_sale_closeout_draft':
+      return handleSaveSaleCloseoutDraft(env, property, body.draft);
+
+    case 'delete_sale_closeout_draft':
+      return handleDeleteSaleCloseoutDraft(env, property);
+
     default:
       return jsonResponse({ error: 'Invalid action' }, 400);
   }
@@ -1450,6 +1459,28 @@ async function handleGetInvestment(env, property) {
   return jsonResponse({ config });
 }
 
+async function handleGetSaleCloseoutDraft(env, property) {
+  const draft = await env.RENTALS.get(`sale_closeout_draft:${property}`, 'json') || {};
+  return jsonResponse({ draft });
+}
+
+async function handleSaveSaleCloseoutDraft(env, property, raw) {
+  const draft = raw && typeof raw === 'object' ? {
+    date: typeof raw.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.date) ? raw.date : '',
+    price: Number.isFinite(Number(raw.price)) && Number(raw.price) >= 0 ? Number(raw.price) : 0,
+    notes: String(raw.notes || '').trim().slice(0, 1000),
+    breakdown: raw.breakdown && typeof raw.breakdown === 'object' ? raw.breakdown : null,
+    updatedAt: new Date().toISOString(),
+  } : {};
+  await env.RENTALS.put(`sale_closeout_draft:${property}`, JSON.stringify(draft));
+  return jsonResponse({ success: true, draft });
+}
+
+async function handleDeleteSaleCloseoutDraft(env, property) {
+  await env.RENTALS.delete(`sale_closeout_draft:${property}`);
+  return jsonResponse({ success: true });
+}
+
 async function handleSaveInvestment(env, property, config) {
   if (!config || typeof config !== 'object') {
     return jsonResponse({ error: 'Missing config object' }, 400);
@@ -1806,18 +1837,20 @@ async function handleSaveNetWorth(env, incoming) {
 }
 
 function plaidAccessTokens(env) {
-  const tokens = [];
-  if (env.PLAID_ACCESS_TOKEN) tokens.push(env.PLAID_ACCESS_TOKEN);
+  const multiItemTokens = [];
   if (env.PLAID_ACCESS_TOKENS) {
     try {
       let parsed = JSON.parse(env.PLAID_ACCESS_TOKENS);
       // Accept either a JSON array or a JSON-encoded array string so Wrangler
       // secret-bulk input formats cannot silently disable multi-Item refresh.
       if (typeof parsed === 'string') parsed = JSON.parse(parsed);
-      if (Array.isArray(parsed)) tokens.push(...parsed.filter(token => typeof token === 'string'));
+      if (Array.isArray(parsed)) multiItemTokens.push(...parsed.filter(token => typeof token === 'string'));
     } catch { /* ignore malformed optional multi-item secret */ }
   }
-  return [...new Set(tokens)];
+  // Once the authoritative multi-Item secret exists, do not also query the
+  // legacy single token: it may have been rotated and would fail the whole pull.
+  if (multiItemTokens.length) return [...new Set(multiItemTokens)];
+  return env.PLAID_ACCESS_TOKEN ? [env.PLAID_ACCESS_TOKEN] : [];
 }
 
 async function refreshNetWorthPlaid(env) {
