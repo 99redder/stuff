@@ -1810,7 +1810,10 @@ function plaidAccessTokens(env) {
   if (env.PLAID_ACCESS_TOKEN) tokens.push(env.PLAID_ACCESS_TOKEN);
   if (env.PLAID_ACCESS_TOKENS) {
     try {
-      const parsed = JSON.parse(env.PLAID_ACCESS_TOKENS);
+      let parsed = JSON.parse(env.PLAID_ACCESS_TOKENS);
+      // Accept either a JSON array or a JSON-encoded array string so Wrangler
+      // secret-bulk input formats cannot silently disable multi-Item refresh.
+      if (typeof parsed === 'string') parsed = JSON.parse(parsed);
       if (Array.isArray(parsed)) tokens.push(...parsed.filter(token => typeof token === 'string'));
     } catch { /* ignore malformed optional multi-item secret */ }
   }
@@ -1833,7 +1836,11 @@ async function refreshNetWorthPlaid(env) {
       body: JSON.stringify({ access_token: accessToken }),
     });
     const payload = await readJsonLimited(response, MAX_UPSTREAM_JSON_BYTES);
-    if (!response.ok) throw new Error(`Plaid accounts request failed (${response.status})`);
+    if (!response.ok) {
+      const code = String(payload.error_code || payload.error_type || 'UNKNOWN_ERROR').slice(0, 80);
+      console.error(JSON.stringify({ event: 'plaid_net_worth_item_error', status: response.status, code }));
+      throw new Error(`Plaid accounts request failed: ${code} (${response.status})`);
+    }
     return Array.isArray(payload.accounts) ? payload.accounts : [];
   }));
   const liabilityTypes = new Set(['credit', 'loan']);
