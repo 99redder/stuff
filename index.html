@@ -8296,7 +8296,7 @@ function nwRenderAssets(data) {
     ...(data.propertyAssets || []).map(item => ({ item, origin:'property', html:nwPropertyLine(item) })),
     ...data.plaidAccounts.filter(item=>item.side!=='liability').map(raw => { const item=nwLabeledPlaidAccount(raw); return { item, origin:'plaid', html:nwLine(item,'Plaid · read-only',false) }; }),
     ...data.vehicles.map(item => ({ item, origin:'vehicle', html:nwLine(item, `${item.year||''} ${item.make||''} ${item.model||''}${item.trim?` ${item.trim}`:''} · ${item.mileage?`${Number(item.mileage).toLocaleString()} miles · `:''}${item.valuedAt?`Estimate updated ${item.valuedAt.slice(0,10)}`:'Vehicle'}`, true, 'vehicle') })),
-    ...data.manualItems.filter(item=>item.side!=='liability').map(item => ({ item, origin:'manual', html:nwLine(item,'Manual',true) }))
+    ...data.manualItems.filter(item=>item.side!=='liability').map(item => ({ item, origin:'manual', html:nwLine(item,item.category==='Precious Metals'?`${item.metal==='silver'?'Silver':'Gold'} · ${Number(item.weight||0).toLocaleString()} troy oz · ${fmt(Number(item.pricePerOunce)||0)}/oz · Spot updated ${item.valuedAt?item.valuedAt.slice(0,10):'pending'}`:'Manual',true) }))
   ].map(row => ({ ...row, type:nwAssetType(row.item,row.origin) }));
   if (_nwAssetSort === 'alpha') rows.sort((a,b)=>String(a.item.name||'').localeCompare(String(b.item.name||'')));
   else rows.sort((a,b)=>(Number(b.item.value)||0)-(Number(a.item.value)||0)||String(a.item.name||'').localeCompare(String(b.item.name||'')));
@@ -8394,8 +8394,9 @@ function nwEditorHtml() {
       <div class="form-group"><label>Model year</label><input id="nw-year" type="number" value="${escAttr(item.year||'')}" oninput="nwScheduleTrimLoad()"></div>
       <div class="form-group"><label>Mileage</label><input id="nw-mileage" type="number" value="${escAttr(item.mileage||'')}"></div>
       <div class="form-group"><label>Current value</label><input id="nw-value" inputmode="decimal" value="${escAttr(item.value||'')}"></div>` : `
-      <div class="form-group"><label>Category</label><select id="nw-category" class="form-input">${nwManualCategoryOptions(_nwEditor.side,item.category)}</select></div>
-      <div class="form-group"><label>Value</label><input id="nw-value" inputmode="decimal" value="${escAttr(item.value||'')}"></div>
+      <div class="form-group"><label>Category</label><select id="nw-category" class="form-input" onchange="nwToggleMetalFields()">${nwManualCategoryOptions(_nwEditor.side,item.category)}</select></div>
+      <div class="form-group" id="nw-value-group"><label>${item.category==='Precious Metals'?'Current market value':'Value'}</label><input id="nw-value" inputmode="decimal" value="${escAttr(item.value||'')}"${item.category==='Precious Metals'?' readonly':''}></div>
+      <div class="wide" id="nw-metal-fields" style="display:${item.category==='Precious Metals'?'grid':'none'};grid-template-columns:repeat(2,minmax(0,1fr));gap:.7rem"><div class="form-group"><label>Metal</label><select id="nw-metal" class="form-input"><option value="gold"${item.metal==='gold'?' selected':''}>Gold</option><option value="silver"${item.metal==='silver'?' selected':''}>Silver</option></select></div><div class="form-group"><label>Weight (troy ounces)</label><input id="nw-metal-weight" type="number" min="0" step="0.001" value="${escAttr(item.weight||'')}"></div></div>
       <div class="form-group wide"><label>Details</label><input id="nw-notes" value="${escAttr(item.notes||'')}"></div>`}
     <div class="wide"><button class="btn btn-primary" onclick="nwSaveEditor()">${isVehicle?'Save & value automatically':'Save'}</button></div>
   </div>`;
@@ -8404,12 +8405,20 @@ function nwEditorHtml() {
 function nwManualCategoryOptions(side, selected) {
   const defaults = side === 'liability'
     ? ['Credit Cards','Mortgage','Personal Loans','Auto Loans','Student Loans','Taxes Owed','Other Liabilities']
-    : ['Cash & Banking','Stocks & Investments','Crypto','Bonds & Fixed Income','Real Estate','Vehicles','Retirement','Other Assets'];
+    : ['Cash & Banking','Stocks & Investments','Crypto','Bonds & Fixed Income','Precious Metals','Real Estate','Vehicles','Retirement','Other Assets'];
   const existing = (state.netWorth?.manualItems || []).filter(item=>item.side===side).map(item=>String(item.category||'').trim()).filter(Boolean);
   const choices = [...new Set([...defaults,...existing])];
   const current = String(selected||'').trim();
   if(current && !choices.includes(current))choices.push(current);
   return choices.map(category=>`<option value="${escAttr(category)}"${category===current?' selected':''}>${escHtml(category)}</option>`).join('');
+}
+
+function nwToggleMetalFields() {
+  const isMetal=document.getElementById('nw-category')?.value==='Precious Metals';
+  const fields=document.getElementById('nw-metal-fields'),value=document.getElementById('nw-value'),group=document.getElementById('nw-value-group');
+  if(fields)fields.style.display=isMetal?'grid':'none';
+  if(value)value.readOnly=isMetal;
+  const label=group?.querySelector('label');if(label)label.textContent=isMetal?'Current market value':'Value';
 }
 
 function _renderNetWorthHtml() {
@@ -8501,9 +8510,15 @@ async function nwSaveEditor(){
     if(!item.value){try{const valuation=await callApi({action:'value_net_worth_vehicle',vehicle:item});item.value=valuation.value;item.valuedAt=valuation.valuedAt;item.valuationSource=valuation.source;}catch(e){valuationWarning=e.message;}}
     if(idx>=0)state.netWorth.vehicles[idx]=item;else state.netWorth.vehicles.push(item);
   }else{
-    const item={id,side:_nwEditor.side,category:document.getElementById('nw-category').value.trim()||'Other',name:document.getElementById('nw-name').value.trim(),value:parseMoney(document.getElementById('nw-value').value),notes:document.getElementById('nw-notes').value.trim()};
+    const category=document.getElementById('nw-category').value.trim()||'Other';
+    const isMetal=category==='Precious Metals';
+    const item={id,side:_nwEditor.side,category,name:document.getElementById('nw-name').value.trim(),value:parseMoney(document.getElementById('nw-value').value),notes:document.getElementById('nw-notes').value.trim(),metal:isMetal?document.getElementById('nw-metal').value:'',weight:isMetal?Number(document.getElementById('nw-metal-weight').value)||0:0};
+    if(isMetal&&!item.weight){document.getElementById('nw-metal-weight').focus();return;}
+    if(isMetal&&!item.name)item.name=`${item.metal==='silver'?'Silver':'Gold'} (${item.weight.toLocaleString()} troy oz)`;
     if(!item.name)return;
-    const idx=state.netWorth.manualItems.findIndex(x=>x.id===id);if(idx>=0)state.netWorth.manualItems[idx]=item;else state.netWorth.manualItems.push(item);
+    const idx=state.netWorth.manualItems.findIndex(x=>x.id===id);
+    if(isMetal&&idx>=0){item.pricePerOunce=state.netWorth.manualItems[idx].pricePerOunce;item.valuedAt=state.netWorth.manualItems[idx].valuedAt;item.valuationSource=state.netWorth.manualItems[idx].valuationSource;}
+    if(idx>=0)state.netWorth.manualItems[idx]=item;else state.netWorth.manualItems.push(item);
   }
   await nwPersist();
   if(valuationWarning)showBrandedNotice({title:'Vehicle saved — valuation pending',message:valuationWarning,confirmLabel:'OK'});

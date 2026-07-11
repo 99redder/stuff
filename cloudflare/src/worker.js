@@ -97,6 +97,11 @@ async function runScheduledRobinhoodRefresh(env, scheduledTime) {
   } catch (error) {
     console.error(JSON.stringify({ event: 'scheduled_treasury_refresh_error', message: error instanceof Error ? error.message : String(error) }));
   }
+  try {
+    await refreshPreciousMetals(env);
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'scheduled_precious_metals_refresh_error', message: error instanceof Error ? error.message : String(error) }));
+  }
 }
 
 async function handleDataApi(request, env) {
@@ -1802,6 +1807,11 @@ function normalizeNetWorth(raw) {
     name: String(item.name || '').trim().slice(0, 160),
     value: Number.isFinite(Number(item.value)) && Number(item.value) >= 0 ? Number(item.value) : 0,
     notes: String(item.notes || '').trim().slice(0, 500),
+    metal: item.metal === 'silver' ? 'silver' : (item.metal === 'gold' ? 'gold' : ''),
+    weight: Number.isFinite(Number(item.weight)) && Number(item.weight) >= 0 ? Math.min(Number(item.weight),1_000_000) : 0,
+    pricePerOunce: Number.isFinite(Number(item.pricePerOunce)) && Number(item.pricePerOunce) >= 0 ? Number(item.pricePerOunce) : 0,
+    valuedAt: typeof item.valuedAt === 'string' ? item.valuedAt : '',
+    valuationSource: String(item.valuationSource || '').slice(0,120),
   })).filter(item => item.name) : [];
   const vehicles = Array.isArray(data.vehicles) ? data.vehicles.slice(0, 20).map(vehicle => ({
     id: String(vehicle.id || crypto.randomUUID()),
@@ -1883,9 +1893,44 @@ async function handleSaveNetWorth(env, incoming) {
   current.manualItems = submitted.manualItems;
   current.vehicles = submitted.vehicles;
   current.propertyAssets = submitted.propertyAssets;
+  try { await valuePreciousMetalItems(current); } catch { /* preserve the last value if the free feed is unavailable */ }
   addNetWorthSnapshot(current);
   await env.RENTALS.put(NET_WORTH_KEY, JSON.stringify(current));
   return jsonResponse({ success: true, data: current });
+}
+
+async function getPreciousMetalPrices(metals) {
+  const symbols = { gold:'XAU', silver:'XAG' };
+  const entries = await Promise.all([...metals].map(async metal => {
+    const response = await fetch(`https://api.gold-api.com/price/${symbols[metal]}`, { headers:{ Accept:'application/json' }, cf:{ cacheTtl:300 } });
+    const payload = await readJsonLimited(response,100_000);
+    const price = Number(payload.price);
+    if (!response.ok || !Number.isFinite(price) || price <= 0) throw new Error(`${metal} spot price was unavailable`);
+    return [metal,{ price, updatedAt:String(payload.updatedAt || new Date().toISOString()) }];
+  }));
+  return Object.fromEntries(entries);
+}
+
+async function valuePreciousMetalItems(data) {
+  const items = data.manualItems.filter(item=>item.side==='asset' && item.category==='Precious Metals' && item.metal && item.weight>0);
+  if (!items.length) return false;
+  const prices = await getPreciousMetalPrices(new Set(items.map(item=>item.metal)));
+  items.forEach(item=>{
+    const quote=prices[item.metal];
+    item.pricePerOunce=Math.round(quote.price*100)/100;
+    item.value=Math.round(item.weight*quote.price*100)/100;
+    item.valuedAt=quote.updatedAt;
+    item.valuationSource='Gold-API spot price';
+  });
+  return true;
+}
+
+async function refreshPreciousMetals(env) {
+  const data=normalizeNetWorth(await env.RENTALS.get(NET_WORTH_KEY,'json'));
+  if (!(await valuePreciousMetalItems(data))) return data;
+  addNetWorthSnapshot(data);
+  await env.RENTALS.put(NET_WORTH_KEY,JSON.stringify(data));
+  return data;
 }
 
 function treasuryYieldForYears(years, yields) {
