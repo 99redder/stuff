@@ -8471,11 +8471,11 @@ function nwEdit(kind,id){
   const item=(kind==='vehicle'?state.netWorth.vehicles:state.netWorth.manualItems).find(x=>x.id===id);
   _nwEditor={kind,id,side:item?.side||'asset'};
   _renderNetWorthHtml();
-  if(kind==='vehicle') requestAnimationFrame(() => {
+  requestAnimationFrame(() => {
     const editor=document.getElementById('nw-editor');
     if(!editor)return;
     editor.scrollIntoView({behavior:'smooth',block:'center'});
-    editor.classList.add('nw-highlight');
+    setTimeout(()=>editor.classList.add('nw-highlight'),350);
   });
 }
 function nwCancelEdit(){ _nwEditor=null; _renderNetWorthHtml(); }
