@@ -1214,6 +1214,8 @@
     .nw-line summary { cursor:pointer; display:flex; justify-content:space-between; gap:1rem; padding:.8rem .9rem; font-weight:700; list-style:none; }
     .nw-line summary::-webkit-details-marker { display:none; }
     .nw-line-body { border-top:1px solid var(--border); padding:.75rem .9rem; color:var(--text-muted); font-size:.84rem; }
+    .nw-group-title { margin:.9rem 0 .45rem; color:var(--text-muted); font-size:.72rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+    .nw-group-title:first-child { margin-top:0; }
     .nw-actions { display:flex; gap:.4rem; margin-top:.65rem; flex-wrap:wrap; }
     .nw-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.7rem; padding:1rem; margin-bottom:1rem; }
     .nw-form .wide { grid-column:1/-1; }
@@ -8155,6 +8157,7 @@ async function cfDelete(type, id) {
 let _nwEditor = null;
 let _nwTrimTimer = null;
 const _nwTrimCache = new Map();
+let _nwAssetSort = ['amount','alpha','type'].includes(localStorage.getItem('rentals_nw_asset_sort')) ? localStorage.getItem('rentals_nw_asset_sort') : 'amount';
 let _nwAutoRefreshStarted = false;
 let _nwRefreshPromise = null;
 let _nwTaxPlanning = null;
@@ -8267,6 +8270,41 @@ function nwPropertyLine(item) {
   return `<details class="nw-line"><summary><span>${escHtml(item.name)}</span><span>${valueLabel}</span></summary><div class="nw-line-body">${escHtml(detail)}<div style="margin-top:.5rem;font-weight:700;color:${item.value < 0 ? 'var(--danger)' : 'var(--success)'}">Net Worth uses net proceeds: ${valueLabel}</div></div></details>`;
 }
 
+function nwAssetType(item, origin) {
+  if (origin === 'property') return 'Real Estate';
+  if (origin === 'vehicle') return 'Vehicles';
+  const text = `${item.category||''} ${item.type||''} ${item.subtype||''} ${item.name||''}`.toLowerCase();
+  if (/crypto|bitcoin|ethereum|digital asset/.test(text)) return 'Crypto';
+  if (/brokerage|stock|equity|investment|401k|403b|ira|retirement|mutual fund|securities/.test(text)) return 'Stocks & Investments';
+  if (/real estate|property|home|house|land/.test(text)) return 'Real Estate';
+  if (/vehicle|car|auto|truck|suv/.test(text)) return 'Vehicles';
+  if (/checking|savings|cash|money market|certificate|\bcd\b/.test(text)) return 'Cash & Banking';
+  return item.category ? String(item.category).trim() : 'Other Assets';
+}
+
+function nwRenderAssets(data) {
+  const rows = [
+    ...(data.propertyAssets || []).map(item => ({ item, origin:'property', html:nwPropertyLine(item) })),
+    ...data.plaidAccounts.filter(item=>item.side!=='liability').map(raw => { const item=nwLabeledPlaidAccount(raw); return { item, origin:'plaid', html:nwLine(item,'Plaid · read-only',false) }; }),
+    ...data.vehicles.map(item => ({ item, origin:'vehicle', html:nwLine(item, `${item.year||''} ${item.make||''} ${item.model||''}${item.trim?` ${item.trim}`:''} · ${item.mileage?`${Number(item.mileage).toLocaleString()} miles · `:''}${item.valuedAt?`Estimate updated ${item.valuedAt.slice(0,10)}`:'Vehicle'}`, true, 'vehicle') })),
+    ...data.manualItems.filter(item=>item.side!=='liability').map(item => ({ item, origin:'manual', html:nwLine(item,'Manual',true) }))
+  ].map(row => ({ ...row, type:nwAssetType(row.item,row.origin) }));
+  if (_nwAssetSort === 'alpha') rows.sort((a,b)=>String(a.item.name||'').localeCompare(String(b.item.name||'')));
+  else rows.sort((a,b)=>(Number(b.item.value)||0)-(Number(a.item.value)||0)||String(a.item.name||'').localeCompare(String(b.item.name||'')));
+  if (_nwAssetSort !== 'type') return rows.map(row=>row.html).join('');
+  const groups = new Map();
+  rows.forEach(row => { if(!groups.has(row.type))groups.set(row.type,[]);groups.get(row.type).push(row); });
+  return [...groups.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([type,items])=>
+    `<div class="nw-group-title">${escHtml(type)} · ${fmt(items.reduce((sum,row)=>sum+(Number(row.item.value)||0),0))}</div>${items.map(row=>row.html).join('')}`
+  ).join('');
+}
+
+function nwSetAssetSort(sort) {
+  _nwAssetSort = ['amount','alpha','type'].includes(sort) ? sort : 'amount';
+  localStorage.setItem('rentals_nw_asset_sort',_nwAssetSort);
+  _renderNetWorthHtml();
+}
+
 function nwBuildPropertyAssets() {
   return PROPERTIES.map(prop => {
     const details = calcPropertySaleTaxDetails(prop) || nwTaxPlanningPropertyDetails(prop);
@@ -8357,12 +8395,7 @@ function nwEditorHtml() {
 function _renderNetWorthHtml() {
   const data = state.netWorth;
   const totals = nwTotals();
-  const assets = [
-    ...(data.propertyAssets || []).map(nwPropertyLine),
-    ...data.plaidAccounts.filter(a=>a.side!=='liability').map(a=>nwLine(nwLabeledPlaidAccount(a),'Plaid · read-only',false)),
-    ...data.vehicles.map(a=>nwLine(a, `${a.year||''} ${a.make||''} ${a.model||''}${a.trim?` ${a.trim}`:''} · ${a.mileage?`${Number(a.mileage).toLocaleString()} miles · `:''}${a.valuedAt?`Estimate updated ${a.valuedAt.slice(0,10)}`:'Vehicle'}`, true, 'vehicle')),
-    ...data.manualItems.filter(a=>a.side!=='liability').map(a=>nwLine(a,'Manual',true))
-  ].join('');
+  const assets = nwRenderAssets(data);
   const liabilities = [
     ...data.plaidAccounts.filter(a=>a.side==='liability').map(a=>nwLine(nwLabeledPlaidAccount(a),a.subtype==='mortgage'&&(data.propertyAssets||[]).some(p=>Number(p.mortgagePayoff)>0)?'Plaid · already deducted in 731WO net proceeds · not subtracted twice':'Plaid · read-only',false)),
     ...data.manualItems.filter(a=>a.side==='liability').map(a=>nwLine(a,'Manual',true))
@@ -8372,7 +8405,7 @@ function _renderNetWorthHtml() {
     <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap"><div><h2 style="margin:0">Net Worth</h2><div class="tp-note">Assets minus liabilities · Plaid balances are cached and free to retrieve</div></div><button class="btn btn-secondary" onclick="nwRefreshPlaid(this)">↻ Refresh Plaid accounts</button></div>
     <div class="nw-hero"><div class="card"><div class="label">Net Worth</div><div class="nw-big" style="color:${totals.netWorth>=0?'var(--success)':'var(--danger)'}">${totals.netWorth<0?'−':''}${fmt(Math.abs(totals.netWorth))}</div></div><div class="card"><div class="label">Compared with U.S.</div><div class="nw-big">Higher than ~${us.toFixed(0)}%</div><div class="nw-source">Estimated from Federal Reserve 2022 SCF family net-worth thresholds.</div></div><div class="card"><div class="label">Compared globally</div><div class="nw-big">Higher than ~${global.toFixed(0)}%</div><div class="nw-source">Estimated from UBS Global Wealth Report 2026 adult wealth bands.</div></div></div>
     ${nwEditorHtml()}
-    <div class="nw-layout"><section class="card"><div class="card-header"><div><div class="card-title">Assets</div><div class="tp-note">${fmt(totals.assets)}</div></div><div class="nw-actions"><button class="btn btn-primary btn-sm" onclick="nwAdd('asset')">+ Manual asset</button><button class="btn btn-secondary btn-sm" onclick="nwAddVehicle()">+ Vehicle</button></div></div><div class="card-body">${assets||'<div class="tp-note">No assets added yet.</div>'}</div></section><section class="card"><div class="card-header"><div><div class="card-title">Liabilities</div><div class="tp-note">${fmt(totals.liabilities)}</div></div><button class="btn btn-primary btn-sm" onclick="nwAdd('liability')">+ Manual liability</button></div><div class="card-body">${liabilities||'<div class="tp-note">No liabilities added yet.</div>'}</div></section></div>
+    <div class="nw-layout"><section class="card"><div class="card-header"><div><div class="card-title">Assets</div><div class="tp-note">${fmt(totals.assets)}</div></div><div class="nw-actions"><select class="form-input" style="width:auto;font-size:.78rem;padding:.38rem .5rem" aria-label="Sort assets" onchange="nwSetAssetSort(this.value)"><option value="amount"${_nwAssetSort==='amount'?' selected':''}>Amount: high to low</option><option value="alpha"${_nwAssetSort==='alpha'?' selected':''}>Alphabetical</option><option value="type"${_nwAssetSort==='type'?' selected':''}>Group by type</option></select><button class="btn btn-primary btn-sm" onclick="nwAdd('asset')">+ Manual asset</button><button class="btn btn-secondary btn-sm" onclick="nwAddVehicle()">+ Vehicle</button></div></div><div class="card-body">${assets||'<div class="tp-note">No assets added yet.</div>'}</div></section><section class="card"><div class="card-header"><div><div class="card-title">Liabilities</div><div class="tp-note">${fmt(totals.liabilities)}</div></div><button class="btn btn-primary btn-sm" onclick="nwAdd('liability')">+ Manual liability</button></div><div class="card-body">${liabilities||'<div class="tp-note">No liabilities added yet.</div>'}</div></section></div>
     <section class="card" style="margin-top:1rem"><div class="card-header"><div class="card-title">Net Worth Trajectory</div></div><div class="card-body">${nwChart(data.history)}</div></section>
     <div class="nw-source" style="margin-top:.8rem">Percentiles are estimates, not financial advice. U.S.: Federal Reserve Survey of Consumer Finances (2022 dollars). Global: UBS Global Wealth Report 2026 (2025 wealth bands).</div>`;
   if(_nwEditor?.kind==='vehicle') requestAnimationFrame(nwLoadVehicleTrims);
