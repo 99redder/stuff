@@ -1772,6 +1772,7 @@ function normalizeNetWorth(raw) {
     name: String(vehicle.name || 'Vehicle').trim().slice(0, 160),
     make: String(vehicle.make || '').trim().slice(0, 80),
     model: String(vehicle.model || '').trim().slice(0, 80),
+    trim: String(vehicle.trim || '').trim().slice(0, 80),
     year: Math.max(1900, Math.min(new Date().getUTCFullYear() + 1, Math.round(Number(vehicle.year) || 0))),
     mileage: Math.max(0, Math.min(1_000_000, Math.round(Number(vehicle.mileage) || 0))),
     value: Number.isFinite(Number(vehicle.value)) && Number(vehicle.value) >= 0 ? Number(vehicle.value) : 0,
@@ -1927,24 +1928,33 @@ async function handleValueNetWorthVehicle(env, vehicle) {
   if (!env.CARAPI_TOKEN) return jsonResponse({ error: 'Automatic vehicle valuation is not configured yet' }, 503);
   const make = String(vehicle?.make || '').trim().slice(0, 80);
   const model = String(vehicle?.model || '').trim().slice(0, 80);
+  const trim = String(vehicle?.trim || '').trim().slice(0, 80);
   const year = Math.round(Number(vehicle?.year) || 0);
   const mileageMiles = Math.max(0, Math.round(Number(vehicle?.mileage) || 0));
   if (!make || !model || year < 1900 || year > new Date().getUTCFullYear() + 1) {
     return jsonResponse({ error: 'Make, model, and model year are required' }, 400);
   }
-  const url = new URL('https://api.carapi.dev/v1/vehicle-valuation');
-  url.searchParams.set('make', make);
-  url.searchParams.set('model', model);
-  url.searchParams.set('year', String(year));
-  url.searchParams.set('country', 'US');
-  url.searchParams.set('token', env.CARAPI_TOKEN);
-  if (mileageMiles) url.searchParams.set('mileage', String(Math.round(mileageMiles * 1.609344)));
-  const response = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
-  const payload = await readJsonLimited(response, MAX_UPSTREAM_JSON_BYTES);
+  const requestValuation = async modelQuery => {
+    const url = new URL('https://api.carapi.dev/v1/vehicle-valuation');
+    url.searchParams.set('make', make);
+    url.searchParams.set('model', modelQuery);
+    url.searchParams.set('year', String(year));
+    url.searchParams.set('country', 'US');
+    url.searchParams.set('token', env.CARAPI_TOKEN);
+    if (mileageMiles) url.searchParams.set('mileage', String(Math.round(mileageMiles * 1.609344)));
+    const response = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
+    return { response, payload: await readJsonLimited(response, MAX_UPSTREAM_JSON_BYTES) };
+  };
+  let { response, payload } = await requestValuation(trim ? `${model} ${trim}` : model);
+  let trimMatched = !!trim && response.ok;
+  if (trim && response.status === 404) {
+    ({ response, payload } = await requestValuation(model));
+    trimMatched = false;
+  }
   if (!response.ok) return jsonResponse({ error: payload.error || `Vehicle valuation failed (${response.status})` }, response.status === 404 ? 404 : 502);
   const value = Number(payload.valuationPrice);
   if (!Number.isFinite(value) || value < 0) return jsonResponse({ error: 'Vehicle valuation was unavailable' }, 502);
-  return jsonResponse({ value, currency: payload.currency || 'USD', valuedAt: new Date().toISOString(), source: 'CarAPI.dev' });
+  return jsonResponse({ value, currency: payload.currency || 'USD', valuedAt: new Date().toISOString(), source: trimMatched ? 'CarAPI.dev trim match' : 'CarAPI.dev base model' });
 }
 
 // ── Plaid / Robinhood Checking ───────────────────────────────────────────────

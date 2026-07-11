@@ -8341,6 +8341,7 @@ function nwEditorHtml() {
     ${isVehicle ? `
       <div class="form-group"><label>Make</label><input id="nw-make" value="${escAttr(item.make||'')}"></div>
       <div class="form-group"><label>Model</label><input id="nw-model" value="${escAttr(item.model||'')}"></div>
+      <div class="form-group"><label>Trim / type</label><input id="nw-trim" value="${escAttr(item.trim||'')}" placeholder="S, EX, Limited, XLE…"></div>
       <div class="form-group"><label>Model year</label><input id="nw-year" type="number" value="${escAttr(item.year||'')}"></div>
       <div class="form-group"><label>Mileage</label><input id="nw-mileage" type="number" value="${escAttr(item.mileage||'')}"></div>
       <div class="form-group"><label>Current value</label><input id="nw-value" inputmode="decimal" value="${escAttr(item.value||'')}"></div>` : `
@@ -8357,7 +8358,7 @@ function _renderNetWorthHtml() {
   const assets = [
     ...(data.propertyAssets || []).map(nwPropertyLine),
     ...data.plaidAccounts.filter(a=>a.side!=='liability').map(a=>nwLine(nwLabeledPlaidAccount(a),'Plaid · read-only',false)),
-    ...data.vehicles.map(a=>nwLine(a, a.valuedAt ? `Vehicle estimate updated ${a.valuedAt.slice(0,10)}` : 'Vehicle', true, 'vehicle')),
+    ...data.vehicles.map(a=>nwLine(a, `${a.year||''} ${a.make||''} ${a.model||''}${a.trim?` ${a.trim}`:''} · ${a.mileage?`${Number(a.mileage).toLocaleString()} miles · `:''}${a.valuedAt?`Estimate updated ${a.valuedAt.slice(0,10)}`:'Vehicle'}`, true, 'vehicle')),
     ...data.manualItems.filter(a=>a.side!=='liability').map(a=>nwLine(a,'Manual',true))
   ].join('');
   const liabilities = [
@@ -8419,7 +8420,7 @@ async function nwSaveEditor(){
   const id=_nwEditor.id||crypto.randomUUID();
   let valuationWarning='';
   if(_nwEditor.kind==='vehicle'){
-    const item={id,name:document.getElementById('nw-name').value.trim()||'Vehicle',make:document.getElementById('nw-make').value.trim(),model:document.getElementById('nw-model').value.trim(),year:Number(document.getElementById('nw-year').value),mileage:Number(document.getElementById('nw-mileage').value),value:parseMoney(document.getElementById('nw-value').value)};
+    const item={id,name:document.getElementById('nw-name').value.trim()||'Vehicle',make:document.getElementById('nw-make').value.trim(),model:document.getElementById('nw-model').value.trim(),trim:document.getElementById('nw-trim').value.trim(),year:Number(document.getElementById('nw-year').value),mileage:Number(document.getElementById('nw-mileage').value),value:parseMoney(document.getElementById('nw-value').value)};
     const idx=state.netWorth.vehicles.findIndex(x=>x.id===id); if(idx>=0)item.valuedAt=state.netWorth.vehicles[idx].valuedAt,item.valuationSource=state.netWorth.vehicles[idx].valuationSource;
     if(!item.value){try{const valuation=await callApi({action:'value_net_worth_vehicle',vehicle:item});item.value=valuation.value;item.valuedAt=valuation.valuedAt;item.valuationSource=valuation.source;}catch(e){valuationWarning=e.message;}}
     if(idx>=0)state.netWorth.vehicles[idx]=item;else state.netWorth.vehicles.push(item);
