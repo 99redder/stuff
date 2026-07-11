@@ -8270,6 +8270,7 @@ function nwLabeledPlaidAccount(item) {
   if (item.subtype === 'mortgage') return { ...item, institution:'Navy Federal', name:'Navy Federal Mortgage (731WO)' };
   if (institution === 'Robinhood' && item.subtype === 'checking') return { ...item, name:'Robinhood Joint Checking' };
   if (institution === 'Robinhood' && item.subtype === 'ira' && item.owner) return { ...item, name:`${item.owner}'s Robinhood Traditional IRA` };
+  if (institution === 'Robinhood' && item.subtype === 'crypto exchange' && item.owner) return { ...item, name:`${item.owner}'s Robinhood Crypto` };
   if (!institution && item.subtype === 'crypto exchange') institution = 'Robinhood';
   if (!institution) return item;
   const alreadyLabeled = rawName.toLowerCase().includes(institution.toLowerCase())

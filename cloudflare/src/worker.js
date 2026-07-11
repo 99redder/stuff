@@ -2077,6 +2077,7 @@ async function refreshNetWorthPlaid(env) {
       if (institution==='Robinhood' && account.subtype==='checking') displayName='Robinhood Joint Checking';
       if (institution==='Robinhood' && account.subtype==='brokerage' && owner) displayName=`${owner}'s Robinhood Individual Account`;
       if (institution==='Robinhood' && account.subtype==='ira' && owner) displayName=`${owner}'s Robinhood Traditional IRA`;
+      if (institution==='Robinhood' && account.subtype==='crypto exchange' && owner) displayName=`${owner}'s Robinhood Crypto`;
       if (itemLabel) displayName=itemLabel;
       displayName = displayName.replace(/\btraditional\b/gi,'Traditional');
       if (institution === 'Navy Federal' && account.subtype === 'mortgage' && !/\(731WO\)/i.test(displayName)) {
