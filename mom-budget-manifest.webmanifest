@@ -3,7 +3,7 @@
   "short_name": "Money Left",
   "description": "Read-only Mom Budget spending left dashboard.",
   "start_url": "./mom-budget-phone.html",
-  "scope": "./",
+  "scope": "./mom-budget-phone.html",
   "display": "standalone",
   "background_color": "#f3f7f4",
   "theme_color": "#0f766e",

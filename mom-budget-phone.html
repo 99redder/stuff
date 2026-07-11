@@ -473,8 +473,25 @@
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', async () => {
         try {
-          const registration = await navigator.serviceWorker.register('./mom-budget-sw.js');
-          registration.update();
+          const scriptUrl = new URL('./mom-budget-sw.js', location.href).href;
+          const desiredScope = new URL('./mom-budget-phone.html', location.href).href;
+
+          // Earlier versions registered this worker at the repository root. Remove
+          // that broad registration so it cannot control or cache the desktop app.
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          for (const existing of registrations) {
+            const existingScript = existing.active?.scriptURL
+              || existing.waiting?.scriptURL
+              || existing.installing?.scriptURL;
+            if (existingScript === scriptUrl && existing.scope !== desiredScope) {
+              await existing.unregister();
+            }
+          }
+
+          const registration = await navigator.serviceWorker.register('./mom-budget-sw.js', {
+            scope: './mom-budget-phone.html'
+          });
+          await registration.update();
         } catch {}
       });
     }
