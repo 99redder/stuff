@@ -1814,30 +1814,32 @@ function calcMarylandTax(tp, agi) {
   return { county, countyRate, exemptCap, navyExempt, md529, mdAgi, mdStdDed, mdPerExemption, mdExemptAmt, mdTaxInc, stateTax, countyTax, cgSurchargeBase, cgSurcharge, totalTax, withheld, owed };
 }
 
-const TP_KEY = `rentals_tax_${CURRENT_YEAR}`;
+let _tpCache = {};
+let _tpLoaded = false;
 
-function tpLoadLocal() { try { return JSON.parse(localStorage.getItem(TP_KEY) || '{}'); } catch { return {}; } }
+function tpLoadLocal() { return _tpCache; }
 
 async function tpLoadFromAPI() {
+  if (_tpLoaded) return _tpCache;
   try {
     const result = await callApi({ action: 'get_tax_planning', year: String(CURRENT_YEAR) });
-    const data = result.data || {};
-    localStorage.setItem(TP_KEY, JSON.stringify(data)); // keep local cache in sync
-    return data;
+    _tpCache = result.data || {};
+    _tpLoaded = true;
+    return _tpCache;
   } catch {
-    return tpLoadLocal(); // fallback to cache if API unreachable
+    return _tpCache;
   }
 }
 
 let _tpSaveTimer = null;
 function tpSave(tp) {
-  // Write to localStorage immediately so the UI never lags
-  localStorage.setItem(TP_KEY, JSON.stringify(tp));
+  _tpCache = tp;
+  _tpLoaded = true;
   // Debounced API save — fires 800ms after the last change
   clearTimeout(_tpSaveTimer);
   _tpSaveTimer = setTimeout(async () => {
     try { await callApi({ action: 'save_tax_planning', year: String(CURRENT_YEAR), data: tp }); }
-    catch { /* silently ignore — localStorage is the backup */ }
+    catch { /* keep the unsaved edits in memory for this authenticated session */ }
   }, 800);
 }
 
@@ -1889,6 +1891,7 @@ async function callApi(body) {
   if (res.status === 401) {
     // Session expired or wrong password — kick back to gate
     sessionStorage.removeItem(SESSION_KEY);
+    clearSensitiveRuntimeState();
     showPasswordGate();
     throw new Error('Unauthorized');
   }
@@ -1999,13 +2002,10 @@ function saleClosingEstimateTotal(prop, salePrice, draftBreakdown = null) {
   }, 0);
 }
 
-function saleCloseoutDraftKey(prop = state.currentProperty) {
-  return `rentals_sale_closeout_draft_${prop}`;
-}
+let _saleCloseoutDrafts = Object.create(null);
 
 function loadSaleCloseoutDraft(prop = state.currentProperty) {
-  try { return JSON.parse(localStorage.getItem(saleCloseoutDraftKey(prop)) || '{}'); }
-  catch { return {}; }
+  return _saleCloseoutDrafts[prop] || {};
 }
 
 function saveSaleCloseoutDraft(prop = state.currentProperty) {
@@ -2013,11 +2013,11 @@ function saveSaleCloseoutDraft(prop = state.currentProperty) {
   const price = parseMoney(document.getElementById('sale-closeout-price')?.value);
   const notes = document.getElementById('sale-closeout-notes')?.value.trim() || '';
   const breakdown = getSaleClosingBreakdownFromForm(prop);
-  localStorage.setItem(saleCloseoutDraftKey(prop), JSON.stringify({ date, price, notes, breakdown }));
+  _saleCloseoutDrafts[prop] = { date, price, notes, breakdown };
 }
 
 function clearSaleCloseoutDraft(prop = state.currentProperty) {
-  localStorage.removeItem(saleCloseoutDraftKey(prop));
+  delete _saleCloseoutDrafts[prop];
 }
 
 function parseSaleCurrency(value) {
@@ -10018,9 +10018,8 @@ function tpUpdateResults(tp) {
 }
 
 // Last-fetched bookkeeping for the FMG/ESAI import buttons. Timestamps live in
-// the tax-planning record (fmg_fetched_at / esai_fetched_at, ISO strings), so
-// they survive reloads and sync to KV with the rest of the year's inputs —
-// tpMarkFetched writes localStorage first, then the caller's tpChanged() saves.
+// the in-memory tax-planning record and sync to authenticated KV with the rest
+// of the year's inputs.
 function tpFetchedLabel(iso) {
   const d = iso ? new Date(iso) : null;
   if (!d || isNaN(d)) return 'Never fetched';
@@ -10030,7 +10029,6 @@ function tpFetchedLabel(iso) {
 function tpMarkFetched(key, elId) {
   const saved = tpLoadLocal();
   saved[key] = new Date().toISOString();
-  localStorage.setItem(TP_KEY, JSON.stringify(saved));
   const el = document.getElementById(elId);
   if (el) el.textContent = tpFetchedLabel(saved[key]);
 }
@@ -10103,6 +10101,27 @@ function tpPayAmt(i, val) {
 }
 
 // ── Security Helpers ──────────────────────────────────────────────────────────
+
+function purgeLegacySensitiveBrowserStorage() {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i) || '';
+      if (key.startsWith('rentals_tax_') || key.startsWith('rentals_sale_closeout_draft_')) {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch { /* storage may be unavailable in strict privacy modes */ }
+}
+
+function clearSensitiveRuntimeState() {
+  clearTimeout(_tpSaveTimer);
+  _tpSaveTimer = null;
+  _tpCache = {};
+  _tpLoaded = false;
+  _saleCloseoutDrafts = Object.create(null);
+}
+
+purgeLegacySensitiveBrowserStorage();
 
 function escHtml(str) {
   return String(str ?? '')
@@ -10228,6 +10247,7 @@ async function signOut() {
     });
   } catch { /* ignore logout network errors */ }
   sessionStorage.removeItem(SESSION_KEY);
+  clearSensitiveRuntimeState();
   state.password = '';
   showPasswordGate();
 }
