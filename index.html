@@ -8162,6 +8162,7 @@ let _nwPrivacy = sessionStorage.getItem('rentals_nw_privacy') === '1';
 let _nwAutoRefreshStarted = false;
 let _nwRefreshPromise = null;
 let _nwTaxPlanning = null;
+const NW_PLAID_STALE_MS = 5 * 60 * 1000;
 
 async function ensureNetWorthLoaded(refreshIfStale = false) {
   if (!state.netWorth) {
@@ -8169,7 +8170,7 @@ async function ensureNetWorthLoaded(refreshIfStale = false) {
     catch { return; }
   }
   const age = Date.now() - Date.parse(state.netWorth.plaidRefreshedAt || 0);
-  if (refreshIfStale && age > 6 * 60 * 60 * 1000) {
+  if (refreshIfStale && age > NW_PLAID_STALE_MS) {
     if (!_nwRefreshPromise) {
       _nwRefreshPromise = callApi({ action: 'refresh_net_worth_plaid' })
         .then(result => { state.netWorth = result.data; })
@@ -8471,7 +8472,7 @@ async function renderNetWorth() {
   }
   _renderNetWorthHtml();
   const age = Date.now() - Date.parse(state.netWorth.plaidRefreshedAt || 0);
-  if (!_nwAutoRefreshStarted && age > 6*60*60*1000) {
+  if (!_nwAutoRefreshStarted && age > NW_PLAID_STALE_MS) {
     _nwAutoRefreshStarted = true;
     ensureNetWorthLoaded(true).then(() => { if(state.currentView==='net-worth') _renderNetWorthHtml(); }).catch(()=>{});
   }
