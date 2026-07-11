@@ -8239,6 +8239,19 @@ function nwLine(item, source, editable, kind='manual') {
   </details>`;
 }
 
+function nwLabeledPlaidAccount(item) {
+  const rawName = String(item.name || 'Account').trim();
+  let institution = String(item.institution || '').trim();
+  if (!institution && item.subtype === 'crypto exchange') institution = 'Robinhood';
+  if (!institution) return item;
+  const alreadyLabeled = institution === 'Robinhood'
+    ? /robinhood/i.test(rawName)
+    : institution === 'Navy Federal' && /(navy federal|nfcu)/i.test(rawName);
+  let name = alreadyLabeled ? rawName : `${institution} ${rawName}`;
+  if (institution === 'Navy Federal' && item.subtype === 'mortgage' && !/\(731WO\)/i.test(name)) name += ' (731WO)';
+  return { ...item, institution, name };
+}
+
 function nwPropertyLine(item) {
   const detail = `${item.source} · Sale amount ${fmt(item.salePrice)} · Closing costs ${fmt(item.saleClosingCosts)} · Mortgage payoff ${fmt(item.mortgagePayoff)} · Federal tax ${fmt(item.federalTax)} · State/local tax ${fmt(item.stateTax)} · Depreciation recapture tax ${fmt(item.depreciationRecaptureTax)}`;
   const valueLabel = `${item.value < 0 ? '−' : ''}${fmt(Math.abs(item.value))}`;
@@ -8336,12 +8349,12 @@ function _renderNetWorthHtml() {
   const totals = nwTotals();
   const assets = [
     ...(data.propertyAssets || []).map(nwPropertyLine),
-    ...data.plaidAccounts.filter(a=>a.side!=='liability').map(a=>nwLine(a,'Plaid · read-only',false)),
+    ...data.plaidAccounts.filter(a=>a.side!=='liability').map(a=>nwLine(nwLabeledPlaidAccount(a),'Plaid · read-only',false)),
     ...data.vehicles.map(a=>nwLine(a, a.valuedAt ? `Vehicle estimate updated ${a.valuedAt.slice(0,10)}` : 'Vehicle', true, 'vehicle')),
     ...data.manualItems.filter(a=>a.side!=='liability').map(a=>nwLine(a,'Manual',true))
   ].join('');
   const liabilities = [
-    ...data.plaidAccounts.filter(a=>a.side==='liability').map(a=>nwLine(a,a.subtype==='mortgage'&&(data.propertyAssets||[]).some(p=>Number(p.mortgagePayoff)>0)?'Plaid · already deducted in 731WO net proceeds · not subtracted twice':'Plaid · read-only',false)),
+    ...data.plaidAccounts.filter(a=>a.side==='liability').map(a=>nwLine(nwLabeledPlaidAccount(a),a.subtype==='mortgage'&&(data.propertyAssets||[]).some(p=>Number(p.mortgagePayoff)>0)?'Plaid · already deducted in 731WO net proceeds · not subtracted twice':'Plaid · read-only',false)),
     ...data.manualItems.filter(a=>a.side==='liability').map(a=>nwLine(a,'Manual',true))
   ].join('');
   const us = nwUsPercentile(totals.netWorth), global = nwGlobalPercentile(totals.netWorth);
