@@ -8230,7 +8230,7 @@ function nwChart(history) {
 }
 
 function nwLine(item, source, editable, kind='manual') {
-  const detail = [item.category || item.subtype || item.type, item.mask ? `•••• ${item.mask}` : '', item.notes || '', source].filter(Boolean).join(' · ');
+  const detail = [item.institution || '', item.category || item.subtype || item.type, item.mask ? `•••• ${item.mask}` : '', item.notes || '', source].filter(Boolean).join(' · ');
   return `<details class="nw-line">
     <summary><span>${escHtml(item.name)}</span><span>${fmt(Number(item.value)||0)}</span></summary>
     <div class="nw-line-body">${escHtml(detail || 'No additional details')}

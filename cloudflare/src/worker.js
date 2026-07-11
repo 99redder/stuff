@@ -1874,21 +1874,35 @@ async function refreshNetWorthPlaid(env) {
       console.error(JSON.stringify({ event: 'plaid_net_worth_item_error', status: response.status, code }));
       throw new Error(`Plaid accounts request failed: ${code} (${response.status})`);
     }
-    return Array.isArray(payload.accounts) ? payload.accounts : [];
+    return {
+      institutionId: String(payload.item?.institution_id || ''),
+      accounts: Array.isArray(payload.accounts) ? payload.accounts : [],
+    };
   }));
   const liabilityTypes = new Set(['credit', 'loan']);
-  const accounts = responses.flat().map(account => ({
-    id: String(account.account_id || ''),
-    name: String(account.name || account.official_name || 'Plaid account').slice(0, 160),
-    officialName: String(account.official_name || '').slice(0, 200),
-    mask: String(account.mask || '').slice(-4),
-    type: String(account.type || ''),
-    subtype: String(account.subtype || ''),
-    side: liabilityTypes.has(account.type) ? 'liability' : 'asset',
-    value: Math.max(0, Number(account.balances?.current) || 0),
-    available: Number.isFinite(Number(account.balances?.available)) ? Number(account.balances.available) : null,
-    currency: String(account.balances?.iso_currency_code || 'USD'),
-  })).filter(account => account.id);
+  const institutionNames = { ins_54: 'Robinhood', ins_15: 'Navy Federal' };
+  const accounts = responses.flatMap(({ institutionId, accounts: itemAccounts }) => {
+    const institution = institutionNames[institutionId] || 'Plaid';
+    return itemAccounts.map(account => {
+      const rawName = String(account.name || account.official_name || 'Account').trim();
+      const alreadyLabeled = institution === 'Robinhood'
+        ? /robinhood/i.test(rawName)
+        : institution === 'Navy Federal' && /(navy federal|nfcu)/i.test(rawName);
+      return {
+        id: String(account.account_id || ''),
+        name: (alreadyLabeled ? rawName : `${institution} ${rawName}`).slice(0, 160),
+        institution,
+        officialName: String(account.official_name || '').slice(0, 200),
+        mask: String(account.mask || '').slice(-4),
+        type: String(account.type || ''),
+        subtype: String(account.subtype || ''),
+        side: liabilityTypes.has(account.type) ? 'liability' : 'asset',
+        value: Math.max(0, Number(account.balances?.current) || 0),
+        available: Number.isFinite(Number(account.balances?.available)) ? Number(account.balances.available) : null,
+        currency: String(account.balances?.iso_currency_code || 'USD'),
+      };
+    });
+  }).filter(account => account.id);
   const data = normalizeNetWorth(await env.RENTALS.get(NET_WORTH_KEY, 'json'));
   data.plaidAccounts = accounts;
   data.plaidRefreshedAt = new Date().toISOString();
