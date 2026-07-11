@@ -120,6 +120,7 @@
   const YEAR = 2026;
   const PROPERTIES = ['6AL','95EB','446BB','731WO','4781MC'];
   const RENTALS = new Set(['6AL','95EB','446BB']);
+  const CASH_FLOW_AUTO_PROPS = ['6AL','95EB','731WO'];
   const EXPENSE_CATS = ['Weekly Spending','Retirement Savings','School Savings','Investments','Misc Savings','Utilities','Services','Mortgage','Cars','Insurance','Travel'];
   const TITLES = {budget:'Monthly Budget',cashflow:'2026 Cash Flow',tax:'Tax Planning',savings:'Savings',mom:'Mom Budget',properties:'Properties'};
   const CAT_NAMES = {rent:'Rent Received',deposit:'Security Deposit',late_fee:'Late Fees',other_income:'Other Income',taxes:'Property Taxes',insurance:'Insurance',repairs:'Repairs & Maintenance',improvements:'Improvements',utilities:'Utilities',hoa:'HOA Fees',management:'Property Management',auto:'Auto',legal:'Legal & Professional',marketing:'Advertising',other_expense:'Other Expenses'};
@@ -164,7 +165,11 @@
       if(state.view==='budget' && (force||!state.data.budget)) state.data.budget=(await api({action:'get_budget'})).data||{};
       if(state.view==='tax' && (force||!state.data.tax)) state.data.tax=(await api({action:'get_tax_planning',year:String(YEAR)})).data||{};
       if(state.view==='savings' && (force||!state.data.savings)) state.data.savings=(await api({action:'get_savings'})).data||{};
-      if((state.view==='savings'||state.view==='cashflow') && (force||!state.data.robinhood)){state.robinhoodLoading=true;pullRobinhood=true;}
+      if(state.view==='cashflow' && (force||!state.data.cashflow||!state.data.savings||!state.data.netWorth)){
+        const [cashflow,savings,netWorth]=await Promise.all([api({action:'get_cash_flow',year:String(YEAR)}),api({action:'get_savings'}),api({action:'get_net_worth'})]);
+        state.data.cashflow=cashflow.data||{};state.data.savings=savings.data||{};state.data.netWorth=netWorth.data||{};
+      }
+      if(state.view==='savings' && (force||!state.data.robinhood)){state.robinhoodLoading=true;pullRobinhood=true;}
       if(state.view==='mom' && (force||!state.data.mom)) state.data.mom=(await api({action:'get_mom_budget'})).data||{};
       if((state.view==='cashflow'||state.view==='properties'||state.view==='tax') && (force||!state.data.transactions)){
         const results=await Promise.all(PROPERTIES.map(property=>api({action:'get_transactions',property})));
@@ -196,11 +201,27 @@
   }
 
   function renderCashFlow(){
-    const rentalRows=[...RENTALS].map(prop=>({prop,...txnTotals(yearTxns(prop))}));
-    const total={income:sum(rentalRows,x=>x.income),expenses:sum(rentalRows,x=>x.expenses)}; total.net=total.income-total.expenses;
-    return `<div class="hero"><div class="hero-label">2026 net rental cash flow</div><div class="hero-value">${money(total.net)}</div><div class="hero-note">Recorded income less recorded expenses</div></div>
-      <div class="grid">${stat('Income',money(total.income),'2026 YTD','good')}${stat('Expenses',money(total.expenses),'2026 YTD','bad')}${stat('Net',money(total.net),'3 rentals',tone(total.net))}${state.robinhoodLoading?stat('Robinhood checking','Pulling…','checking Plaid'):state.data.robinhood?stat('Robinhood checking',money(state.data.robinhood.balance),state.data.robinhood.stale?'cached balance':'live balance','good'):''}</div>
-      ${card('By property',rentalRows.map(x=>row(x.prop,money(x.net),`${money(x.income)} in · ${money(x.expenses)} out`,tone(x.net))).join(''),'2026')}`;
+    const cf=state.data.cashflow||{};
+    const checking=n(state.data.savings?.accounts?.robinhoodChecking);
+    const properties=state.data.netWorth?.propertyAssets||[];
+    const autoIncome=CASH_FLOW_AUTO_PROPS.map(prop=>{
+      const asset=properties.find(item=>item.id===`property-${prop}`)||{};
+      return {name:`${prop} Sale Net Proceeds After Taxes${n(asset.mortgagePayoff)?' & Mortgage Payoff':''}`,amount:n(asset.value),date:'',note:`Auto from ${prop} sale worksheet`};
+    });
+    const manualIncome=Array.isArray(cf.income)?cf.income:[];
+    const expenses=Array.isArray(cf.expenses)?cf.expenses:[];
+    const totalIncome=checking+sum(autoIncome)+sum(manualIncome);
+    const totalExpenses=sum(expenses);
+    const excess=totalIncome-totalExpenses;
+    const dateNote=item=>[item.date||'Unscheduled',item.note||''].filter(Boolean).join(' · ');
+    const incomeRows=row('Robinhood Joint Checking Current Balance',money(checking),'Pinned · Plaid','good')
+      +autoIncome.map(item=>row(item.name,money(item.amount),`${item.note} · Auto`,item.amount?'good':'')).join('')
+      +manualIncome.slice().sort((a,b)=>String(a.date||'9999').localeCompare(String(b.date||'9999'))).map(item=>row(item.name||'Untitled',money(item.amount),`${dateNote(item)} · Manual`,'good')).join('');
+    const expenseRows=expenses.slice().sort((a,b)=>n(b.amount)-n(a.amount)).map(item=>row(item.name||'Untitled',money(item.amount),dateNote(item),'bad')).join('');
+    return `<div class="hero"><div class="hero-label">${excess>=0?'Excess left over':'Shortfall'}</div><div class="hero-value">${excess<0?'−':''}${money(Math.abs(excess))}</div><div class="hero-note">${money(totalIncome)} income minus ${money(totalExpenses)} expenses</div></div>
+      <div class="grid">${stat('Income events',money(totalIncome),`1 pinned · ${autoIncome.length} auto · ${manualIncome.length} manual`,'good')}${stat('Expense events',money(totalExpenses),`${expenses.length} items`,'bad')}${stat(excess>=0?'Excess':'Shortfall',money(Math.abs(excess)),'expected amount',tone(excess))}</div>
+      ${card('Income',incomeRows,'2026')}
+      ${card('Expenses',expenseRows,'Amount order')}`;
   }
 
   const TAX_LABELS={w2:'W-2 wages',fmg_sp:'FMG income',esai_sp:'ESAI income',interest:'Interest income',ibkr_div:'Dividends',cap_gains:'Capital gains',se_income:'Self-employment income',rental_depr:'Rental depreciation',std_ded:'Standard deduction',fed_withheld:'Federal withheld',estimated_paid:'Estimated tax paid',md_withheld:'Maryland withheld',md_estimated:'Maryland estimated paid',md_529:'Maryland 529 deduction',md_county:'Maryland county'};
