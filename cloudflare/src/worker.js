@@ -1875,8 +1875,7 @@ function applyKnownPlaidAccountLabels(data, env) {
       return { ...account, institution:'Navy Federal', name:'Navy Federal Mortgage (731WO)' };
     }
     if (env.PLAID_ACCOUNT_ID && account.id === env.PLAID_ACCOUNT_ID) {
-      const rawName = String(account.name || 'Checking').replace(/^Plaid\s+/i, '').replace(/^Robinhood\s+/i, '').trim() || 'Checking';
-      return { ...account, institution:'Robinhood', name:`Robinhood ${rawName}`.slice(0,160) };
+      return { ...account, institution:'Robinhood', name:'Robinhood Joint Checking' };
     }
     return account;
   });
@@ -2075,6 +2074,7 @@ async function refreshNetWorthPlaid(env) {
       const alreadyLabeled = rawName.toLowerCase().includes(institution.toLowerCase())
         || (institution === 'Navy Federal' && /nfcu/i.test(rawName));
       let displayName = alreadyLabeled ? rawName : `${institution} ${rawName}`;
+      if (institution==='Robinhood' && account.subtype==='checking') displayName='Robinhood Joint Checking';
       if (institution==='Robinhood' && account.subtype==='brokerage' && owner) displayName=`${owner}'s Robinhood Individual Account`;
       if (institution==='Robinhood' && account.subtype==='ira' && owner) displayName=`${owner}'s Robinhood Traditional IRA`;
       if (itemLabel) displayName=itemLabel;

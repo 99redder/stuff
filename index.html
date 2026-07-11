@@ -8268,6 +8268,7 @@ function nwLabeledPlaidAccount(item) {
   const rawName = String(item.name || 'Account').trim();
   let institution = String(item.institution || '').trim();
   if (item.subtype === 'mortgage') return { ...item, institution:'Navy Federal', name:'Navy Federal Mortgage (731WO)' };
+  if (institution === 'Robinhood' && item.subtype === 'checking') return { ...item, name:'Robinhood Joint Checking' };
   if (institution === 'Robinhood' && item.subtype === 'ira' && item.owner) return { ...item, name:`${item.owner}'s Robinhood Traditional IRA` };
   if (!institution && item.subtype === 'crypto exchange') institution = 'Robinhood';
   if (!institution) return item;
