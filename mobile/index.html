@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#173f38">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Red's Stuff">
+  <meta name="format-detection" content="telephone=no">
+  <title>Red's Stuff Snapshot</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="../mom-budget-icon-192.png">
+  <style>
+    :root {
+      color-scheme: light;
+      --ink:#17211f; --muted:#69736f; --paper:#f4f1ea; --card:#fffdf9;
+      --green:#173f38; --green2:#267365; --mint:#dcebe5; --line:#dedbd3;
+      --good:#16745f; --bad:#b6423c; --amber:#a76b18; --shadow:0 10px 30px rgba(22,43,38,.08);
+    }
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    html,body{margin:0;min-height:100%;background:var(--paper);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif}
+    body{padding:0 0 calc(84px + env(safe-area-inset-bottom))}
+    button,input{font:inherit}
+    button{cursor:pointer}
+    .hidden{display:none!important}
+    .login{min-height:100dvh;padding:max(64px,env(safe-area-inset-top)) 24px 40px;display:grid;place-items:center;background:var(--green)}
+    .login-card{width:min(100%,390px);background:var(--card);border-radius:28px;padding:30px 24px;box-shadow:0 24px 70px rgba(0,0,0,.25)}
+    .mark{width:54px;height:54px;border-radius:18px;display:grid;place-items:center;background:var(--mint);font-size:27px;margin-bottom:24px}
+    h1{font-family:Georgia,serif;font-size:2.15rem;line-height:1;margin:0 0 9px;letter-spacing:-.04em}
+    .login-card p{color:var(--muted);line-height:1.5;margin:0 0 25px}
+    label{display:block;font-size:.76rem;text-transform:uppercase;letter-spacing:.08em;font-weight:800;color:var(--muted);margin-bottom:8px}
+    input{width:100%;min-height:52px;border:1px solid var(--line);border-radius:14px;background:white;padding:0 15px;font-size:1rem;outline:none}
+    input:focus{border-color:var(--green2);box-shadow:0 0 0 3px rgba(38,115,101,.14)}
+    .primary{width:100%;min-height:52px;border:0;border-radius:14px;background:var(--green);color:white;font-weight:800;margin-top:13px}
+    .login-error{min-height:20px;color:var(--bad);font-size:.86rem;font-weight:650;margin-top:12px}
+    .shell{max-width:620px;margin:0 auto}
+    .top{position:sticky;top:0;z-index:10;padding:max(15px,env(safe-area-inset-top)) 18px 12px;background:rgba(244,241,234,.92);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+    .top-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .eyebrow{font-size:.69rem;color:var(--green2);font-weight:850;text-transform:uppercase;letter-spacing:.11em;margin-bottom:3px}
+    .page-title{font-family:Georgia,serif;font-size:1.72rem;font-weight:700;letter-spacing:-.035em}
+    .icon-btn{width:44px;height:44px;border:1px solid var(--line);border-radius:50%;background:var(--card);color:var(--green);font-size:19px;font-weight:800}
+    .sync{font-size:.72rem;color:var(--muted);margin-top:4px}
+    main{padding:7px 16px 28px}
+    .hero{padding:21px;border-radius:24px;background:var(--green);color:white;box-shadow:var(--shadow);margin-bottom:13px;overflow:hidden;position:relative}
+    .hero:after{content:"";position:absolute;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,.06);right:-62px;top:-65px}
+    .hero-label{font-size:.71rem;text-transform:uppercase;letter-spacing:.1em;font-weight:800;opacity:.7}
+    .hero-value{font-family:Georgia,serif;font-size:2.45rem;line-height:1.05;margin:7px 0 4px;letter-spacing:-.04em;font-variant-numeric:tabular-nums}
+    .hero-note{font-size:.79rem;opacity:.72}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin-bottom:13px}
+    .stat,.card{background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow)}
+    .stat{border-radius:18px;padding:15px;min-width:0}
+    .stat-label{font-size:.67rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;font-weight:800}
+    .stat-value{font-size:1.22rem;font-weight:850;margin-top:6px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+    .stat-sub{font-size:.7rem;color:var(--muted);margin-top:4px}
+    .good{color:var(--good)}.bad{color:var(--bad)}.amber{color:var(--amber)}
+    .card{border-radius:21px;margin-bottom:13px;overflow:hidden}
+    .card-head{display:flex;align-items:center;justify-content:space-between;padding:16px 17px 11px}
+    .card-title{font-weight:850;font-size:.98rem}
+    .pill{font-size:.65rem;font-weight:800;padding:5px 8px;border-radius:999px;background:var(--mint);color:var(--green2)}
+    .rows{padding:0 17px 8px}
+    .row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:12px 0;border-top:1px solid var(--line);align-items:center}
+    .row:first-child{border-top:0}
+    .row-name{font-size:.88rem;font-weight:700;min-width:0;overflow-wrap:anywhere}
+    .row-note{font-size:.7rem;color:var(--muted);font-weight:500;margin-top:3px}
+    .row-value{text-align:right;font-weight:800;font-size:.89rem;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .empty{padding:30px 20px;text-align:center;color:var(--muted);font-size:.87rem}
+    .property-strip{display:flex;gap:8px;overflow-x:auto;padding:1px 1px 12px;scrollbar-width:none}
+    .property-strip::-webkit-scrollbar{display:none}
+    .property-chip{flex:0 0 auto;border:1px solid var(--line);background:var(--card);color:var(--muted);padding:10px 15px;border-radius:999px;font-weight:800}
+    .property-chip.active{background:var(--green);border-color:var(--green);color:white}
+    .nav{position:fixed;z-index:20;left:0;right:0;bottom:0;background:rgba(255,253,249,.94);border-top:1px solid var(--line);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);padding:7px 7px max(7px,env(safe-area-inset-bottom));display:grid;grid-template-columns:repeat(6,1fr)}
+    .nav-btn{border:0;background:transparent;color:var(--muted);padding:5px 1px 3px;font-size:.58rem;font-weight:750;min-width:0}
+    .nav-icon{display:block;font-size:1.25rem;line-height:1.3;filter:grayscale(1);opacity:.7}
+    .nav-btn.active{color:var(--green)}.nav-btn.active .nav-icon{filter:none;opacity:1}
+    .loading{padding:80px 20px;text-align:center;color:var(--muted);font-weight:700}
+    .spinner{width:30px;height:30px;border:3px solid var(--line);border-top-color:var(--green2);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 14px}@keyframes spin{to{transform:rotate(360deg)}}
+    .banner{border-radius:15px;padding:12px 14px;margin-bottom:12px;background:#fff3d9;color:#795019;font-size:.78rem;font-weight:650;line-height:1.4}
+    @media (min-width:500px){main{padding-left:22px;padding-right:22px}.grid{grid-template-columns:repeat(3,1fr)}}
+  </style>
+</head>
+<body>
+  <section id="login" class="login">
+    <form class="login-card" id="login-form">
+      <div class="mark">⌂</div>
+      <h1>Red's Stuff Snapshot</h1>
+      <p>A private, read-only view of your properties and financial plans.</p>
+      <label for="password">Rental Manager Password</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+      <button class="primary" id="login-button" type="submit">Open dashboard</button>
+      <div class="login-error" id="login-error" role="alert"></div>
+    </form>
+  </section>
+
+  <div id="app" class="shell hidden">
+    <header class="top">
+      <div class="top-row">
+        <div><div class="eyebrow">Read only</div><div class="page-title" id="page-title">Monthly Budget</div></div>
+        <button class="icon-btn" id="refresh" aria-label="Refresh">↻</button>
+      </div>
+      <div class="sync" id="sync-status">Loading current data…</div>
+    </header>
+    <main id="content"></main>
+    <nav class="nav" aria-label="Dashboard">
+      <button class="nav-btn active" data-view="budget"><span class="nav-icon">◫</span>Budget</button>
+      <button class="nav-btn" data-view="cashflow"><span class="nav-icon">↗</span>Cash Flow</button>
+      <button class="nav-btn" data-view="tax"><span class="nav-icon">§</span>Tax</button>
+      <button class="nav-btn" data-view="savings"><span class="nav-icon">◆</span>Savings</button>
+      <button class="nav-btn" data-view="mom"><span class="nav-icon">♡</span>Mom</button>
+      <button class="nav-btn" data-view="properties"><span class="nav-icon">⌂</span>Properties</button>
+    </nav>
+  </div>
+
+  <script>
+  'use strict';
+  const API = 'https://rentals-api.99redder.workers.dev/api/data';
+  const YEAR = 2026;
+  const PROPERTIES = ['6AL','95EB','446BB','731WO','4781MC'];
+  const RENTALS = new Set(['6AL','95EB','446BB']);
+  const EXPENSE_CATS = ['Weekly Spending','Retirement Savings','School Savings','Investments','Misc Savings','Utilities','Services','Mortgage','Cars','Insurance','Travel'];
+  const TITLES = {budget:'Monthly Budget',cashflow:'2026 Cash Flow',tax:'Tax Planning',savings:'Savings',mom:'Mom Budget',properties:'Properties'};
+  const CAT_NAMES = {rent:'Rent Received',deposit:'Security Deposit',late_fee:'Late Fees',other_income:'Other Income',taxes:'Property Taxes',insurance:'Insurance',repairs:'Repairs & Maintenance',improvements:'Improvements',utilities:'Utilities',hoa:'HOA Fees',management:'Property Management',auto:'Auto',legal:'Legal & Professional',marketing:'Advertising',other_expense:'Other Expenses'};
+  const state = {view:'budget',property:'6AL',data:{},loading:false,lastSync:null};
+  const $ = s => document.querySelector(s);
+  const n = v => Number.isFinite(Number(v)) ? Number(v) : 0;
+  const money = v => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(n(v));
+  const fullMoney = v => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2}).format(n(v));
+  const esc = v => String(v ?? '').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+  const tone = v => n(v) < 0 ? 'bad' : 'good';
+  const sum = (items, fn=x=>n(x.amount)) => (items||[]).reduce((t,x)=>t+fn(x),0);
+
+  async function api(body) {
+    const token = sessionStorage.getItem('rentals_session_token') || '';
+    const res = await fetch(API,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json',...(token?{'X-Session':token}:{})},body:JSON.stringify(body)});
+    const data = await res.json().catch(()=>({}));
+    if (res.status===401) { showLogin(); throw new Error('Your session expired. Please sign in again.'); }
+    if (!res.ok) throw new Error(data.error || 'Unable to load data');
+    return data;
+  }
+
+  async function signIn(password) {
+    const res = await fetch(API,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'verify_password',password})});
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Incorrect password');
+    if (data.sessionToken) sessionStorage.setItem('rentals_session_token',data.sessionToken);
+  }
+
+  function showLogin(){ sessionStorage.removeItem('rentals_session_token'); $('#app').classList.add('hidden'); $('#login').classList.remove('hidden'); }
+  function showApp(){ $('#login').classList.add('hidden'); $('#app').classList.remove('hidden'); }
+  function loading(){ $('#content').innerHTML='<div class="loading"><div class="spinner"></div>Loading current data…</div>'; }
+  function errorCard(err){ $('#content').innerHTML=`<div class="banner">${esc(err.message||err)}</div><div class="empty">Pull down or tap refresh to try again.</div>`; }
+  function stat(label,value,sub='',cls=''){return `<div class="stat"><div class="stat-label">${esc(label)}</div><div class="stat-value ${cls}">${esc(value)}</div>${sub?`<div class="stat-sub">${esc(sub)}</div>`:''}</div>`}
+  function row(name,value,note='',cls=''){return `<div class="row"><div><div class="row-name">${esc(name)}</div>${note?`<div class="row-note">${esc(note)}</div>`:''}</div><div class="row-value ${cls}">${esc(value)}</div></div>`}
+  function card(title,rows,badge=''){return `<section class="card"><div class="card-head"><div class="card-title">${esc(title)}</div>${badge?`<span class="pill">${esc(badge)}</span>`:''}</div><div class="rows">${rows||'<div class="empty">No data recorded.</div>'}</div></section>`}
+
+  async function loadView(force=false){
+    if(state.loading)return; state.loading=true; loading();
+    try{
+      if(state.view==='budget' && (force||!state.data.budget)) state.data.budget=(await api({action:'get_budget'})).data||{};
+      if(state.view==='tax' && (force||!state.data.tax)) state.data.tax=(await api({action:'get_tax_planning',year:String(YEAR)})).data||{};
+      if(state.view==='savings' && (force||!state.data.savings)) state.data.savings=(await api({action:'get_savings'})).data||{};
+      if(state.view==='mom' && (force||!state.data.mom)) state.data.mom=(await api({action:'get_mom_budget'})).data||{};
+      if((state.view==='cashflow'||state.view==='properties'||state.view==='tax') && (force||!state.data.transactions)){
+        const results=await Promise.all(PROPERTIES.map(property=>api({action:'get_transactions',property})));
+        state.data.transactions=Object.fromEntries(PROPERTIES.map((p,i)=>[p,results[i].transactions||[]]));
+      }
+      state.lastSync=new Date(); render();
+    }catch(err){errorCard(err)}finally{state.loading=false;updateSync()}
+  }
+
+  function updateSync(){ $('#sync-status').textContent=state.lastSync?`Updated ${state.lastSync.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}`:'Not yet updated'; }
+  function yearTxns(prop){return (state.data.transactions?.[prop]||[]).filter(t=>String(t.date||'').startsWith(String(YEAR)));}
+  function txnTotals(items){const income=sum(items.filter(t=>t.type==='income'));const expenses=sum(items.filter(t=>t.type==='expense'));return{income,expenses,net:income-expenses};}
+
+  function renderBudget(){
+    const b=state.data.budget||{}; const income=b.income||[]; const expenses=b.expenses||{};
+    const totalIncome=sum(income); const catTotals=EXPENSE_CATS.map(name=>({name,amount:sum(expenses[name]||[])})); const totalExpenses=sum(catTotals);
+    const net=totalIncome-totalExpenses;
+    return `<div class="hero"><div class="hero-label">Monthly amount left</div><div class="hero-value">${money(net)}</div><div class="hero-note">Income after planned expenses and savings</div></div>
+      <div class="grid">${stat('Income',money(totalIncome),'per month','good')}${stat('Planned',money(totalExpenses),'per month','bad')}${stat('Margin',money(net),'per month',tone(net))}</div>
+      ${card('Income',income.sort((a,b)=>n(b.amount)-n(a.amount)).map(i=>row(i.name,money(i.amount),i.property?`${i.property} worksheet`:'' )).join(''),'Monthly')}
+      ${card('Expense categories',catTotals.filter(x=>x.amount).sort((a,b)=>b.amount-a.amount).map(x=>row(x.name,money(x.amount))).join(''),'Monthly')}`;
+  }
+
+  function renderCashFlow(){
+    const rentalRows=[...RENTALS].map(prop=>({prop,...txnTotals(yearTxns(prop))}));
+    const total={income:sum(rentalRows,x=>x.income),expenses:sum(rentalRows,x=>x.expenses)}; total.net=total.income-total.expenses;
+    return `<div class="hero"><div class="hero-label">2026 net rental cash flow</div><div class="hero-value">${money(total.net)}</div><div class="hero-note">Recorded income less recorded expenses</div></div>
+      <div class="grid">${stat('Income',money(total.income),'2026 YTD','good')}${stat('Expenses',money(total.expenses),'2026 YTD','bad')}${stat('Net',money(total.net),'3 rentals',tone(total.net))}</div>
+      ${card('By property',rentalRows.map(x=>row(x.prop,money(x.net),`${money(x.income)} in · ${money(x.expenses)} out`,tone(x.net))).join(''),'2026')}`;
+  }
+
+  const TAX_LABELS={w2:'W-2 wages',fmg_sp:'FMG income',esai_sp:'ESAI income',interest:'Interest income',ibkr_div:'Dividends',cap_gains:'Capital gains',se_income:'Self-employment income',rental_depr:'Rental depreciation',std_ded:'Standard deduction',fed_withheld:'Federal withheld',estimated_paid:'Estimated tax paid',md_withheld:'Maryland withheld',md_estimated:'Maryland estimated paid',md_529:'Maryland 529 deduction',md_county:'Maryland county'};
+  function renderTax(){
+    const tp=state.data.tax||{}; const rental=[...RENTALS].map(prop=>({prop,...txnTotals(yearTxns(prop))})); const rentalNet=sum(rental,x=>x.net);
+    const entries=Object.entries(tp).filter(([k,v])=>TAX_LABELS[k]&&v!==''&&v!==null&&v!==undefined);
+    const taxRows=entries.map(([k,v])=>row(TAX_LABELS[k],typeof v==='number'?money(v):String(v))).join('');
+    return `<div class="hero"><div class="hero-label">2026 tax planning</div><div class="hero-value">${money(rentalNet)}</div><div class="hero-note">Rental cash flow feeding the current tax plan</div></div>
+      <div class="grid">${rental.map(x=>stat(x.prop,money(x.net),'net cash flow',tone(x.net))).join('')}</div>
+      ${card('Saved planning inputs',taxRows,'2026')}
+      <div class="banner">This mobile view shows saved planning inputs and rental cash flow. Use the desktop Tax Planning tab for the full interactive tax calculation.</div>`;
+  }
+
+  function renderSavings(){
+    const s=state.data.savings||{}; const accounts=s.accounts||{}; const obligations=s.obligations||[]; const paidMap=s.payments?.[String(YEAR)]||{};
+    const liquid=n(accounts.robinhoodChecking??accounts.robinhood)+n(accounts.robinhoodBrokerage??accounts.ibkr); let annual=0,paid=0,outstanding=0;
+    const progress=obligations.map(o=>{const ppy=o.kind==='static'?1:(o.paymentsPerYear===2?2:1);const slots=(paidMap[o.id]||[]).slice(0,ppy);while(slots.length<ppy)slots.push(false);const count=slots.filter(Boolean).length;const left=n(o.amount)/ppy*(ppy-count);annual+=n(o.amount);paid+=n(o.amount)-left;outstanding+=left;return{o,left,count,ppy};});
+    const delta=liquid-annual;
+    return `<div class="hero"><div class="hero-label">Funding ${delta>=0?'surplus':'shortfall'}</div><div class="hero-value">${delta>=0?'+':'−'}${money(Math.abs(delta))}</div><div class="hero-note">Available accounts versus total 2026 obligations</div></div>
+      <div class="grid">${stat('Available',money(liquid),'liquid accounts','good')}${stat('Outstanding',money(outstanding),`${money(paid)} cleared`,'bad')}${stat('Annual total',money(annual),`${obligations.length} obligations`)}</div>
+      ${card('Account balances',Object.entries(accounts).map(([k,v])=>row(k.replace(/([A-Z])/g,' $1').replace(/^./,c=>c.toUpperCase()),money(v))).join(''))}
+      ${card('Obligations',progress.sort((a,b)=>b.left-a.left).map(({o,left,count,ppy})=>row(o.name,money(left),`${o.kind==='static'?(count?'Funded':'Unfunded'):`${count} of ${ppy} paid`} · ${money(o.amount)} total`,left?'bad':'good')).join(''),'2026')}`;
+  }
+
+  function momMonth(raw,key){
+    const t=raw.template||{};const m=raw.months?.[key]||{};const discretionary=n(t.variable?.discretionary);const spent=sum(m.discretionary||[]);const other=sum(m.otherExpenses||[]);
+    let fixedBudget=sum(t.fixed||[]),fixedPaid=0,fixedOver=0;
+    for(const item of t.fixed||[]){if(!m.fixedPaid?.[item.id])continue;const actual=n(m.fixedActual?.[item.id])||n(item.paymentAmount)||n(item.amount);fixedPaid+=actual;if(['electric','water','gas-heat'].includes(item.id))fixedOver+=Math.max(0,actual-n(item.amount));}
+    const overages=other+fixedOver;return{income:sum(t.income||[]),fixedBudget,fixedPaid,discretionary,spent,overages,left:discretionary-spent-overages};
+  }
+  function renderMom(){
+    const now=new Date();const key=`${YEAR}-${String(now.getMonth()+1).padStart(2,'0')}`;const x=momMonth(state.data.mom||{},key);const label=new Intl.DateTimeFormat('en-US',{month:'long',year:'numeric'}).format(now);
+    const month=state.data.mom?.months?.[key]||{};const purchases=[...(month.discretionary||[]),...(month.otherExpenses||[])].sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,10);
+    return `<div class="hero"><div class="hero-label">Overall spending left</div><div class="hero-value">${money(x.left)}</div><div class="hero-note">${esc(label)} · discretionary including overages</div></div>
+      <div class="grid">${stat('Monthly income',money(x.income),'template','good')}${stat('Fixed reserve',money(x.fixedBudget),`${money(x.fixedPaid)} paid`)}${stat('Other overages',money(x.overages),'this month',x.overages?'bad':'good')}</div>
+      ${card('Recent spending',purchases.map(i=>row(i.name||'Discretionary',fullMoney(i.amount),i.date||'')).join(''),label)}`;
+  }
+
+  function renderProperties(){
+    const chips=PROPERTIES.map(p=>`<button class="property-chip ${p===state.property?'active':''}" data-property="${p}">${p==='4781MC'?'4781 MC':p}</button>`).join('');
+    const items=yearTxns(state.property);const totals=txnTotals(items);const cats={};for(const t of items){const sign=t.type==='income'?1:-1;cats[t.category]=(cats[t.category]||0)+sign*n(t.amount)}
+    const recent=items.slice().sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,15);
+    return `<div class="property-strip">${chips}</div><div class="hero"><div class="hero-label">${esc(state.property)} · 2026 net</div><div class="hero-value">${money(totals.net)}</div><div class="hero-note">${money(totals.income)} income · ${money(totals.expenses)} expenses</div></div>
+      <div class="grid">${stat('Income',money(totals.income),'2026 YTD','good')}${stat('Expenses',money(totals.expenses),'2026 YTD','bad')}${stat('Entries',String(items.length),'transactions')}</div>
+      ${card('Category totals',Object.entries(cats).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1])).map(([k,v])=>row(CAT_NAMES[k]||k,money(v),'',tone(v))).join(''),'2026')}
+      ${card('Recent transactions',recent.map(t=>row(t.description||CAT_NAMES[t.category]||t.category,`${t.type==='expense'?'−':'+'}${fullMoney(t.amount)}`,t.date,t.type==='expense'?'bad':'good')).join(''))}`;
+  }
+
+  function render(){
+    $('#page-title').textContent=TITLES[state.view];
+    const fn={budget:renderBudget,cashflow:renderCashFlow,tax:renderTax,savings:renderSavings,mom:renderMom,properties:renderProperties}[state.view];
+    $('#content').innerHTML=fn();
+    document.querySelectorAll('[data-property]').forEach(btn=>btn.addEventListener('click',()=>{state.property=btn.dataset.property;render()}));
+  }
+
+  document.querySelectorAll('.nav-btn').forEach(btn=>btn.addEventListener('click',()=>{
+    document.querySelectorAll('.nav-btn').forEach(x=>x.classList.toggle('active',x===btn));state.view=btn.dataset.view;$('#page-title').textContent=TITLES[state.view];loadView();window.scrollTo({top:0,behavior:'smooth'});
+  }));
+  $('#refresh').addEventListener('click',()=>loadView(true));
+  $('#login-form').addEventListener('submit',async e=>{e.preventDefault();const button=$('#login-button');button.disabled=true;button.textContent='Signing in…';$('#login-error').textContent='';try{await signIn($('#password').value);$('#password').value='';showApp();await loadView(true)}catch(err){$('#login-error').textContent=err.message}finally{button.disabled=false;button.textContent='Open dashboard'}});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&state.lastSync&&Date.now()-state.lastSync.getTime()>60000)loadView(true)});
+  window.addEventListener('online',()=>loadView(true));
+  if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  (async()=>{try{await api({action:'verify_session'});showApp();loadView()}catch{showLogin()}})();
+  </script>
+</body>
+</html>
