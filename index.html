@@ -8192,7 +8192,7 @@ function nwEditorHtml() {
       <div class="form-group"><label>Category</label><input id="nw-category" value="${escAttr(item.category||'')}" placeholder="Real estate, retirement, mortgage…"></div>
       <div class="form-group"><label>Value</label><input id="nw-value" inputmode="decimal" value="${escAttr(item.value||'')}"></div>
       <div class="form-group wide"><label>Details</label><input id="nw-notes" value="${escAttr(item.notes||'')}"></div>`}
-    <div class="wide"><button class="btn btn-primary" onclick="nwSaveEditor()">Save</button></div>
+    <div class="wide"><button class="btn btn-primary" onclick="nwSaveEditor()">${isVehicle?'Save & value automatically':'Save'}</button></div>
   </div>`;
 }
 
@@ -8236,9 +8236,11 @@ function nwCancelEdit(){ _nwEditor=null; _renderNetWorthHtml(); }
 async function nwPersist(){ const result=await callApi({action:'save_net_worth',data:state.netWorth}); state.netWorth=result.data; _nwEditor=null; _renderNetWorthHtml(); }
 async function nwSaveEditor(){
   const id=_nwEditor.id||crypto.randomUUID();
+  let valuationWarning='';
   if(_nwEditor.kind==='vehicle'){
     const item={id,name:document.getElementById('nw-name').value.trim()||'Vehicle',make:document.getElementById('nw-make').value.trim(),model:document.getElementById('nw-model').value.trim(),year:Number(document.getElementById('nw-year').value),mileage:Number(document.getElementById('nw-mileage').value),value:parseMoney(document.getElementById('nw-value').value)};
     const idx=state.netWorth.vehicles.findIndex(x=>x.id===id); if(idx>=0)item.valuedAt=state.netWorth.vehicles[idx].valuedAt,item.valuationSource=state.netWorth.vehicles[idx].valuationSource;
+    if(!item.value){try{const valuation=await callApi({action:'value_net_worth_vehicle',vehicle:item});item.value=valuation.value;item.valuedAt=valuation.valuedAt;item.valuationSource=valuation.source;}catch(e){valuationWarning=e.message;}}
     if(idx>=0)state.netWorth.vehicles[idx]=item;else state.netWorth.vehicles.push(item);
   }else{
     const item={id,side:_nwEditor.side,category:document.getElementById('nw-category').value.trim()||'Other',name:document.getElementById('nw-name').value.trim(),value:parseMoney(document.getElementById('nw-value').value),notes:document.getElementById('nw-notes').value.trim()};
@@ -8246,6 +8248,7 @@ async function nwSaveEditor(){
     const idx=state.netWorth.manualItems.findIndex(x=>x.id===id);if(idx>=0)state.netWorth.manualItems[idx]=item;else state.netWorth.manualItems.push(item);
   }
   await nwPersist();
+  if(valuationWarning)showBrandedNotice({title:'Vehicle saved — valuation pending',message:valuationWarning,confirmLabel:'OK'});
 }
 
 function nwDelete(kind,id){ showBrandedNotice({type:'danger',title:'Delete net worth item?',message:'This removes the item and updates today’s net worth snapshot.',confirmLabel:'Yes, Delete',onConfirm:async()=>{const key=kind==='vehicle'?'vehicles':'manualItems';state.netWorth[key]=state.netWorth[key].filter(x=>x.id!==id);await nwPersist();}}); }
