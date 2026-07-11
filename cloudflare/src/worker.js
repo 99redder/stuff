@@ -87,6 +87,11 @@ async function runScheduledRobinhoodRefresh(env, scheduledTime) {
     status: response.status,
     ok: response.ok,
   }));
+  try {
+    await refreshNetWorthPlaid(env);
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'scheduled_net_worth_refresh_error', message: error instanceof Error ? error.message : String(error) }));
+  }
 }
 
 async function handleDataApi(request, env) {
@@ -163,6 +168,10 @@ async function handleDataApi(request, env) {
   if (action === 'get_savings')  return handleGetSavings(env);
   if (action === 'save_savings') return handleSaveSavings(env, body.data);
   if (action === 'get_robinhood_balance') return handleGetRobinhoodBalance(env, body.refresh === true, 'client');
+  if (action === 'get_net_worth') return handleGetNetWorth(env);
+  if (action === 'save_net_worth') return handleSaveNetWorth(env, body.data);
+  if (action === 'refresh_net_worth_plaid') return handleRefreshNetWorthPlaid(env);
+  if (action === 'value_net_worth_vehicle') return handleValueNetWorthVehicle(env, body.vehicle);
   // Note: Fair Share settings live inside the `budget` KV record
   // (data.fairShare), saved via save_budget — no dedicated action/key.
 
@@ -1711,6 +1720,157 @@ async function handleSaveDeductions(env, data) {
 async function handleGetSavings(env) {
   const data = await env.RENTALS.get('savings', 'json') || {};
   return jsonResponse({ data });
+}
+
+// ── Net Worth ────────────────────────────────────────────────────────────────
+
+const NET_WORTH_KEY = 'net_worth';
+
+function normalizeNetWorth(raw) {
+  const data = raw && typeof raw === 'object' ? raw : {};
+  const manualItems = Array.isArray(data.manualItems) ? data.manualItems.slice(0, 500).map(item => ({
+    id: String(item.id || crypto.randomUUID()),
+    side: item.side === 'liability' ? 'liability' : 'asset',
+    category: String(item.category || 'Other').trim().slice(0, 80),
+    name: String(item.name || '').trim().slice(0, 160),
+    value: Number.isFinite(Number(item.value)) && Number(item.value) >= 0 ? Number(item.value) : 0,
+    notes: String(item.notes || '').trim().slice(0, 500),
+  })).filter(item => item.name) : [];
+  const vehicles = Array.isArray(data.vehicles) ? data.vehicles.slice(0, 20).map(vehicle => ({
+    id: String(vehicle.id || crypto.randomUUID()),
+    name: String(vehicle.name || 'Vehicle').trim().slice(0, 160),
+    make: String(vehicle.make || '').trim().slice(0, 80),
+    model: String(vehicle.model || '').trim().slice(0, 80),
+    year: Math.max(1900, Math.min(new Date().getUTCFullYear() + 1, Math.round(Number(vehicle.year) || 0))),
+    mileage: Math.max(0, Math.min(1_000_000, Math.round(Number(vehicle.mileage) || 0))),
+    value: Number.isFinite(Number(vehicle.value)) && Number(vehicle.value) >= 0 ? Number(vehicle.value) : 0,
+    valuedAt: typeof vehicle.valuedAt === 'string' ? vehicle.valuedAt : '',
+    valuationSource: String(vehicle.valuationSource || '').slice(0, 80),
+  })).filter(vehicle => vehicle.make && vehicle.model && vehicle.year >= 1900) : [];
+  const plaidAccounts = Array.isArray(data.plaidAccounts) ? data.plaidAccounts.slice(0, 200) : [];
+  const history = Array.isArray(data.history) ? data.history.slice(-730) : [];
+  return { manualItems, vehicles, plaidAccounts, plaidRefreshedAt: data.plaidRefreshedAt || '', history };
+}
+
+function netWorthTotals(data) {
+  let assets = 0;
+  let liabilities = 0;
+  for (const item of data.manualItems) (item.side === 'liability' ? liabilities += item.value : assets += item.value);
+  for (const vehicle of data.vehicles) assets += vehicle.value;
+  for (const account of data.plaidAccounts) {
+    const value = Math.max(0, Number(account.value) || 0);
+    if (account.side === 'liability') liabilities += value;
+    else assets += value;
+  }
+  return { assets, liabilities, netWorth: assets - liabilities };
+}
+
+function addNetWorthSnapshot(data) {
+  const date = new Date().toISOString().slice(0, 10);
+  const totals = netWorthTotals(data);
+  const snapshot = { date, ...totals };
+  const existing = data.history.findIndex(item => item.date === date);
+  if (existing >= 0) data.history[existing] = snapshot;
+  else data.history.push(snapshot);
+  data.history = data.history.slice(-730);
+}
+
+async function handleGetNetWorth(env) {
+  return jsonResponse({ data: normalizeNetWorth(await env.RENTALS.get(NET_WORTH_KEY, 'json')) });
+}
+
+async function handleSaveNetWorth(env, incoming) {
+  const current = normalizeNetWorth(await env.RENTALS.get(NET_WORTH_KEY, 'json'));
+  const submitted = normalizeNetWorth(incoming);
+  current.manualItems = submitted.manualItems;
+  current.vehicles = submitted.vehicles;
+  addNetWorthSnapshot(current);
+  await env.RENTALS.put(NET_WORTH_KEY, JSON.stringify(current));
+  return jsonResponse({ success: true, data: current });
+}
+
+function plaidAccessTokens(env) {
+  const tokens = [];
+  if (env.PLAID_ACCESS_TOKEN) tokens.push(env.PLAID_ACCESS_TOKEN);
+  if (env.PLAID_ACCESS_TOKENS) {
+    try {
+      const parsed = JSON.parse(env.PLAID_ACCESS_TOKENS);
+      if (Array.isArray(parsed)) tokens.push(...parsed.filter(token => typeof token === 'string'));
+    } catch { /* ignore malformed optional multi-item secret */ }
+  }
+  return [...new Set(tokens)];
+}
+
+async function refreshNetWorthPlaid(env) {
+  if (!env.PLAID_CLIENT_ID || !env.PLAID_SECRET) throw new Error('Plaid credentials are not configured');
+  const tokens = plaidAccessTokens(env);
+  if (!tokens.length) throw new Error('No Plaid access token is configured');
+  const responses = await Promise.all(tokens.map(async accessToken => {
+    const response = await fetch('https://production.plaid.com/accounts/get', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'PLAID-CLIENT-ID': env.PLAID_CLIENT_ID,
+        'PLAID-SECRET': env.PLAID_SECRET,
+        'Plaid-Version': '2020-09-14',
+      },
+      body: JSON.stringify({ access_token: accessToken }),
+    });
+    const payload = await readJsonLimited(response, MAX_UPSTREAM_JSON_BYTES);
+    if (!response.ok) throw new Error(`Plaid accounts request failed (${response.status})`);
+    return Array.isArray(payload.accounts) ? payload.accounts : [];
+  }));
+  const liabilityTypes = new Set(['credit', 'loan']);
+  const accounts = responses.flat().map(account => ({
+    id: String(account.account_id || ''),
+    name: String(account.name || account.official_name || 'Plaid account').slice(0, 160),
+    officialName: String(account.official_name || '').slice(0, 200),
+    mask: String(account.mask || '').slice(-4),
+    type: String(account.type || ''),
+    subtype: String(account.subtype || ''),
+    side: liabilityTypes.has(account.type) ? 'liability' : 'asset',
+    value: Math.max(0, Number(account.balances?.current) || 0),
+    available: Number.isFinite(Number(account.balances?.available)) ? Number(account.balances.available) : null,
+    currency: String(account.balances?.iso_currency_code || 'USD'),
+  })).filter(account => account.id);
+  const data = normalizeNetWorth(await env.RENTALS.get(NET_WORTH_KEY, 'json'));
+  data.plaidAccounts = accounts;
+  data.plaidRefreshedAt = new Date().toISOString();
+  addNetWorthSnapshot(data);
+  await env.RENTALS.put(NET_WORTH_KEY, JSON.stringify(data));
+  return data;
+}
+
+async function handleRefreshNetWorthPlaid(env) {
+  try {
+    return jsonResponse({ data: await refreshNetWorthPlaid(env) });
+  } catch (error) {
+    return jsonResponse({ error: error instanceof Error ? error.message : 'Plaid refresh failed' }, 502);
+  }
+}
+
+async function handleValueNetWorthVehicle(env, vehicle) {
+  if (!env.CARAPI_TOKEN) return jsonResponse({ error: 'Automatic vehicle valuation is not configured yet' }, 503);
+  const make = String(vehicle?.make || '').trim().slice(0, 80);
+  const model = String(vehicle?.model || '').trim().slice(0, 80);
+  const year = Math.round(Number(vehicle?.year) || 0);
+  const mileageMiles = Math.max(0, Math.round(Number(vehicle?.mileage) || 0));
+  if (!make || !model || year < 1900 || year > new Date().getUTCFullYear() + 1) {
+    return jsonResponse({ error: 'Make, model, and model year are required' }, 400);
+  }
+  const url = new URL('https://api.carapi.dev/v1/vehicle-valuation');
+  url.searchParams.set('make', make);
+  url.searchParams.set('model', model);
+  url.searchParams.set('year', String(year));
+  url.searchParams.set('country', 'US');
+  url.searchParams.set('token', env.CARAPI_TOKEN);
+  if (mileageMiles) url.searchParams.set('mileage', String(Math.round(mileageMiles * 1.609344)));
+  const response = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
+  const payload = await readJsonLimited(response, MAX_UPSTREAM_JSON_BYTES);
+  if (!response.ok) return jsonResponse({ error: payload.error || `Vehicle valuation failed (${response.status})` }, response.status === 404 ? 404 : 502);
+  const value = Number(payload.valuationPrice);
+  if (!Number.isFinite(value) || value < 0) return jsonResponse({ error: 'Vehicle valuation was unavailable' }, 502);
+  return jsonResponse({ value, currency: payload.currency || 'USD', valuedAt: new Date().toISOString(), source: 'CarAPI.dev' });
 }
 
 // ── Plaid / Robinhood Checking ───────────────────────────────────────────────

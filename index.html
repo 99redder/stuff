@@ -1205,6 +1205,22 @@
     @media (max-width:768px) { .tp-grid-3 { grid-template-columns:1fr 1fr; } .tp-grid-2 { grid-template-columns:1fr; } }
     @media (max-width:480px) { .tp-grid-3 { grid-template-columns:1fr; } }
 
+    /* ── Net Worth ──────────────────────────────────────────────────────── */
+    .nw-hero { display:grid; grid-template-columns:repeat(3,1fr); gap:1rem; margin-bottom:1rem; }
+    .nw-hero .card { padding:1.15rem; }
+    .nw-big { font-size:1.8rem; font-weight:800; margin-top:.35rem; font-variant-numeric:tabular-nums; }
+    .nw-layout { display:grid; grid-template-columns:1fr 1fr; gap:1rem; align-items:start; }
+    .nw-line { border:1px solid var(--border); border-radius:10px; margin-bottom:.6rem; background:var(--surface2); }
+    .nw-line summary { cursor:pointer; display:flex; justify-content:space-between; gap:1rem; padding:.8rem .9rem; font-weight:700; list-style:none; }
+    .nw-line summary::-webkit-details-marker { display:none; }
+    .nw-line-body { border-top:1px solid var(--border); padding:.75rem .9rem; color:var(--text-muted); font-size:.84rem; }
+    .nw-actions { display:flex; gap:.4rem; margin-top:.65rem; flex-wrap:wrap; }
+    .nw-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.7rem; padding:1rem; margin-bottom:1rem; }
+    .nw-form .wide { grid-column:1/-1; }
+    .nw-chart { width:100%; height:220px; display:block; }
+    .nw-source { font-size:.72rem; color:var(--text-muted); line-height:1.4; }
+    @media (max-width:800px) { .nw-layout,.nw-hero { grid-template-columns:1fr; } }
+
     /* ── Print Styles ───────────────────────────────────────────────────── */
     @media print {
       .app-header, .view-nav, #print-btn, .btn, .no-print { display: none !important; }
@@ -1233,13 +1249,14 @@
       <button class="tp-header-btn" id="budget-btn" onclick="switchView('budget')">Monthly Budget</button>
       <button class="tp-header-btn" id="cash-flow-btn" onclick="switchView('cash-flow')">2026 Cash Flow</button>
       <button class="tp-header-btn" id="tax-planning-btn" onclick="switchView('tax-planning')">Tax Planning</button>
+      <button class="tp-header-btn" id="net-worth-btn" onclick="switchView('net-worth')">Net Worth</button>
       <button class="tp-header-btn" id="savings-btn" onclick="switchView('savings')">💰 Savings</button>
-      <button class="tp-header-btn" id="mom-budget-btn" onclick="switchView('mom-budget')">Mom Budget</button>
       <details class="header-tools-menu" id="header-tools-menu">
         <summary class="tp-header-btn" id="header-tools-summary">More</summary>
         <div class="header-tools-panel">
           <button class="tp-header-btn" id="solar-btn" onclick="switchView('solar')">☀️ Solar</button>
           <button class="tp-header-btn" id="deductions-btn" onclick="switchView('deductions')">Deductions Tracker</button>
+          <button class="tp-header-btn" id="mom-budget-btn" onclick="switchView('mom-budget')">Mom Budget</button>
         </div>
       </details>
       <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
@@ -1582,7 +1599,7 @@ const MAINTENANCE_BASIS_PROPERTIES = new Set(['6AL', '95EB', ...PRIMARY_PROPERTI
 const MOVE_IN_PURCHASE_PROPERTY = '4781MC';
 const MOVE_IN_PURCHASE_DEFAULT_DATE = '2027-02-01';
 const PRIMARY_VIEWS = new Set(['investment-return', 'maintenance']);
-const GLOBAL_HEADER_VIEWS = new Set(['tax-planning', 'budget', 'cash-flow', 'mom-budget', 'solar', 'deductions', 'savings']);
+const GLOBAL_HEADER_VIEWS = new Set(['tax-planning', 'net-worth', 'budget', 'cash-flow', 'mom-budget', 'solar', 'deductions', 'savings']);
 const CASH_FLOW_YEAR = 2026;
 const CASH_FLOW_AUTO_PROCEEDS_PROPS = ['6AL', '95EB', '731WO'];
 const PROPERTY_MORTGAGE_PAYOFFS = { '731WO': 135000 };
@@ -1877,6 +1894,7 @@ const state = {
   cashFlow: null,              // loaded once, global 2026 cash-flow planner
   solar: { config: null, entries: null, summaries: null },
   savings: null,               // loaded once, global (not per-property)
+  netWorth: null,
   robinhoodBalance: null,
   robinhoodBalanceLoading: false
 };
@@ -2144,7 +2162,7 @@ function switchProperty(prop) {
   }
   document.getElementById('property-tabs').style.display = '';
   document.getElementById('view-nav').style.display = '';
-  ['tax-planning-btn', 'budget-btn', 'cash-flow-btn', 'mom-budget-btn', 'solar-btn', 'deductions-btn', 'savings-btn', 'header-tools-summary']
+  ['tax-planning-btn', 'net-worth-btn', 'budget-btn', 'cash-flow-btn', 'mom-budget-btn', 'solar-btn', 'deductions-btn', 'savings-btn', 'header-tools-summary']
     .forEach(id => document.getElementById(id)?.classList.remove('active'));
   renderView();
 }
@@ -2159,6 +2177,7 @@ function switchView(view) {
     b.classList.toggle('active', b.dataset.view === view);
   });
   const isTaxPlanning = view === 'tax-planning';
+  const isNetWorth = view === 'net-worth';
   const isBudget = view === 'budget';
   const isCashFlow = view === 'cash-flow';
   const isMomBudget = view === 'mom-budget';
@@ -2174,6 +2193,8 @@ function switchView(view) {
   // Toggle header button active states
   const tpBtn = document.getElementById('tax-planning-btn');
   if (tpBtn) tpBtn.classList.toggle('active', isTaxPlanning);
+  const nwBtn = document.getElementById('net-worth-btn');
+  if (nwBtn) nwBtn.classList.toggle('active', isNetWorth);
   const budgetBtn = document.getElementById('budget-btn');
   if (budgetBtn) budgetBtn.classList.toggle('active', isBudget);
   const cashFlowBtn = document.getElementById('cash-flow-btn');
@@ -2187,7 +2208,7 @@ function switchView(view) {
   const savingsBtn = document.getElementById('savings-btn');
   if (savingsBtn) savingsBtn.classList.toggle('active', isSavings);
   const toolsSummary = document.getElementById('header-tools-summary');
-  if (toolsSummary) toolsSummary.classList.toggle('active', isSolar || isDeductions);
+  if (toolsSummary) toolsSummary.classList.toggle('active', isSolar || isDeductions || isMomBudget);
   renderView();
 }
 
@@ -2206,6 +2227,7 @@ async function renderView() {
       case 'add-entry':     await renderAddEntry();     break;
       case 'portfolio':     await renderPortfolio();    break;
       case 'tax-planning':  await renderTaxPlanning();   break;
+      case 'net-worth':     await renderNetWorth();      break;
       case 'budget':        await renderBudget();        break;
       case 'cash-flow':     await renderCashFlow();      break;
       case 'mom-budget':    await renderMomBudget();     break;
@@ -8090,6 +8112,145 @@ async function cfDelete(type, id) {
     }
   });
 }
+
+// ── View: Net Worth ──────────────────────────────────────────────────────────
+
+let _nwEditor = null;
+let _nwAutoRefreshStarted = false;
+
+function nwPercentile(value, anchors) {
+  const amount = Math.max(0, Number(value) || 0);
+  if (amount <= anchors[0][0]) return anchors[0][1];
+  for (let i = 1; i < anchors.length; i++) {
+    const [highValue, highPct] = anchors[i];
+    const [lowValue, lowPct] = anchors[i - 1];
+    if (amount <= highValue) {
+      const ratio = (Math.log1p(amount) - Math.log1p(lowValue)) / (Math.log1p(highValue) - Math.log1p(lowValue));
+      return lowPct + (highPct - lowPct) * ratio;
+    }
+  }
+  return 99;
+}
+
+function nwUsPercentile(value) {
+  return nwPercentile(value, [[0,5],[27100,25],[192900,50],[658900,75],[1938000,90],[3794600,95],[10000000,99]]);
+}
+
+function nwGlobalPercentile(value) {
+  return nwPercentile(value, [[0,5],[10000,41.1],[100000,83.2],[1000000,98.5],[5000000,99.8]]);
+}
+
+function nwTotals() {
+  const data = state.netWorth || { manualItems:[], vehicles:[], plaidAccounts:[] };
+  let assets = 0, liabilities = 0;
+  data.manualItems.forEach(item => item.side === 'liability' ? liabilities += Number(item.value)||0 : assets += Number(item.value)||0);
+  data.vehicles.forEach(item => assets += Number(item.value)||0);
+  data.plaidAccounts.forEach(item => item.side === 'liability' ? liabilities += Number(item.value)||0 : assets += Number(item.value)||0);
+  return { assets, liabilities, netWorth: assets - liabilities };
+}
+
+function nwChart(history) {
+  const rows = (history || []).slice(-24);
+  if (rows.length < 2) return '<div class="tp-note" style="padding:2rem;text-align:center">History begins with today’s snapshot. The trajectory chart will appear after another dated snapshot.</div>';
+  const values = rows.map(row => Number(row.netWorth)||0);
+  const min = Math.min(...values), max = Math.max(...values), span = Math.max(1, max-min);
+  const points = rows.map((row,i) => `${30 + i * (740 / Math.max(1,rows.length-1))},${185 - ((Number(row.netWorth)||0)-min)/span*145}`).join(' ');
+  return `<svg class="nw-chart" viewBox="0 0 800 220" role="img" aria-label="Net worth trajectory">
+    <line x1="30" y1="185" x2="770" y2="185" stroke="var(--border)"/>
+    <polyline points="${points}" fill="none" stroke="var(--primary)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="30" y="210" fill="var(--text-muted)" font-size="12">${escHtml(rows[0].date)}</text>
+    <text x="770" y="210" text-anchor="end" fill="var(--text-muted)" font-size="12">${escHtml(rows.at(-1).date)}</text>
+    <text x="35" y="25" fill="var(--text-muted)" font-size="12">${fmtShort(max)}</text>
+    <text x="35" y="180" fill="var(--text-muted)" font-size="12">${fmtShort(min)}</text>
+  </svg>`;
+}
+
+function nwLine(item, source, editable, kind='manual') {
+  const detail = [item.category || item.subtype || item.type, item.mask ? `•••• ${item.mask}` : '', item.notes || '', source].filter(Boolean).join(' · ');
+  return `<details class="nw-line">
+    <summary><span>${escHtml(item.name)}</span><span>${fmt(Number(item.value)||0)}</span></summary>
+    <div class="nw-line-body">${escHtml(detail || 'No additional details')}
+      ${editable ? `<div class="nw-actions"><button class="btn btn-secondary btn-sm" onclick="nwEdit('${kind}','${escAttr(item.id)}')">Edit</button><button class="btn btn-danger btn-sm" onclick="nwDelete('${kind}','${escAttr(item.id)}')">Delete</button>${kind==='vehicle'?`<button class="btn btn-primary btn-sm" onclick="nwValueVehicle('${escAttr(item.id)}')">Update market value</button>`:''}</div>` : ''}
+    </div>
+  </details>`;
+}
+
+function nwEditorHtml() {
+  if (!_nwEditor) return '';
+  const isVehicle = _nwEditor.kind === 'vehicle';
+  const list = isVehicle ? state.netWorth.vehicles : state.netWorth.manualItems;
+  const item = list.find(row => row.id === _nwEditor.id) || {};
+  return `<div class="card nw-form">
+    <div class="wide" style="display:flex;justify-content:space-between;align-items:center"><strong>${item.id?'Edit':'Add'} ${isVehicle?'vehicle':_nwEditor.side}</strong><button class="btn btn-ghost btn-sm" onclick="nwCancelEdit()">Cancel</button></div>
+    <div class="form-group"><label>Name</label><input id="nw-name" value="${escAttr(item.name||'')}" placeholder="${isVehicle?'Family SUV':'Account or property'}"></div>
+    ${isVehicle ? `
+      <div class="form-group"><label>Make</label><input id="nw-make" value="${escAttr(item.make||'')}"></div>
+      <div class="form-group"><label>Model</label><input id="nw-model" value="${escAttr(item.model||'')}"></div>
+      <div class="form-group"><label>Model year</label><input id="nw-year" type="number" value="${escAttr(item.year||'')}"></div>
+      <div class="form-group"><label>Mileage</label><input id="nw-mileage" type="number" value="${escAttr(item.mileage||'')}"></div>
+      <div class="form-group"><label>Current value</label><input id="nw-value" inputmode="decimal" value="${escAttr(item.value||'')}"></div>` : `
+      <div class="form-group"><label>Category</label><input id="nw-category" value="${escAttr(item.category||'')}" placeholder="Real estate, retirement, mortgage…"></div>
+      <div class="form-group"><label>Value</label><input id="nw-value" inputmode="decimal" value="${escAttr(item.value||'')}"></div>
+      <div class="form-group wide"><label>Details</label><input id="nw-notes" value="${escAttr(item.notes||'')}"></div>`}
+    <div class="wide"><button class="btn btn-primary" onclick="nwSaveEditor()">Save</button></div>
+  </div>`;
+}
+
+function _renderNetWorthHtml() {
+  const data = state.netWorth;
+  const totals = nwTotals();
+  const assets = [
+    ...data.plaidAccounts.filter(a=>a.side!=='liability').map(a=>nwLine(a,'Plaid · read-only',false)),
+    ...data.vehicles.map(a=>nwLine(a, a.valuedAt ? `Vehicle estimate updated ${a.valuedAt.slice(0,10)}` : 'Vehicle', true, 'vehicle')),
+    ...data.manualItems.filter(a=>a.side!=='liability').map(a=>nwLine(a,'Manual',true))
+  ].join('');
+  const liabilities = [
+    ...data.plaidAccounts.filter(a=>a.side==='liability').map(a=>nwLine(a,'Plaid · read-only',false)),
+    ...data.manualItems.filter(a=>a.side==='liability').map(a=>nwLine(a,'Manual',true))
+  ].join('');
+  const us = nwUsPercentile(totals.netWorth), global = nwGlobalPercentile(totals.netWorth);
+  document.getElementById('app').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap"><div><h2 style="margin:0">Net Worth</h2><div class="tp-note">Assets minus liabilities · Plaid balances are cached and free to retrieve</div></div><button class="btn btn-secondary" onclick="nwRefreshPlaid(this)">↻ Refresh Plaid accounts</button></div>
+    <div class="nw-hero"><div class="card"><div class="label">Net Worth</div><div class="nw-big" style="color:${totals.netWorth>=0?'var(--success)':'var(--danger)'}">${totals.netWorth<0?'−':''}${fmt(Math.abs(totals.netWorth))}</div></div><div class="card"><div class="label">Compared with U.S.</div><div class="nw-big">Higher than ~${us.toFixed(0)}%</div><div class="nw-source">Estimated from Federal Reserve 2022 SCF family net-worth thresholds.</div></div><div class="card"><div class="label">Compared globally</div><div class="nw-big">Higher than ~${global.toFixed(0)}%</div><div class="nw-source">Estimated from UBS Global Wealth Report 2026 adult wealth bands.</div></div></div>
+    ${nwEditorHtml()}
+    <div class="nw-layout"><section class="card"><div class="card-header"><div><div class="card-title">Assets</div><div class="tp-note">${fmt(totals.assets)}</div></div><div class="nw-actions"><button class="btn btn-primary btn-sm" onclick="nwAdd('asset')">+ Manual asset</button><button class="btn btn-secondary btn-sm" onclick="nwAddVehicle()">+ Vehicle</button></div></div><div class="card-body">${assets||'<div class="tp-note">No assets added yet.</div>'}</div></section><section class="card"><div class="card-header"><div><div class="card-title">Liabilities</div><div class="tp-note">${fmt(totals.liabilities)}</div></div><button class="btn btn-primary btn-sm" onclick="nwAdd('liability')">+ Manual liability</button></div><div class="card-body">${liabilities||'<div class="tp-note">No liabilities added yet.</div>'}</div></section></div>
+    <section class="card" style="margin-top:1rem"><div class="card-header"><div class="card-title">Net Worth Trajectory</div></div><div class="card-body">${nwChart(data.history)}</div></section>
+    <div class="nw-source" style="margin-top:.8rem">Percentiles are estimates, not financial advice. U.S.: Federal Reserve Survey of Consumer Finances (2022 dollars). Global: UBS Global Wealth Report 2026 (2025 wealth bands).</div>`;
+}
+
+async function renderNetWorth() {
+  if (!state.netWorth) state.netWorth = (await callApi({action:'get_net_worth'})).data;
+  _renderNetWorthHtml();
+  const age = Date.now() - Date.parse(state.netWorth.plaidRefreshedAt || 0);
+  if (!_nwAutoRefreshStarted && age > 6*60*60*1000) {
+    _nwAutoRefreshStarted = true;
+    callApi({action:'refresh_net_worth_plaid'}).then(result => { state.netWorth=result.data; if(state.currentView==='net-worth') _renderNetWorthHtml(); }).catch(()=>{});
+  }
+}
+
+function nwAdd(side){ _nwEditor={kind:'manual',side}; _renderNetWorthHtml(); }
+function nwAddVehicle(){ _nwEditor={kind:'vehicle',side:'asset'}; _renderNetWorthHtml(); }
+function nwEdit(kind,id){ const item=(kind==='vehicle'?state.netWorth.vehicles:state.netWorth.manualItems).find(x=>x.id===id); _nwEditor={kind,id,side:item?.side||'asset'}; _renderNetWorthHtml(); }
+function nwCancelEdit(){ _nwEditor=null; _renderNetWorthHtml(); }
+
+async function nwPersist(){ const result=await callApi({action:'save_net_worth',data:state.netWorth}); state.netWorth=result.data; _nwEditor=null; _renderNetWorthHtml(); }
+async function nwSaveEditor(){
+  const id=_nwEditor.id||crypto.randomUUID();
+  if(_nwEditor.kind==='vehicle'){
+    const item={id,name:document.getElementById('nw-name').value.trim()||'Vehicle',make:document.getElementById('nw-make').value.trim(),model:document.getElementById('nw-model').value.trim(),year:Number(document.getElementById('nw-year').value),mileage:Number(document.getElementById('nw-mileage').value),value:parseMoney(document.getElementById('nw-value').value)};
+    const idx=state.netWorth.vehicles.findIndex(x=>x.id===id); if(idx>=0)item.valuedAt=state.netWorth.vehicles[idx].valuedAt,item.valuationSource=state.netWorth.vehicles[idx].valuationSource;
+    if(idx>=0)state.netWorth.vehicles[idx]=item;else state.netWorth.vehicles.push(item);
+  }else{
+    const item={id,side:_nwEditor.side,category:document.getElementById('nw-category').value.trim()||'Other',name:document.getElementById('nw-name').value.trim(),value:parseMoney(document.getElementById('nw-value').value),notes:document.getElementById('nw-notes').value.trim()};
+    if(!item.name)return;
+    const idx=state.netWorth.manualItems.findIndex(x=>x.id===id);if(idx>=0)state.netWorth.manualItems[idx]=item;else state.netWorth.manualItems.push(item);
+  }
+  await nwPersist();
+}
+
+function nwDelete(kind,id){ showBrandedNotice({type:'danger',title:'Delete net worth item?',message:'This removes the item and updates today’s net worth snapshot.',confirmLabel:'Yes, Delete',onConfirm:async()=>{const key=kind==='vehicle'?'vehicles':'manualItems';state.netWorth[key]=state.netWorth[key].filter(x=>x.id!==id);await nwPersist();}}); }
+async function nwRefreshPlaid(btn){btn.disabled=true;btn.textContent='Refreshing…';try{state.netWorth=(await callApi({action:'refresh_net_worth_plaid'})).data;_renderNetWorthHtml();}catch(e){showBrandedNotice({title:'Plaid refresh unavailable',message:e.message,confirmLabel:'OK'});} }
+async function nwValueVehicle(id){const vehicle=state.netWorth.vehicles.find(x=>x.id===id);try{const result=await callApi({action:'value_net_worth_vehicle',vehicle});vehicle.value=result.value;vehicle.valuedAt=result.valuedAt;vehicle.valuationSource=result.source;await nwPersist();}catch(e){showBrandedNotice({title:'Vehicle valuation unavailable',message:e.message,confirmLabel:'OK'});} }
 
 // ── View: Savings ────────────────────────────────────────────────────────────
 
