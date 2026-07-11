@@ -2002,6 +2002,14 @@ function plaidItemOwners(env) {
   } catch { return {}; }
 }
 
+function plaidItemLabels(env) {
+  if (!env.PLAID_ITEM_LABELS) return {};
+  try {
+    const parsed=JSON.parse(env.PLAID_ITEM_LABELS);
+    return parsed && typeof parsed==='object' && !Array.isArray(parsed) ? parsed : {};
+  } catch { return {}; }
+}
+
 async function refreshNetWorthPlaid(env) {
   if (!env.PLAID_CLIENT_ID || !env.PLAID_SECRET) throw new Error('Plaid credentials are not configured');
   const tokens = plaidAccessTokens(env);
@@ -2054,9 +2062,11 @@ async function refreshNetWorthPlaid(env) {
     } catch { /* retain the generic Plaid fallback if metadata is unavailable */ }
   }));
   const itemOwners=plaidItemOwners(env);
+  const itemLabels=plaidItemLabels(env);
   const accounts = responses.flatMap(({ itemId, institutionId, accounts: itemAccounts }) => {
     return itemAccounts.map(account => {
       const owner=String(itemOwners[itemId] || '').trim().slice(0,40);
+      const itemLabel=String(itemLabels[itemId] || '').trim().slice(0,100);
       const institution = account.account_id === env.PLAID_ACCOUNT_ID ? 'Robinhood' : (institutionNames[institutionId] || 'Plaid');
       const accountName = String(account.name || '').trim();
       const officialName = String(account.official_name || '').trim();
@@ -2066,6 +2076,7 @@ async function refreshNetWorthPlaid(env) {
         || (institution === 'Navy Federal' && /nfcu/i.test(rawName));
       let displayName = alreadyLabeled ? rawName : `${institution} ${rawName}`;
       if (institution==='Robinhood' && account.subtype==='brokerage' && owner) displayName=`${owner}'s Robinhood Individual Account`;
+      if (itemLabel) displayName=itemLabel;
       displayName = displayName.replace(/\btraditional\b/gi,'Traditional');
       if (institution === 'Navy Federal' && account.subtype === 'mortgage' && !/\(731WO\)/i.test(displayName)) {
         displayName += ' (731WO)';
