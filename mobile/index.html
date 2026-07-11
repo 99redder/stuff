@@ -116,6 +116,7 @@
   <script>
   'use strict';
   const API = 'https://rentals-api.99redder.workers.dev/api/data';
+  const SESSION_TOKEN_KEY = 'rentals_session_token';
   const YEAR = 2026;
   const PROPERTIES = ['6AL','95EB','446BB','731WO','4781MC'];
   const RENTALS = new Set(['6AL','95EB','446BB']);
@@ -132,7 +133,9 @@
   const sum = (items, fn=x=>n(x.amount)) => (items||[]).reduce((t,x)=>t+fn(x),0);
 
   async function api(body) {
-    const res = await fetch(API,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const token=sessionStorage.getItem(SESSION_TOKEN_KEY)||'';
+    const headers={'Content-Type':'application/json'};if(token)headers['X-Session']=token;
+    const res = await fetch(API,{method:'POST',credentials:'include',headers,body:JSON.stringify(body)});
     const data = await res.json().catch(()=>({}));
     if (res.status===401) { showLogin(); throw new Error('Your session expired. Please sign in again.'); }
     if (!res.ok) throw new Error(data.error || 'Unable to load data');
@@ -143,10 +146,10 @@
     const res = await fetch(API,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'verify_password',password})});
     const data = await res.json().catch(()=>({}));
     if (!res.ok || !data.ok) throw new Error(data.error || 'Incorrect password');
-    sessionStorage.removeItem('rentals_session_token');
+    if(data.sessionToken)sessionStorage.setItem(SESSION_TOKEN_KEY,data.sessionToken);
   }
 
-  function showLogin(){ sessionStorage.removeItem('rentals_session_token'); $('#app').classList.add('hidden'); $('#login').classList.remove('hidden'); }
+  function showLogin(){ sessionStorage.removeItem(SESSION_TOKEN_KEY); $('#app').classList.add('hidden'); $('#login').classList.remove('hidden'); }
   function showApp(){ $('#login').classList.add('hidden'); $('#app').classList.remove('hidden'); }
   function loading(){ $('#content').innerHTML='<div class="loading"><div class="spinner"></div>Loading current data…</div>'; }
   function errorCard(err){ $('#content').innerHTML=`<div class="banner">${esc(err.message||err)}</div><div class="empty">Pull down or tap refresh to try again.</div>`; }
@@ -261,8 +264,7 @@
   $('#login-form').addEventListener('submit',async e=>{e.preventDefault();const button=$('#login-button');button.disabled=true;button.textContent='Signing in…';$('#login-error').textContent='';try{await signIn($('#password').value);$('#password').value='';showApp();await loadView(true)}catch(err){$('#login-error').textContent=err.message}finally{button.disabled=false;button.textContent='Open dashboard'}});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden&&state.lastSync&&Date.now()-state.lastSync.getTime()>60000)loadView(true)});
   window.addEventListener('online',()=>loadView(true));
-  if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
-  sessionStorage.removeItem('rentals_session_token');
+  if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').then(reg=>reg.update()).catch(()=>{});
   (async()=>{try{await api({action:'verify_session'});showApp();loadView()}catch{showLogin()}})();
   </script>
 </body>

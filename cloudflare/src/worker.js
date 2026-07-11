@@ -29,7 +29,7 @@ const MAX_USDA_PDF_BYTES = 5_000_000;
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Session',
   'Access-Control-Allow-Credentials': 'true',
   'Vary': 'Origin',
 };
@@ -327,7 +327,7 @@ async function handleVerifyPassword(request, env, password) {
     passwordVersion,
   }), { expirationTtl: SESSION_TTL_SECONDS });
 
-  return jsonResponse({ ok: true }, 200, {
+  return jsonResponse({ ok: true, sessionToken:token }, 200, {
     'Set-Cookie': `${SESSION_COOKIE}=${token}; Max-Age=${SESSION_TTL_SECONDS}; Path=/; HttpOnly; Secure; SameSite=None`,
   });
 }
@@ -458,7 +458,7 @@ async function authBurstAllowed(env, ip) {
 }
 
 function getSessionToken(request) {
-  return getCookie(request, SESSION_COOKIE);
+  return getCookie(request, SESSION_COOKIE) || request.headers.get('X-Session') || '';
 }
 
 function getCookie(request, name) {
