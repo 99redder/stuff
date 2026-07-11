@@ -8158,6 +8158,7 @@ let _nwEditor = null;
 let _nwTrimTimer = null;
 const _nwTrimCache = new Map();
 let _nwAssetSort = ['amount','alpha','type'].includes(localStorage.getItem('rentals_nw_asset_sort')) ? localStorage.getItem('rentals_nw_asset_sort') : 'amount';
+let _nwPrivacy = sessionStorage.getItem('rentals_nw_privacy') === '1';
 let _nwAutoRefreshStarted = false;
 let _nwRefreshPromise = null;
 let _nwTaxPlanning = null;
@@ -8210,6 +8211,15 @@ function nwGlobalPercentile(value) {
   return nwPercentile(value, [[0,5],[10000,41.1],[100000,83.2],[1000000,98.5],[5000000,99.8]]);
 }
 
+function nwFmt(value){ return _nwPrivacy ? '••••••' : fmt(value); }
+function nwFmtShort(value){ return _nwPrivacy ? '••••' : fmtShort(value); }
+function nwTogglePrivacy(){
+  _nwPrivacy=!_nwPrivacy;
+  sessionStorage.setItem('rentals_nw_privacy',_nwPrivacy?'1':'0');
+  _nwEditor=null;
+  _renderNetWorthHtml();
+}
+
 function nwTotals() {
   const data = state.netWorth || { manualItems:[], vehicles:[], propertyAssets:[], plaidAccounts:[] };
   let assets = 0, liabilities = 0;
@@ -8227,6 +8237,7 @@ function nwTotals() {
 }
 
 function nwChart(history) {
+  if(_nwPrivacy)return '<div class="tp-note" style="padding:2rem;text-align:center">Trajectory hidden while privacy mode is on.</div>';
   const rows = (history || []).slice(-24);
   if (rows.length < 2) return '<div class="tp-note" style="padding:2rem;text-align:center">History begins with today’s snapshot. The trajectory chart will appear after another dated snapshot.</div>';
   const values = rows.map(row => Number(row.netWorth)||0);
@@ -8237,17 +8248,17 @@ function nwChart(history) {
     <polyline points="${points}" fill="none" stroke="var(--primary)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
     <text x="30" y="210" fill="var(--text-muted)" font-size="12">${escHtml(rows[0].date)}</text>
     <text x="770" y="210" text-anchor="end" fill="var(--text-muted)" font-size="12">${escHtml(rows.at(-1).date)}</text>
-    <text x="35" y="25" fill="var(--text-muted)" font-size="12">${fmtShort(max)}</text>
-    <text x="35" y="180" fill="var(--text-muted)" font-size="12">${fmtShort(min)}</text>
+    <text x="35" y="25" fill="var(--text-muted)" font-size="12">${nwFmtShort(max)}</text>
+    <text x="35" y="180" fill="var(--text-muted)" font-size="12">${nwFmtShort(min)}</text>
   </svg>`;
 }
 
 function nwLine(item, source, editable, kind='manual') {
   const detail = [item.institution || '', item.category || item.subtype || item.type, item.mask ? `•••• ${item.mask}` : '', item.notes || '', source].filter(Boolean).join(' · ');
   return `<details class="nw-line">
-    <summary><span>${escHtml(item.name)}</span><span>${fmt(Number(item.value)||0)}</span></summary>
+    <summary><span>${escHtml(item.name)}</span><span>${nwFmt(Number(item.value)||0)}</span></summary>
     <div class="nw-line-body">${escHtml(detail || 'No additional details')}
-      ${editable ? `<div class="nw-actions"><button class="btn btn-secondary btn-sm" onclick="nwEdit('${kind}','${escAttr(item.id)}')">Edit</button><button class="btn btn-danger btn-sm" onclick="nwDelete('${kind}','${escAttr(item.id)}')">Delete</button>${kind==='vehicle'?`<button class="btn btn-primary btn-sm" onclick="nwValueVehicle('${escAttr(item.id)}')">Update market value</button>`:''}</div>` : ''}
+      ${editable&&!_nwPrivacy ? `<div class="nw-actions"><button class="btn btn-secondary btn-sm" onclick="nwEdit('${kind}','${escAttr(item.id)}')">Edit</button><button class="btn btn-danger btn-sm" onclick="nwDelete('${kind}','${escAttr(item.id)}')">Delete</button>${kind==='vehicle'?`<button class="btn btn-primary btn-sm" onclick="nwValueVehicle('${escAttr(item.id)}')">Update market value</button>`:''}</div>` : ''}
     </div>
   </details>`;
 }
@@ -8267,15 +8278,15 @@ function nwLabeledPlaidAccount(item) {
 }
 
 function nwPropertyLine(item) {
-  const detail = `${item.source} · Sale amount ${fmt(item.salePrice)} · Closing costs ${fmt(item.saleClosingCosts)} · Mortgage payoff ${fmt(item.mortgagePayoff)} · Federal tax ${fmt(item.federalTax)} · State/local tax ${fmt(item.stateTax)} · Depreciation recapture tax ${fmt(item.depreciationRecaptureTax)}`;
-  const valueLabel = `${item.value < 0 ? '−' : ''}${fmt(Math.abs(item.value))}`;
+  const detail = `${item.source} · Sale amount ${nwFmt(item.salePrice)} · Closing costs ${nwFmt(item.saleClosingCosts)} · Mortgage payoff ${nwFmt(item.mortgagePayoff)} · Federal tax ${nwFmt(item.federalTax)} · State/local tax ${nwFmt(item.stateTax)} · Depreciation recapture tax ${nwFmt(item.depreciationRecaptureTax)}`;
+  const valueLabel = `${!_nwPrivacy&&item.value < 0 ? '−' : ''}${nwFmt(Math.abs(item.value))}`;
   return `<details class="nw-line"><summary><span>${escHtml(item.name)}</span><span>${valueLabel}</span></summary><div class="nw-line-body">${escHtml(detail)}<div style="margin-top:.5rem;font-weight:700;color:${item.value < 0 ? 'var(--danger)' : 'var(--success)'}">Net Worth uses net proceeds: ${valueLabel}</div></div></details>`;
 }
 
 function nwTreasuryLine(item) {
-  const rows=(item.holdings||[]).map(bond=>`<tr><td>${escHtml(bond.cusip)}</td><td>${Number(bond.coupon).toFixed(3)}%</td><td>${fmt(Number(bond.par)||0)}</td><td>${fmt(Number(bond.marketValue)||0)}</td><td>${escHtml(bond.maturity||'')}</td></tr>`).join('');
+  const rows=(item.holdings||[]).map(bond=>`<tr><td>${escHtml(bond.cusip)}</td><td>${Number(bond.coupon).toFixed(3)}%</td><td>${nwFmt(Number(bond.par)||0)}</td><td>${nwFmt(Number(bond.marketValue)||0)}</td><td>${escHtml(bond.maturity||'')}</td></tr>`).join('');
   const updated=item.yieldDate?`Official yield date ${item.yieldDate}`:'Awaiting first market-value refresh';
-  return `<details class="nw-line"><summary><span>${escHtml(item.name)}</span><span>${fmt(Number(item.value)||0)}</span></summary><div class="nw-line-body"><div>${escHtml(item.source)} · ${escHtml(updated)} · Par ${fmt(Number(item.par)||0)} · Annual interest ${fmt(Number(item.annualInterest)||0)}</div><div style="overflow-x:auto;margin-top:.65rem"><table style="width:100%;border-collapse:collapse;font-size:.76rem"><thead><tr><th style="text-align:left">CUSIP</th><th style="text-align:right">Coupon</th><th style="text-align:right">Par</th><th style="text-align:right">Est. value</th><th style="text-align:right">Maturity</th></tr></thead><tbody>${rows}</tbody></table></div><div class="nw-source" style="margin-top:.6rem">Estimated from the official U.S. Treasury par yield curve; this is not an executable broker quote.</div></div></details>`;
+  return `<details class="nw-line"><summary><span>${escHtml(item.name)}</span><span>${nwFmt(Number(item.value)||0)}</span></summary><div class="nw-line-body"><div>${escHtml(item.source)} · ${escHtml(updated)} · Par ${nwFmt(Number(item.par)||0)} · Annual interest ${nwFmt(Number(item.annualInterest)||0)}</div><div style="overflow-x:auto;margin-top:.65rem"><table style="width:100%;border-collapse:collapse;font-size:.76rem"><thead><tr><th style="text-align:left">CUSIP</th><th style="text-align:right">Coupon</th><th style="text-align:right">Par</th><th style="text-align:right">Est. value</th><th style="text-align:right">Maturity</th></tr></thead><tbody>${rows}</tbody></table></div><div class="nw-source" style="margin-top:.6rem">Estimated from the official U.S. Treasury par yield curve; this is not an executable broker quote.</div></div></details>`;
 }
 
 function nwAssetType(item, origin) {
@@ -8297,15 +8308,15 @@ function nwRenderAssets(data) {
     ...(data.propertyAssets || []).map(item => ({ item, origin:'property', html:nwPropertyLine(item) })),
     ...data.plaidAccounts.filter(item=>item.side!=='liability').map(raw => { const item=nwLabeledPlaidAccount(raw); return { item, origin:'plaid', html:nwLine(item,'Plaid · read-only',false) }; }),
     ...data.vehicles.map(item => ({ item, origin:'vehicle', html:nwLine(item, `${item.year||''} ${item.make||''} ${item.model||''}${item.trim?` ${item.trim}`:''} · ${item.mileage?`${Number(item.mileage).toLocaleString()} miles · `:''}${item.valuedAt?`Estimate updated ${item.valuedAt.slice(0,10)}`:'Vehicle'}`, true, 'vehicle') })),
-    ...data.manualItems.filter(item=>item.side!=='liability').map(item => ({ item, origin:'manual', html:nwLine(item,item.category==='Precious Metals'?`${item.metal==='silver'?'Silver':'Gold'} · ${Number(item.weight||0).toLocaleString()} troy oz · ${fmt(Number(item.pricePerOunce)||0)}/oz · Spot updated ${item.valuedAt?item.valuedAt.slice(0,10):'pending'}`:'Manual',true) }))
+    ...data.manualItems.filter(item=>item.side!=='liability').map(item => ({ item, origin:'manual', html:nwLine(item,item.category==='Precious Metals'?`${item.metal==='silver'?'Silver':'Gold'} · ${Number(item.weight||0).toLocaleString()} troy oz · ${nwFmt(Number(item.pricePerOunce)||0)}/oz · Spot updated ${item.valuedAt?item.valuedAt.slice(0,10):'pending'}`:'Manual',true) }))
   ].map(row => ({ ...row, type:nwAssetType(row.item,row.origin) }));
-  if (_nwAssetSort === 'alpha') rows.sort((a,b)=>String(a.item.name||'').localeCompare(String(b.item.name||'')));
+  if (_nwPrivacy || _nwAssetSort === 'alpha') rows.sort((a,b)=>String(a.item.name||'').localeCompare(String(b.item.name||'')));
   else rows.sort((a,b)=>(Number(b.item.value)||0)-(Number(a.item.value)||0)||String(a.item.name||'').localeCompare(String(b.item.name||'')));
   if (_nwAssetSort !== 'type') return rows.map(row=>row.html).join('');
   const groups = new Map();
   rows.forEach(row => { if(!groups.has(row.type))groups.set(row.type,[]);groups.get(row.type).push(row); });
   return [...groups.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([type,items])=>
-    `<div class="nw-group-title">${escHtml(type)} · ${fmt(items.reduce((sum,row)=>sum+(Number(row.item.value)||0),0))}</div>${items.map(row=>row.html).join('')}`
+    `<div class="nw-group-title">${escHtml(type)} · ${nwFmt(items.reduce((sum,row)=>sum+(Number(row.item.value)||0),0))}</div>${items.map(row=>row.html).join('')}`
   ).join('');
 }
 
@@ -8432,10 +8443,10 @@ function _renderNetWorthHtml() {
   ].join('');
   const us = nwUsPercentile(totals.netWorth), global = nwGlobalPercentile(totals.netWorth);
   document.getElementById('app').innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap"><div><h2 style="margin:0">Net Worth</h2><div class="tp-note">Assets minus liabilities · Plaid balances are cached and free to retrieve</div></div><button class="btn btn-secondary" onclick="nwRefreshPlaid(this)">↻ Refresh Plaid accounts</button></div>
-    <div class="nw-hero"><div class="card"><div class="label">Net Worth</div><div class="nw-big" style="color:${totals.netWorth>=0?'var(--success)':'var(--danger)'}">${totals.netWorth<0?'−':''}${fmt(Math.abs(totals.netWorth))}</div></div><div class="card"><div class="label">Compared with U.S.</div><div class="nw-big">Higher than ~${us.toFixed(0)}%</div><div class="nw-source">Estimated from Federal Reserve 2022 SCF family net-worth thresholds.</div></div><div class="card"><div class="label">Compared globally</div><div class="nw-big">Higher than ~${global.toFixed(0)}%</div><div class="nw-source">Estimated from UBS Global Wealth Report 2026 adult wealth bands.</div></div></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap"><div><h2 style="margin:0">Net Worth</h2><div class="tp-note">Assets minus liabilities · Plaid balances are cached and free to retrieve</div></div><div style="display:flex;gap:.5rem;flex-wrap:wrap"><button class="btn btn-secondary" aria-pressed="${_nwPrivacy}" onclick="nwTogglePrivacy()">${_nwPrivacy?'◉ Show values':'◌ Hide values'}</button><button class="btn btn-secondary" onclick="nwRefreshPlaid(this)">↻ Refresh Plaid accounts</button></div></div>
+    <div class="nw-hero"><div class="card"><div class="label">Net Worth</div><div class="nw-big" style="color:${totals.netWorth>=0?'var(--success)':'var(--danger)'}">${!_nwPrivacy&&totals.netWorth<0?'−':''}${nwFmt(Math.abs(totals.netWorth))}</div></div><div class="card"><div class="label">Compared with U.S.</div><div class="nw-big">${_nwPrivacy?'••••••':`Higher than ~${us.toFixed(0)}%`}</div><div class="nw-source">Estimated from Federal Reserve 2022 SCF family net-worth thresholds.</div></div><div class="card"><div class="label">Compared globally</div><div class="nw-big">${_nwPrivacy?'••••••':`Higher than ~${global.toFixed(0)}%`}</div><div class="nw-source">Estimated from UBS Global Wealth Report 2026 (2025 wealth bands).</div></div></div>
     ${nwEditorHtml()}
-    <div class="nw-layout"><section class="card"><div class="card-header"><div><div class="card-title">Assets</div><div class="tp-note">${fmt(totals.assets)}</div></div><div class="nw-actions"><select class="form-input" style="width:auto;font-size:.78rem;padding:.38rem .5rem" aria-label="Sort assets" onchange="nwSetAssetSort(this.value)"><option value="amount"${_nwAssetSort==='amount'?' selected':''}>Amount: high to low</option><option value="alpha"${_nwAssetSort==='alpha'?' selected':''}>Alphabetical</option><option value="type"${_nwAssetSort==='type'?' selected':''}>Group by type</option></select><button class="btn btn-primary btn-sm" onclick="nwAdd('asset')">+ Manual asset</button><button class="btn btn-secondary btn-sm" onclick="nwAddVehicle()">+ Vehicle</button></div></div><div class="card-body">${assets||'<div class="tp-note">No assets added yet.</div>'}</div></section><section class="card"><div class="card-header"><div><div class="card-title">Liabilities</div><div class="tp-note">${fmt(totals.liabilities)}</div></div><button class="btn btn-primary btn-sm" onclick="nwAdd('liability')">+ Manual liability</button></div><div class="card-body">${liabilities||'<div class="tp-note">No liabilities added yet.</div>'}</div></section></div>
+    <div class="nw-layout"><section class="card"><div class="card-header"><div><div class="card-title">Assets</div><div class="tp-note">${nwFmt(totals.assets)}</div></div><div class="nw-actions"><select class="form-input" style="width:auto;font-size:.78rem;padding:.38rem .5rem" aria-label="Sort assets" onchange="nwSetAssetSort(this.value)"><option value="amount"${_nwAssetSort==='amount'?' selected':''}>Amount: high to low</option><option value="alpha"${_nwAssetSort==='alpha'?' selected':''}>Alphabetical</option><option value="type"${_nwAssetSort==='type'?' selected':''}>Group by type</option></select>${_nwPrivacy?'':`<button class="btn btn-primary btn-sm" onclick="nwAdd('asset')">+ Manual asset</button><button class="btn btn-secondary btn-sm" onclick="nwAddVehicle()">+ Vehicle</button>`}</div></div><div class="card-body">${assets||'<div class="tp-note">No assets added yet.</div>'}</div></section><section class="card"><div class="card-header"><div><div class="card-title">Liabilities</div><div class="tp-note">${nwFmt(totals.liabilities)}</div></div>${_nwPrivacy?'':'<button class="btn btn-primary btn-sm" onclick="nwAdd(\'liability\')">+ Manual liability</button>'}</div><div class="card-body">${liabilities||'<div class="tp-note">No liabilities added yet.</div>'}</div></section></div>
     <section class="card" style="margin-top:1rem"><div class="card-header"><div class="card-title">Net Worth Trajectory</div></div><div class="card-body">${nwChart(data.history)}</div></section>
     <div class="nw-source" style="margin-top:.8rem">Percentiles are estimates, not financial advice. U.S.: Federal Reserve Survey of Consumer Finances (2022 dollars). Global: UBS Global Wealth Report 2026 (2025 wealth bands).</div>`;
   if(_nwEditor?.kind==='vehicle') requestAnimationFrame(nwLoadVehicleTrims);

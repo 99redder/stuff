@@ -2074,8 +2074,20 @@ async function refreshNetWorthPlaid(env) {
       };
     });
   }).filter(account => account.id);
+  const dedupedAccounts = [];
+  const accountPositions = new Map();
+  for (const account of accounts) {
+    const key = account.mask ? `${account.institutionId}|${account.type}|${account.subtype}|${account.mask}` : `id|${account.id}`;
+    const existingPosition = accountPositions.get(key);
+    if (existingPosition === undefined) {
+      accountPositions.set(key,dedupedAccounts.length);
+      dedupedAccounts.push(account);
+    } else if (account.id === env.PLAID_ACCOUNT_ID) {
+      dedupedAccounts[existingPosition]=account;
+    }
+  }
   const data = normalizeNetWorth(await env.RENTALS.get(NET_WORTH_KEY, 'json'));
-  data.plaidAccounts = accounts;
+  data.plaidAccounts = dedupedAccounts;
   data.plaidRefreshedAt = new Date().toISOString();
   addNetWorthSnapshot(data);
   await env.RENTALS.put(NET_WORTH_KEY, JSON.stringify(data));
