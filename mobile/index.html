@@ -120,7 +120,7 @@
   const EXPENSE_CATS = ['Weekly Spending','Retirement Savings','School Savings','Investments','Misc Savings','Utilities','Services','Mortgage','Cars','Insurance','Travel'];
   const TITLES = {budget:'Monthly Budget',cashflow:'2026 Cash Flow',tax:'Tax Planning',savings:'Savings',mom:'Mom Budget',properties:'Properties'};
   const CAT_NAMES = {rent:'Rent Received',deposit:'Security Deposit',late_fee:'Late Fees',other_income:'Other Income',taxes:'Property Taxes',insurance:'Insurance',repairs:'Repairs & Maintenance',improvements:'Improvements',utilities:'Utilities',hoa:'HOA Fees',management:'Property Management',auto:'Auto',legal:'Legal & Professional',marketing:'Advertising',other_expense:'Other Expenses'};
-  const state = {view:'budget',property:'6AL',data:{},loading:false,lastSync:null};
+  const state = {view:'budget',property:'6AL',data:{},loading:false,robinhoodLoading:false,lastSync:null};
   const $ = s => document.querySelector(s);
   const n = v => Number.isFinite(Number(v)) ? Number(v) : 0;
   const money = v => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(n(v));
@@ -154,18 +154,26 @@
 
   async function loadView(force=false){
     if(state.loading)return; state.loading=true; loading();
+    let pullRobinhood=false;
     try{
       if(state.view==='budget' && (force||!state.data.budget)) state.data.budget=(await api({action:'get_budget'})).data||{};
       if(state.view==='tax' && (force||!state.data.tax)) state.data.tax=(await api({action:'get_tax_planning',year:String(YEAR)})).data||{};
       if(state.view==='savings' && (force||!state.data.savings)) state.data.savings=(await api({action:'get_savings'})).data||{};
-      if((state.view==='savings'||state.view==='cashflow') && (force||!state.data.robinhood)) state.data.robinhood=await api({action:'get_robinhood_balance',refresh:force});
+      if((state.view==='savings'||state.view==='cashflow') && (force||!state.data.robinhood)){state.robinhoodLoading=true;pullRobinhood=true;}
       if(state.view==='mom' && (force||!state.data.mom)) state.data.mom=(await api({action:'get_mom_budget'})).data||{};
       if((state.view==='cashflow'||state.view==='properties'||state.view==='tax') && (force||!state.data.transactions)){
         const results=await Promise.all(PROPERTIES.map(property=>api({action:'get_transactions',property})));
         state.data.transactions=Object.fromEntries(PROPERTIES.map((p,i)=>[p,results[i].transactions||[]]));
       }
       state.lastSync=new Date(); render();
+      if(pullRobinhood)void refreshRobinhoodInBackground(force);
     }catch(err){errorCard(err)}finally{state.loading=false;updateSync()}
+  }
+
+  async function refreshRobinhoodInBackground(force){
+    try{state.data.robinhood=await api({action:'get_robinhood_balance',refresh:force});state.lastSync=new Date();}
+    catch{/* keep the last Savings-synchronized Plaid value */}
+    finally{state.robinhoodLoading=false;if(state.view==='savings'||state.view==='cashflow'){render();updateSync();}}
   }
 
   function updateSync(){ $('#sync-status').textContent=state.lastSync?`Updated ${state.lastSync.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}`:'Not yet updated'; }
@@ -186,7 +194,7 @@
     const rentalRows=[...RENTALS].map(prop=>({prop,...txnTotals(yearTxns(prop))}));
     const total={income:sum(rentalRows,x=>x.income),expenses:sum(rentalRows,x=>x.expenses)}; total.net=total.income-total.expenses;
     return `<div class="hero"><div class="hero-label">2026 net rental cash flow</div><div class="hero-value">${money(total.net)}</div><div class="hero-note">Recorded income less recorded expenses</div></div>
-      <div class="grid">${stat('Income',money(total.income),'2026 YTD','good')}${stat('Expenses',money(total.expenses),'2026 YTD','bad')}${stat('Net',money(total.net),'3 rentals',tone(total.net))}${state.data.robinhood?stat('Robinhood checking',money(state.data.robinhood.balance),state.data.robinhood.stale?'cached balance':'live balance','good'):''}</div>
+      <div class="grid">${stat('Income',money(total.income),'2026 YTD','good')}${stat('Expenses',money(total.expenses),'2026 YTD','bad')}${stat('Net',money(total.net),'3 rentals',tone(total.net))}${state.robinhoodLoading?stat('Robinhood checking','Pulling…','checking Plaid'):state.data.robinhood?stat('Robinhood checking',money(state.data.robinhood.balance),state.data.robinhood.stale?'cached balance':'live balance','good'):''}</div>
       ${card('By property',rentalRows.map(x=>row(x.prop,money(x.net),`${money(x.income)} in · ${money(x.expenses)} out`,tone(x.net))).join(''),'2026')}`;
   }
 
@@ -209,7 +217,7 @@
     const delta=liquid-annual;
     return `<div class="hero"><div class="hero-label">Funding ${delta>=0?'surplus':'shortfall'}</div><div class="hero-value">${delta>=0?'+':'−'}${money(Math.abs(delta))}</div><div class="hero-note">Available accounts versus total 2026 obligations</div></div>
       <div class="grid">${stat('Available',money(liquid),'liquid accounts','good')}${stat('Outstanding',money(outstanding),`${money(paid)} cleared`,'bad')}${stat('Annual total',money(annual),`${obligations.length} obligations`)}</div>
-      ${card('Account balances',row('Robinhood Checking',money(liveChecking),state.data.robinhood?`${state.data.robinhood.stale?'Cached':'Live'} · ${new Date(state.data.robinhood.refreshedAt).toLocaleString()}`:'Last synchronized Plaid balance')+Object.entries(accounts).filter(([k])=>!['robinhoodChecking','robinhood'].includes(k)).map(([k,v])=>row(k.replace(/([A-Z])/g,' $1').replace(/^./,c=>c.toUpperCase()),money(v))).join(''))}
+      ${card('Account balances',row('Robinhood Checking',money(liveChecking),state.robinhoodLoading?'◌ Pulling checking data…':state.data.robinhood?`${state.data.robinhood.stale?'Cached':'Live'} · ${new Date(state.data.robinhood.refreshedAt).toLocaleString()}`:'Last synchronized Plaid balance')+Object.entries(accounts).filter(([k])=>!['robinhoodChecking','robinhood'].includes(k)).map(([k,v])=>row(k.replace(/([A-Z])/g,' $1').replace(/^./,c=>c.toUpperCase()),money(v))).join(''))}
       ${card('Obligations',progress.sort((a,b)=>b.left-a.left).map(({o,left,count,ppy})=>row(o.name,money(left),`${o.kind==='static'?(count?'Funded':'Unfunded'):`${count} of ${ppy} paid`} · ${money(o.amount)} total`,left?'bad':'good')).join(''),'2026')}`;
   }
 
