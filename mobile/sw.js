@@ -1,9 +1,10 @@
-const CACHE_NAME = 'rental-snapshot-v6';
+const CACHE_NAME = 'rental-snapshot-v7';
 const STATIC_ASSETS = [
   './index.html',
   './manifest.webmanifest',
-  '../mom-budget-icon-192.png',
-  '../mom-budget-icon-512.png'
+  '../stuff-icon-32.png',
+  '../stuff-icon-192.png',
+  '../stuff-icon-512.png'
 ];
 
 self.addEventListener('install', event => {
