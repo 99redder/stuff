@@ -15,5 +15,11 @@ name = "PUBLIC_RATELIMIT"
 namespace_id = "1001"
 simple = { limit = 60, period = 60 }
 
+# Cloudflare cron is UTC. These two times cover 6:00 AM America/New_York
+# year-round; the scheduled handler checks Eastern local time so only the
+# correct trigger runs through EST/EDT changes.
+[triggers]
+crons = ["0 10 * * *", "0 11 * * *"]
+
 # Environment variables (set via: wrangler env.<env>.secret put KEY VALUE)
 # wrangler secret put ADMIN_PASSWORD

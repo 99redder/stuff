@@ -55,8 +55,31 @@ export default {
     }
 
     return jsonResponse({ error: 'Not Found' }, 404);
+  },
+
+  async scheduled(controller, env, ctx) {
+    // Cloudflare cron expressions run in UTC. Two triggers cover 6:00 AM in
+    // both EST and EDT; only the one that is actually 6 AM in New York runs.
+    const easternHour = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      hour: '2-digit',
+      hourCycle: 'h23',
+    }).format(new Date(controller.scheduledTime));
+    if (easternHour !== '06') return;
+
+    ctx.waitUntil(runScheduledRobinhoodRefresh(env, controller.scheduledTime));
   }
 };
+
+async function runScheduledRobinhoodRefresh(env, scheduledTime) {
+  const response = await handleGetRobinhoodBalance(env, true);
+  console.log(JSON.stringify({
+    event: 'scheduled_robinhood_balance_refresh',
+    scheduledTime: new Date(scheduledTime).toISOString(),
+    status: response.status,
+    ok: response.ok,
+  }));
+}
 
 async function handleDataApi(request, env) {
   let body;
