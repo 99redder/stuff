@@ -1994,6 +1994,14 @@ function plaidAccessTokens(env) {
   return env.PLAID_ACCESS_TOKEN ? [env.PLAID_ACCESS_TOKEN] : [];
 }
 
+function plaidItemOwners(env) {
+  if (!env.PLAID_ITEM_OWNERS) return {};
+  try {
+    const parsed=JSON.parse(env.PLAID_ITEM_OWNERS);
+    return parsed && typeof parsed==='object' && !Array.isArray(parsed) ? parsed : {};
+  } catch { return {}; }
+}
+
 async function refreshNetWorthPlaid(env) {
   if (!env.PLAID_CLIENT_ID || !env.PLAID_SECRET) throw new Error('Plaid credentials are not configured');
   const tokens = plaidAccessTokens(env);
@@ -2016,6 +2024,7 @@ async function refreshNetWorthPlaid(env) {
       throw new Error(`Plaid accounts request failed: ${code} (${response.status})`);
     }
     return {
+      itemId: String(payload.item?.item_id || ''),
       institutionId: String(payload.item?.institution_id || ''),
       accounts: Array.isArray(payload.accounts) ? payload.accounts : [],
     };
@@ -2044,16 +2053,19 @@ async function refreshNetWorthPlaid(env) {
       else if (providerName) institutionNames[institutionId] = providerName.slice(0, 80);
     } catch { /* retain the generic Plaid fallback if metadata is unavailable */ }
   }));
-  const accounts = responses.flatMap(({ institutionId, accounts: itemAccounts }) => {
+  const itemOwners=plaidItemOwners(env);
+  const accounts = responses.flatMap(({ itemId, institutionId, accounts: itemAccounts }) => {
     return itemAccounts.map(account => {
+      const owner=String(itemOwners[itemId] || '').trim().slice(0,40);
       const institution = account.account_id === env.PLAID_ACCOUNT_ID ? 'Robinhood' : (institutionNames[institutionId] || 'Plaid');
       const accountName = String(account.name || '').trim();
       const officialName = String(account.official_name || '').trim();
       const genericName = /^(checking|savings|credit card|account)$/i.test(accountName);
       const rawName = String((genericName && officialName) ? officialName : (accountName || officialName || 'Account')).trim();
-      const alreadyLabeled = rawName.toLowerCase().startsWith(institution.toLowerCase())
+      const alreadyLabeled = rawName.toLowerCase().includes(institution.toLowerCase())
         || (institution === 'Navy Federal' && /nfcu/i.test(rawName));
       let displayName = alreadyLabeled ? rawName : `${institution} ${rawName}`;
+      if (institution==='Robinhood' && account.subtype==='brokerage' && owner) displayName=`${owner}'s Robinhood Individual Account`;
       displayName = displayName.replace(/\btraditional\b/gi,'Traditional');
       if (institution === 'Navy Federal' && account.subtype === 'mortgage' && !/\(731WO\)/i.test(displayName)) {
         displayName += ' (731WO)';
@@ -2063,6 +2075,7 @@ async function refreshNetWorthPlaid(env) {
         name: displayName.slice(0, 160),
         institution,
         institutionId,
+        owner,
         officialName: officialName.slice(0, 200),
         mask: String(account.mask || '').slice(-4),
         type: String(account.type || ''),
