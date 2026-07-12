@@ -126,7 +126,7 @@ const state = {
 | `openBudgetWorksheetModal(id)` | Opens the property income worksheet for a budget income item |
 | `calcDepreciationSchedule(costBasis, placedInService)` | MACRS 27.5-yr straight-line, mid-month convention |
 | `fmt(amount)` | Format dollar amount with 2 decimal places |
-| `fmtShort(amount)` | Abbreviated format ($1.4k, $22k) for tables |
+| `fmtShort(amount)` | Abbreviated format ($1.4k, $22k, $1.43m) for tables |
 | `fmtDate(iso)` | `YYYY-MM-DD` → `Mon D, YYYY` |
 | `escHtml(str)` | XSS-safe HTML escaping — use on all user-supplied content |
 | `escAttr(str)` | XSS-safe attribute escaping |

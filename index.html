@@ -1985,6 +1985,7 @@ function formatMoneyInput(id) {
 
 function fmtShort(amount) {
   const abs = Math.abs(amount);
+  if (abs >= 1000000) return '$' + (abs / 1000000).toFixed(2).replace(/\.?0+$/, '') + 'm';
   if (abs >= 1000) return '$' + (abs / 1000).toFixed(1) + 'k';
   return '$' + abs.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
