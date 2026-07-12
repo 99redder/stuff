@@ -15,6 +15,7 @@ const VALID_CATEGORIES = [
 const ALLOWED_ORIGIN = 'https://99redder.github.io';
 const SESSION_COOKIE = 'rentals_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 12; // 12 hours
+const REMEMBERED_SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days on a trusted device
 const LOGIN_WINDOW_SECONDS = 15 * 60;
 const LOGIN_MAX_FAILURES = 5;
 const LOGIN_BURST_RETRY_SECONDS = 60;
@@ -127,7 +128,7 @@ async function handleDataApi(request, env) {
 
   // Password check — creates an HttpOnly session cookie on success.
   if (action === 'verify_password') {
-    return handleVerifyPassword(request, env, body.password);
+    return handleVerifyPassword(request, env, body.password, body.rememberDevice === true);
   }
   if (action === 'logout') {
     return handleLogout(request, env);
@@ -293,7 +294,7 @@ async function handleDataApi(request, env) {
   }
 }
 
-async function handleVerifyPassword(request, env, password) {
+async function handleVerifyPassword(request, env, password, rememberDevice = false) {
   const stored = env.ADMIN_PASSWORD || '';
   if (!stored) return jsonResponse({ error: 'Password not configured on server' }, 500);
 
@@ -321,14 +322,18 @@ async function handleVerifyPassword(request, env, password) {
   const token = crypto.randomUUID() + '-' + crypto.randomUUID();
   const sessionKey = `session:${await sha256Hex(token)}`;
   const passwordVersion = await sessionPasswordVersion(token, stored);
+  const sessionTtl = rememberDevice ? REMEMBERED_SESSION_TTL_SECONDS : SESSION_TTL_SECONDS;
+  const userAgentHash = rememberDevice ? await sha256Hex(request.headers.get('User-Agent') || '') : '';
   await env.RENTALS.put(sessionKey, JSON.stringify({
     createdAt: new Date().toISOString(),
     ip,
     passwordVersion,
-  }), { expirationTtl: SESSION_TTL_SECONDS });
+    rememberDevice,
+    userAgentHash,
+  }), { expirationTtl: sessionTtl });
 
-  return jsonResponse({ ok: true, sessionToken:token }, 200, {
-    'Set-Cookie': `${SESSION_COOKIE}=${token}; Max-Age=${SESSION_TTL_SECONDS}; Path=/; HttpOnly; Secure; SameSite=None`,
+  return jsonResponse({ ok: true, sessionToken:token, expiresIn:sessionTtl }, 200, {
+    'Set-Cookie': `${SESSION_COOKIE}=${token}; Max-Age=${sessionTtl}; Path=/; HttpOnly; Secure; SameSite=None`,
   });
 }
 
@@ -441,6 +446,10 @@ async function isAuthenticated(request, env) {
 
   const session = await env.RENTALS.get(`session:${await sha256Hex(token)}`, 'json');
   if (!session || typeof session.passwordVersion !== 'string') return false;
+  if (session.userAgentHash) {
+    const currentUserAgentHash = await sha256Hex(request.headers.get('User-Agent') || '');
+    if (!timingSafeEqualStrings(session.userAgentHash,currentUserAgentHash)) return false;
+  }
 
   const currentVersion = await sessionPasswordVersion(token, env.ADMIN_PASSWORD);
   return timingSafeEqualStrings(session.passwordVersion, currentVersion);

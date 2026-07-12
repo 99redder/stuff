@@ -40,6 +40,7 @@
     .shell{max-width:620px;margin:0 auto}
     .top{position:sticky;top:0;z-index:10;padding:max(15px,env(safe-area-inset-top)) 18px 12px;background:rgba(11,19,34,.92);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
     .top-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .top-actions{display:flex;align-items:center;gap:8px}
     .eyebrow{font-size:.69rem;color:var(--green2);font-weight:850;text-transform:uppercase;letter-spacing:.11em;margin-bottom:3px}
     .page-title{font-family:Georgia,serif;font-size:1.72rem;font-weight:700;letter-spacing:-.035em}
     .icon-btn{width:44px;height:44px;border:1px solid var(--line);border-radius:50%;background:var(--card);color:var(--green);font-size:19px;font-weight:800}
@@ -109,7 +110,7 @@
     <header class="top">
       <div class="top-row">
         <div><div class="eyebrow">Read only</div><div class="page-title" id="page-title">Monthly Budget</div></div>
-        <button class="icon-btn" id="refresh" aria-label="Refresh">↻</button>
+        <div class="top-actions"><button class="icon-btn" id="lock" aria-label="Lock and sign out" title="Lock">⌾</button><button class="icon-btn" id="refresh" aria-label="Refresh">↻</button></div>
       </div>
       <div class="sync" id="sync-status">Loading current data…</div>
     </header>
@@ -145,7 +146,7 @@
   const sum = (items, fn=x=>n(x.amount)) => (items||[]).reduce((t,x)=>t+fn(x),0);
 
   async function api(body) {
-    const token=sessionStorage.getItem(SESSION_TOKEN_KEY)||'';
+    const token=localStorage.getItem(SESSION_TOKEN_KEY)||'';
     const headers={'Content-Type':'application/json'};if(token)headers['X-Session']=token;
     const res = await fetch(API,{method:'POST',credentials:'include',headers,body:JSON.stringify(body)});
     const data = await res.json().catch(()=>({}));
@@ -155,14 +156,19 @@
   }
 
   async function signIn(password) {
-    const res = await fetch(API,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'verify_password',password})});
+    const res = await fetch(API,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'verify_password',password,rememberDevice:true})});
     const data = await res.json().catch(()=>({}));
     if (!res.ok || !data.ok) throw new Error(data.error || 'Incorrect password');
-    if(data.sessionToken)sessionStorage.setItem(SESSION_TOKEN_KEY,data.sessionToken);
+    if(data.sessionToken)localStorage.setItem(SESSION_TOKEN_KEY,data.sessionToken);
   }
 
-  function showLogin(){ sessionStorage.removeItem(SESSION_TOKEN_KEY); $('#app').classList.add('hidden'); $('#login').classList.remove('hidden'); }
+  function showLogin(){ localStorage.removeItem(SESSION_TOKEN_KEY); $('#app').classList.add('hidden'); $('#login').classList.remove('hidden'); }
   function showApp(){ $('#login').classList.add('hidden'); $('#app').classList.remove('hidden'); }
+  async function lockApp(){
+    const token=localStorage.getItem(SESSION_TOKEN_KEY)||'',headers={'Content-Type':'application/json'};if(token)headers['X-Session']=token;
+    try{await fetch(API,{method:'POST',credentials:'include',headers,body:JSON.stringify({action:'logout'})})}catch{}
+    state.data={};state.lastSync=null;showLogin();$('#password').focus();
+  }
   function loading(){ $('#content').innerHTML='<div class="loading"><div class="spinner"></div>Loading current data…</div>'; }
   function errorCard(err){ $('#content').innerHTML=`<div class="banner">${esc(err.message||err)}</div><div class="empty">Pull down or tap refresh to try again.</div>`; }
   function stat(label,value,sub='',cls=''){return `<div class="stat"><div class="stat-label">${esc(label)}</div><div class="stat-value ${cls}">${esc(value)}</div>${sub?`<div class="stat-sub">${esc(sub)}</div>`:''}</div>`}
@@ -330,6 +336,7 @@
     document.querySelectorAll('.nav-btn').forEach(x=>x.classList.toggle('active',x===btn));state.view=btn.dataset.view;$('#page-title').textContent=TITLES[state.view];loadView();window.scrollTo({top:0,behavior:'smooth'});
   }));
   $('#refresh').addEventListener('click',()=>loadView(true));
+  $('#lock').addEventListener('click',lockApp);
   $('#login-form').addEventListener('submit',async e=>{e.preventDefault();const button=$('#login-button');button.disabled=true;button.textContent='Signing in…';$('#login-error').textContent='';try{await signIn($('#password').value);$('#password').value='';showApp();await loadView(true)}catch(err){$('#login-error').textContent=err.message}finally{button.disabled=false;button.textContent='Open dashboard'}});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden&&state.lastSync&&Date.now()-state.lastSync.getTime()>60000)loadView(true)});
   window.addEventListener('online',()=>loadView(true));
