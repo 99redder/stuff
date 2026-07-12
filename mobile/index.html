@@ -67,6 +67,16 @@
     .row-name{font-size:.88rem;font-weight:700;min-width:0;overflow-wrap:anywhere}
     .row-note{font-size:.7rem;color:var(--muted);font-weight:500;margin-top:3px}
     .row-value{text-align:right;font-weight:800;font-size:.89rem;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .budget-category{border-top:1px solid var(--line)}
+    .budget-category:first-child{border-top:0}
+    .budget-category summary{list-style:none;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:13px 0;align-items:center;cursor:pointer}
+    .budget-category summary::-webkit-details-marker{display:none}
+    .budget-category summary .row-name:after{content:'  ▸';color:var(--muted);font-size:.72rem}
+    .budget-category[open] summary .row-name:after{content:'  ▾'}
+    .budget-breakdown{border-top:1px solid var(--line);padding:3px 0 7px 13px}
+    .month-switch{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;gap:8px;align-items:center;margin-bottom:13px}
+    .month-switch button{height:42px;border:1px solid var(--line);border-radius:13px;background:var(--card);color:var(--ink);font-weight:850}
+    .month-label{text-align:center;font-weight:850;color:var(--ink)}
     .empty{padding:30px 20px;text-align:center;color:var(--muted);font-size:.87rem}
     .property-strip{display:flex;gap:8px;overflow-x:auto;padding:1px 1px 12px;scrollbar-width:none}
     .property-strip::-webkit-scrollbar{display:none}
@@ -125,7 +135,7 @@
   const EXPENSE_CATS = ['Weekly Spending','Retirement Savings','School Savings','Investments','Misc Savings','Utilities','Services','Mortgage','Cars','Insurance','Travel'];
   const TITLES = {budget:'Monthly Budget',cashflow:'2026 Cash Flow',tax:'Tax Planning',savings:'Savings',mom:'Mom Budget',properties:'Properties'};
   const CAT_NAMES = {rent:'Rent Received',deposit:'Security Deposit',late_fee:'Late Fees',other_income:'Other Income',taxes:'Property Taxes',insurance:'Insurance',repairs:'Repairs & Maintenance',improvements:'Improvements',utilities:'Utilities',hoa:'HOA Fees',management:'Property Management',auto:'Auto',legal:'Legal & Professional',marketing:'Advertising',other_expense:'Other Expenses'};
-  const state = {view:'budget',property:'6AL',data:{},loading:false,robinhoodLoading:false,lastSync:null};
+  const state = {view:'budget',property:'6AL',momMonth:'',data:{},loading:false,robinhoodLoading:false,lastSync:null};
   const $ = s => document.querySelector(s);
   const n = v => Number.isFinite(Number(v)) ? Number(v) : 0;
   const money = v => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(n(v));
@@ -195,10 +205,14 @@
     const b=state.data.budget||{}; const income=b.income||[]; const expenses=b.expenses||{};
     const totalIncome=sum(income); const catTotals=EXPENSE_CATS.map(name=>({name,amount:sum(expenses[name]||[])})); const totalExpenses=sum(catTotals);
     const net=totalIncome-totalExpenses;
+    const categoryRows=catTotals.filter(x=>x.amount).sort((a,b)=>b.amount-a.amount).map(x=>{
+      const items=(expenses[x.name]||[]).slice().sort((a,b)=>n(b.amount)-n(a.amount));
+      return `<details class="budget-category"><summary><span class="row-name">${esc(x.name)}</span><span class="row-value">${esc(money(x.amount))}</span></summary><div class="budget-breakdown">${items.map(item=>row(item.name||'Untitled',money(item.amount),item.note||'')).join('')}</div></details>`;
+    }).join('');
     return `<div class="hero"><div class="hero-label">Monthly amount left</div><div class="hero-value">${money(net)}</div><div class="hero-note">Income after planned expenses and savings</div></div>
       <div class="grid">${stat('Income',money(totalIncome),'per month','good')}${stat('Planned',money(totalExpenses),'per month','bad')}${stat('Margin',money(net),'per month',tone(net))}</div>
       ${card('Income',income.sort((a,b)=>n(b.amount)-n(a.amount)).map(i=>row(i.name,money(i.amount),i.property?`${i.property} worksheet`:'' )).join(''),'Monthly')}
-      ${card('Expense categories',catTotals.filter(x=>x.amount).sort((a,b)=>b.amount-a.amount).map(x=>row(x.name,money(x.amount))).join(''),'Monthly')}`;
+      ${card('Expense categories',categoryRows,'Tap to expand')}`;
   }
 
   function renderCashFlow(){
@@ -225,15 +239,41 @@
       ${card('Expenses',expenseRows,'Amount order')}`;
   }
 
-  const TAX_LABELS={w2:'W-2 wages',fmg_sp:'FMG income',esai_sp:'ESAI income',interest:'Interest income',ibkr_div:'Dividends',cap_gains:'Capital gains',se_income:'Self-employment income',rental_depr:'Rental depreciation',std_ded:'Standard deduction',fed_withheld:'Federal withheld',estimated_paid:'Estimated tax paid',md_withheld:'Maryland withheld',md_estimated:'Maryland estimated paid',md_529:'Maryland 529 deduction',md_county:'Maryland county'};
+  const FED_BRACKETS=[[24800,.10],[100800,.12],[211400,.22],[403550,.24],[512450,.32],[768700,.35],[Infinity,.37]];
+  const LTCG_BRACKETS=[[98900,0],[613700,.15],[Infinity,.20]];
+  const MD_BRACKETS=[[1000,.02],[2000,.03],[3000,.04],[150000,.0475],[175000,.05],[225000,.0525],[300000,.055],[600000,.0575],[1200000,.0625],[Infinity,.065]];
+  const MD_COUNTY={Wicomico:.032,Worcester:.0225,'Anne Arundel':.0294,'Baltimore City':.032,'Baltimore County':.032,Calvert:.032,Caroline:.032,Carroll:.0303,Cecil:.0274,Charles:.0303,Dorchester:.033,Frederick:.0296,Garrett:.0265,Harford:.0306,Howard:.032,Kent:.033,Montgomery:.032,"Prince George's":.032,"Queen Anne's":.032,"St. Mary's":.032,Somerset:.032,Talbot:.024,Washington:.0295,Allegany:.032};
+  function bracketTax(income,brackets){let tax=0,prev=0;for(const [limit,rate] of brackets){if(income<=prev)break;tax+=(Math.min(income,limit)-prev)*rate;prev=limit}return tax}
+  function capitalTax(stack,gain){let tax=0,base=stack,remaining=gain;for(const [limit,rate] of LTCG_BRACKETS){if(remaining<=0)break;if(base>=limit)continue;const chunk=Math.min(remaining,limit-base);tax+=chunk*rate;remaining-=chunk;base=limit}return tax}
+  function mobileTaxCalc(tp,rentalRows){
+    const wages=n(tp.navy_gross)+n(tp.wife_gross),business=n(tp.fmg_sp)+n(tp.fmg)+n(tp.esai),rentalNet=sum(rentalRows,x=>x.net),rentalDepr=n(tp.rental_depr),rentalTaxInc=rentalNet-rentalDepr;
+    const interest=n(tp.treasury_int)+n(tp.ally_int)+n(tp.rh_int)+n(tp.ibkr_int),dividends=n(tp.rh_div)+n(tp.ibkr_div),cryptoIncome=n(tp.crypto_income);
+    const propertyGain=n(tp.property_sale_taxable_gain)+n(tp.property_sale_2_taxable_gain),recapture=n(tp.property_sale_depr_recapture)+n(tp.property_sale_2_depr_recapture);
+    const shortGains=n(tp.crypto_st)+n(tp.rh_st)+n(tp.ibkr_st),longGains=n(tp.crypto_lt)+n(tp.rh_lt)+n(tp.ibkr_lt)+propertyGain;
+    const netSe=Math.max(0,business)*.9235,seTax=Math.min(netSe,184500)*.124+netSe*.029,halfSe=seTax/2;
+    const gross=wages+business+rentalTaxInc+interest+dividends+cryptoIncome+shortGains+longGains+recapture,ira=Math.min(n(tp.ira),15000),agi=Math.max(0,gross-ira-halfSe);
+    const std=n(tp.std_ded)||32200,qbi=tp.use_qbi===false?0:Math.max(0,business-halfSe)*.2,taxable=Math.max(0,agi-std-qbi);
+    const ltcgTaxable=Math.min(Math.max(0,longGains),taxable),recaptureTaxable=Math.min(Math.max(0,recapture),Math.max(0,taxable-ltcgTaxable)),ordinaryTaxable=Math.max(0,taxable-ltcgTaxable-recaptureTaxable);
+    const ordinaryTax=bracketTax(ordinaryTaxable,FED_BRACKETS),ltcgTax=capitalTax(ordinaryTaxable+recaptureTaxable,ltcgTaxable),recaptureTax=recaptureTaxable*.25;
+    const investmentIncome=interest+dividends+longGains+shortGains+cryptoIncome+recapture+Math.max(0,rentalTaxInc),niit=agi>250000?Math.min(investmentIncome,agi-250000)*.038:0;
+    const grossFederal=ordinaryTax+ltcgTax+recaptureTax+seTax+niit,ctc=Math.max(0,4400-Math.max(0,Math.ceil((agi-400000)/1000))*50),federalTax=Math.max(0,grossFederal-ctc);
+    const federalWithheld=n(tp.navy_fed)+n(tp.wife_fed),estimated=sum(tp.estimated_payments||[]),federalPaid=federalWithheld+estimated,federalOwed=federalTax-federalPaid;
+    const navyExempt=Math.min(n(tp.navy_gross),tp.navy_age_55?20000:12500),md529=n(tp.md_529),mdAgi=Math.max(0,agi-navyExempt-md529),mdPerExempt=agi<=150000?3200:agi<=175000?1600:agi<=200000?800:0,mdExempt=mdPerExempt*4,mdTaxable=Math.max(0,mdAgi-6700-mdExempt);
+    const mdState=bracketTax(mdTaxable,MD_BRACKETS),county=tp.md_county||'Wicomico',countyTax=mdTaxable*(MD_COUNTY[county]||0);
+    const st=n(tp.crypto_st)+n(tp.rh_st)+n(tp.ibkr_st);let mdLt=n(tp.crypto_lt)+n(tp.rh_lt)+n(tp.ibkr_lt);
+    for(const prefix of ['property_sale','property_sale_2'])if(tp[`${prefix}_imported`]){const primary=['731WO','4781MC'].includes(tp[`${prefix}_property`])&&n(tp[`${prefix}_price`])<1500000;if(!primary)mdLt+=n(tp[`${prefix}_taxable_gain`])+n(tp[`${prefix}_depr_recapture`])}
+    const surchargeBase=agi>350000?Math.max(0,mdLt+Math.min(0,st)):0,surcharge=surchargeBase*.02,mdTax=mdState+countyTax+surcharge,mdWithheld=n(tp.navy_state)+n(tp.wife_state),mdOwed=mdTax-mdWithheld;
+    return {wages,business,rentalNet,rentalDepr,rentalTaxInc,interest,dividends,cryptoIncome,shortGains,longGains,recapture,gross,ira,halfSe,agi,std,qbi,taxable,ordinaryTax,ltcgTax,recaptureTax,seTax,niit,ctc,federalTax,federalWithheld,estimated,federalPaid,federalOwed,navyExempt,md529,mdAgi,mdExempt,mdTaxable,mdState,county,countyTax,surcharge,mdTax,mdWithheld,mdOwed};
+  }
   function renderTax(){
-    const tp=state.data.tax||{}; const rental=[...RENTALS].map(prop=>({prop,...txnTotals(yearTxns(prop))})); const rentalNet=sum(rental,x=>x.net);
-    const entries=Object.entries(tp).filter(([k,v])=>TAX_LABELS[k]&&v!==''&&v!==null&&v!==undefined);
-    const taxRows=entries.map(([k,v])=>row(TAX_LABELS[k],typeof v==='number'?money(v):String(v))).join('');
-    return `<div class="hero"><div class="hero-label">2026 tax planning</div><div class="hero-value">${money(rentalNet)}</div><div class="hero-note">Rental cash flow feeding the current tax plan</div></div>
-      <div class="grid">${rental.map(x=>stat(x.prop,money(x.net),'net cash flow',tone(x.net))).join('')}</div>
-      ${card('Saved planning inputs',taxRows,'2026')}
-      <div class="banner">This mobile view shows saved planning inputs and rental cash flow. Use the desktop Tax Planning tab for the full interactive tax calculation.</div>`;
+    const tp=state.data.tax||{},rental=[...RENTALS].map(prop=>({prop,...txnTotals(yearTxns(prop))})),t=mobileTaxCalc(tp,rental),combined=t.federalOwed+t.mdOwed;
+    const federalBreakdown=[['Wages',t.wages],['Business income',t.business],['Rental net before depreciation',t.rentalNet],['Rental depreciation',-t.rentalDepr],['Interest and dividends',t.interest+t.dividends],['Crypto ordinary income',t.cryptoIncome],['Short-term gains/losses',t.shortGains],['Long-term gains/losses',t.longGains],['Depreciation recapture',t.recapture],['Gross income',t.gross],['IRA deduction',-t.ira],['Half SE-tax deduction',-t.halfSe],['Federal AGI',t.agi],['Standard deduction',-t.std],['QBI deduction',-t.qbi],['Taxable income',t.taxable],['Ordinary income tax',t.ordinaryTax],['Long-term gains tax',t.ltcgTax],['Recapture tax',t.recaptureTax],['Self-employment tax',t.seTax],['Net investment income tax',t.niit],['Child Tax Credit',-t.ctc],['Total federal tax',t.federalTax],['Federal withholding',-t.federalWithheld],['Estimated payments',-t.estimated]];
+    const mdBreakdown=[['Federal AGI',t.agi],['Military retirement exclusion',-t.navyExempt],['Maryland 529 deduction',-t.md529],['Maryland AGI',t.mdAgi],['Maryland standard deduction',-6700],['Personal exemptions',-t.mdExempt],['Maryland taxable income',t.mdTaxable],['Maryland state tax',t.mdState],[`${t.county} local tax`,t.countyTax],['Capital-gains surcharge',t.surcharge],['Total Maryland tax',t.mdTax],['Maryland withholding',-t.mdWithheld]];
+    const calcRows=items=>items.map(([label,value])=>row(label,`${value<0?'−':''}${money(Math.abs(value))}`)).join('');
+    return `<div class="hero"><div class="hero-label">${combined>0?'Estimated total still owed':'Estimated combined refund'}</div><div class="hero-value">${money(Math.abs(combined))}</div><div class="hero-note">Federal and Maryland estimates based on the saved 2026 tax plan</div></div>
+      <div class="grid">${stat(t.federalOwed>0?'Federal owed':'Federal refund',money(Math.abs(t.federalOwed)),`${money(t.federalTax)} tax · ${money(t.federalPaid)} paid`,t.federalOwed>0?'bad':'good')}${stat(t.mdOwed>0?'Maryland owed':'Maryland refund',money(Math.abs(t.mdOwed)),`${money(t.mdTax)} tax · ${money(t.mdWithheld)} withheld`,t.mdOwed>0?'bad':'good')}</div>
+      ${card('Federal calculation',calcRows(federalBreakdown),'2026 estimate')}
+      ${card('Maryland calculation',calcRows(mdBreakdown),t.county)}`;
   }
 
   function renderSavings(){
@@ -245,21 +285,27 @@
     return `<div class="hero"><div class="hero-label">Funding ${delta>=0?'surplus':'shortfall'}</div><div class="hero-value">${delta>=0?'+':'−'}${money(Math.abs(delta))}</div><div class="hero-note">Available accounts versus total 2026 obligations</div></div>
       <div class="grid">${stat('Available',money(liquid),'liquid accounts','good')}${stat('Outstanding',money(outstanding),`${money(paid)} cleared`,'bad')}${stat('Annual total',money(annual),`${obligations.length} obligations`)}</div>
       ${card('Account balances',row('Robinhood Checking',money(liveChecking),state.robinhoodLoading?'◌ Pulling checking data…':state.data.robinhood?`${state.data.robinhood.stale?'Cached':'Live'} · ${new Date(state.data.robinhood.refreshedAt).toLocaleString()}`:'Last synchronized Plaid balance')+Object.entries(accounts).filter(([k])=>!['robinhoodChecking','robinhood'].includes(k)).map(([k,v])=>row(k.replace(/([A-Z])/g,' $1').replace(/^./,c=>c.toUpperCase()),money(v))).join(''))}
-      ${card('Obligations',progress.sort((a,b)=>b.left-a.left).map(({o,left,count,ppy})=>row(o.name,money(left),`${o.kind==='static'?(count?'Funded':'Unfunded'):`${count} of ${ppy} paid`} · ${money(o.amount)} total`,left?'bad':'good')).join(''),'2026')}`;
+      ${card('Obligations',progress.sort((a,b)=>b.left-a.left).map(({o,left,count,ppy})=>row(o.name,left?money(left):'✓',`${o.kind==='static'?(count?'Funded':'Unfunded'):`${count} of ${ppy} paid`} · ${money(o.amount)} total`,left?'bad':'good')).join(''),'2026')}`;
   }
 
+  function momExpected(item,key){const month=Number(key.slice(5,7)),frequency=item.frequency||'monthly';if(frequency==='monthly')return n(item.amount);if(frequency==='yearly')return month===n(item.dueMonth)?n(item.paymentAmount):0;if(frequency==='semiannual')return month===n(item.dueMonth)||month===((n(item.dueMonth)+5)%12)+1?n(item.paymentAmount):0;return 0}
   function momMonth(raw,key){
-    const t=raw.template||{};const m=raw.months?.[key]||{};const discretionary=n(t.variable?.discretionary);const spent=sum(m.discretionary||[]);const other=sum(m.otherExpenses||[]);
-    let fixedBudget=sum(t.fixed||[]),fixedPaid=0,fixedOver=0;
-    for(const item of t.fixed||[]){if(!m.fixedPaid?.[item.id])continue;const actual=n(m.fixedActual?.[item.id])||n(item.paymentAmount)||n(item.amount);fixedPaid+=actual;if(['electric','water','gas-heat'].includes(item.id))fixedOver+=Math.max(0,actual-n(item.amount));}
-    const overages=other+fixedOver;return{income:sum(t.income||[]),fixedBudget,fixedPaid,discretionary,spent,overages,left:discretionary-spent-overages};
+    const t=raw.template||{},m=raw.months?.[key]||{},fixed=t.fixed||[],discretionary=n(t.variable?.discretionary),spent=sum(m.discretionary||[]),other=sum(m.otherExpenses||[]);
+    let fixedDue=0,fixedPaid=0,fixedOver=0;for(const item of fixed){const expected=momExpected(item,key);fixedDue+=expected;if(!m.fixedPaid?.[item.id])continue;const actual=n(m.fixedActual?.[item.id])||expected||n(item.amount);fixedPaid+=actual;if(['electric','water','gas-heat'].includes(item.id))fixedOver+=Math.max(0,actual-(expected||n(item.amount)))}
+    const overages=other+fixedOver;return{income:sum(t.income||[]),fixedDue,fixedPaid,discretionary,spent,other,fixedOver,overages,left:discretionary-spent-overages};
   }
   function renderMom(){
-    const now=new Date();const key=`${YEAR}-${String(now.getMonth()+1).padStart(2,'0')}`;const x=momMonth(state.data.mom||{},key);const label=new Intl.DateTimeFormat('en-US',{month:'long',year:'numeric'}).format(now);
-    const month=state.data.mom?.months?.[key]||{};const purchases=[...(month.discretionary||[]),...(month.otherExpenses||[])].sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,10);
-    return `<div class="hero"><div class="hero-label">Overall spending left</div><div class="hero-value">${money(x.left)}</div><div class="hero-note">${esc(label)} · discretionary including overages</div></div>
-      <div class="grid">${stat('Monthly income',money(x.income),'template','good')}${stat('Fixed reserve',money(x.fixedBudget),`${money(x.fixedPaid)} paid`)}${stat('Other overages',money(x.overages),'this month',x.overages?'bad':'good')}</div>
-      ${card('Recent spending',purchases.map(i=>row(i.name||'Discretionary',fullMoney(i.amount),i.date||'')).join(''),label)}`;
+    const raw=state.data.mom||{},now=new Date(),current=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`,keys=[...new Set([...Object.keys(raw.months||{}),current])].sort();
+    if(!state.momMonth||!keys.includes(state.momMonth))state.momMonth=keys.includes(current)?current:keys.at(-1);const key=state.momMonth,index=keys.indexOf(key),x=momMonth(raw,key),date=new Date(`${key}-01T12:00:00`),label=new Intl.DateTimeFormat('en-US',{month:'long',year:'numeric'}).format(date),month=raw.months?.[key]||{},fixed=raw.template?.fixed||[];
+    const fixedRows=fixed.map(item=>{const expected=momExpected(item,key),paid=!!month.fixedPaid?.[item.id],actual=paid?(n(month.fixedActual?.[item.id])||expected||n(item.amount)):0;return row(item.name,paid?fullMoney(actual):(expected?fullMoney(expected):'—'),paid?'Paid':expected?'Due / budgeted':'Not due',paid?'good':'')}).join('');
+    const discretionaryRows=(month.discretionary||[]).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))).map(item=>row(item.name||'Discretionary',fullMoney(item.amount),item.date||'')).join('');
+    const otherRows=(month.otherExpenses||[]).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))).map(item=>row(item.name||'Other expense',fullMoney(item.amount),`${item.date||''} · Overage`,'bad')).join('');
+    return `<div class="month-switch"><button data-mom-month="${esc(keys[index-1]||'')}" ${index===0?'disabled':''} aria-label="Previous month">‹</button><div class="month-label">${esc(label)}</div><button data-mom-month="${esc(keys[index+1]||'')}" ${index===keys.length-1?'disabled':''} aria-label="Next month">›</button></div>
+      <div class="hero"><div class="hero-label">Left to spend this month</div><div class="hero-value">${money(x.left)}</div><div class="hero-note">${money(x.discretionary)} budget minus ${money(x.spent)} spending and ${money(x.overages)} overages</div></div>
+      <div class="grid">${stat('Spending budget',money(x.discretionary),'this month')}${stat('Spent',money(x.spent),`${(month.discretionary||[]).length} purchases`,'bad')}${stat('Overages',money(x.overages),'fixed and other',x.overages?'bad':'good')}</div>
+      ${card('Fixed monthly spending',fixedRows,label)}
+      ${card('Discretionary spending',discretionaryRows,label)}
+      ${otherRows?card('Other expense overages',otherRows,label):''}`;
   }
 
   function renderProperties(){
@@ -277,6 +323,7 @@
     const fn={budget:renderBudget,cashflow:renderCashFlow,tax:renderTax,savings:renderSavings,mom:renderMom,properties:renderProperties}[state.view];
     $('#content').innerHTML=fn();
     document.querySelectorAll('[data-property]').forEach(btn=>btn.addEventListener('click',()=>{state.property=btn.dataset.property;render()}));
+    document.querySelectorAll('[data-mom-month]').forEach(btn=>btn.addEventListener('click',()=>{if(btn.dataset.momMonth){state.momMonth=btn.dataset.momMonth;render()}}));
   }
 
   document.querySelectorAll('.nav-btn').forEach(btn=>btn.addEventListener('click',()=>{
