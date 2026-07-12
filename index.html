@@ -7761,6 +7761,7 @@ async function envRENTALS_put(data) {
 let _cfEdit = null; // { type: 'income' | 'expenses', id }
 let _cfExpenseSort = 'amount'; // 'amount' | 'date'
 const _cfExpandedIncome = new Set();
+let _cfDetailsPromise = null;
 
 function cfNewId(prefix = 'cf') {
   return crypto.randomUUID ? crypto.randomUUID() : `${prefix}_${Math.random().toString(36).slice(2)}`;
@@ -7811,6 +7812,21 @@ async function saveCashFlow() {
 async function renderCashFlow() {
   await loadCashFlow();
   await loadSavings();
+  void startRobinhoodBalanceRefresh(false);
+  _renderCashFlowHtml();
+  void hydrateCashFlowDetails().catch(() => {});
+}
+
+async function hydrateCashFlowDetails() {
+  if (_cfDetailsPromise) return _cfDetailsPromise;
+  _cfDetailsPromise = (async () => {
+    await loadCashFlowDetails();
+    if (state.currentView === 'cash-flow') _renderCashFlowHtml();
+  })().finally(() => { _cfDetailsPromise = null; });
+  return _cfDetailsPromise;
+}
+
+async function loadCashFlowDetails() {
   await ensureNetWorthLoaded(true);
   await Promise.all(CASH_FLOW_AUTO_PROCEEDS_PROPS.map(prop => ensureSaleCloseoutDraftLoaded(prop)));
   await Promise.all(CASH_FLOW_AUTO_PROCEEDS_PROPS.flatMap(prop => {
@@ -7818,7 +7834,6 @@ async function renderCashFlow() {
     if (MAINTENANCE_BASIS_PROPERTIES.has(prop)) keys.push('maintenance');
     return keys.map(key => ensureLoaded(prop, key));
   }));
-  _renderCashFlowHtml();
 }
 
 function cfRobinhoodChecking() {
@@ -8023,7 +8038,7 @@ function cfPinnedCheckingRow(color) {
                style="width:100%;padding-left:1.35rem;text-align:right;font-size:.84rem;font-weight:700;color:${color};background:var(--bg);cursor:not-allowed">
       </div>
     </td>
-    <td style="padding:.55rem .4rem;border-bottom:${expanded ? 'none' : '1px solid var(--border)'};text-align:right;color:var(--text-muted);font-size:.72rem;white-space:nowrap">${state.robinhoodBalanceLoading ? '<span class="spinner" style="width:.8rem;height:.8rem;border-width:2px;vertical-align:-.15rem;margin-right:.25rem"></span> Pulling data' : 'Plaid'}</td>
+    <td style="padding:.55rem .4rem;border-bottom:${expanded ? 'none' : '1px solid var(--border)'};text-align:right;color:var(--text-muted);font-size:.72rem;white-space:nowrap">${state.robinhoodBalanceLoading ? '<span class="spinner" style="width:.8rem;height:.8rem;border-width:2px;vertical-align:-.15rem;margin-right:.25rem"></span> updating balance' : 'Plaid'}</td>
   </tr>
   ${expanded ? `<tr style="background:rgba(16,185,129,.08)"><td colspan="4" style="padding:0 .6rem .65rem 2.25rem;border-bottom:1px solid var(--border);font-size:.72rem;color:var(--text-muted)">Pulled from the Savings tab Robinhood Checking balance via Plaid. Date: Current.</td></tr>` : ''}`;
 }
