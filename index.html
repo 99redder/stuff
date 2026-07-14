@@ -7246,7 +7246,10 @@ async function renderTaxPlanning() {
 
     <!-- Business Income -->
     <div class="card tp-card">
-      <div class="card-header"><div class="card-title">Business Income (Self-Employment)</div></div>
+      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap">
+        <div class="card-title">Business Income (Self-Employment)</div>
+        <button class="btn btn-ghost btn-sm" id="tp-business-refresh" onclick="tpFetchBusinessIncome(this)">Refresh business income</button>
+      </div>
       <div class="card-body">
         <div style="display:flex;align-items:center;justify-content:space-between">
           <div class="tp-group" style="flex:1;margin-bottom:0">FMG — Sole Proprietorship (pre-LLC period)</div>
@@ -7258,39 +7261,20 @@ async function renderTaxPlanning() {
           ${tpFld('tp-fmg-sp','Net Profit ($)',tp.fmg_sp ?? 747,tp.fmg_sp_locked)}
         </div>
 
-        <div class="tp-group">FMG — LLC (fetched from repo)</div>
+        <div class="tp-group">FMG — LLC (read-only sync)</div>
         <div class="tp-fetch-row" style="margin-bottom:.25rem">
           ${tpFld('tp-fmg','Net Income ($)',tp.fmg)}
-          <div class="form-group">
-            <label class="tp-lbl">Admin Username</label>
-            <input type="text" id="tp-fmg-user" placeholder="admin" autocomplete="username" style="width:130px">
-          </div>
-          <div class="form-group">
-            <label class="tp-lbl">Admin Password</label>
-            <input type="password" id="tp-fmg-pw" placeholder="••••••••" autocomplete="current-password" style="width:130px">
-          </div>
-          <div class="form-group" style="justify-content:flex-end">
-            <label class="tp-lbl">&nbsp;</label>
-            <button class="btn btn-ghost btn-sm" onclick="tpFetchFMG()">Fetch ${CURRENT_YEAR}</button>
-          </div>
         </div>
         <div id="tp-fmg-fetched" class="tp-note" style="font-style:italic">${tpFetchedLabel(tp.fmg_fetched_at)}</div>
         <div id="tp-fmg-msg" class="tp-note"></div>
 
-        <div class="tp-group">Eastern Shore AI</div>
+        <div class="tp-group">Eastern Shore AI (read-only sync)</div>
         <div class="tp-fetch-row" style="margin-bottom:.25rem">
           ${tpFld('tp-esai','Income ($)',tp.esai)}
-          <div class="form-group">
-            <label class="tp-lbl">Admin Password</label>
-            <input type="password" id="tp-esai-pw" placeholder="••••••••" autocomplete="off" style="width:130px">
-          </div>
-          <div class="form-group" style="justify-content:flex-end">
-            <label class="tp-lbl">&nbsp;</label>
-            <button class="btn btn-ghost btn-sm" onclick="tpFetchESAI()">Fetch ${CURRENT_YEAR}</button>
-          </div>
         </div>
         <div id="tp-esai-fetched" class="tp-note" style="font-style:italic">${tpFetchedLabel(tp.esai_fetched_at)}</div>
         <div id="tp-esai-msg" class="tp-note"></div>
+        <div class="tp-note" style="margin-top:.5rem">Totals synchronize automatically every day at 6:00 AM Eastern. The integration can read annual totals only and cannot access transaction details or make changes.</div>
         <div class="tp-note" style="margin-top:.5rem">SE tax (15.3%) applies automatically. Half is deducted above-the-line.</div>
       </div>
     </div>
@@ -10529,44 +10513,50 @@ function tpMarkFetched(key, elId) {
   if (el) el.textContent = tpFetchedLabel(saved[key]);
 }
 
-async function tpFetchFMG() {
-  const usernameInput = document.getElementById('tp-fmg-user');
-  const passwordInput = document.getElementById('tp-fmg-pw');
-  const msg = document.getElementById('tp-fmg-msg');
-  const username = usernameInput?.value.trim() || 'admin';
-  const pw = passwordInput?.value;
-  if (!username || !pw) { msg.textContent = 'Enter FMG admin username and password first.'; return; }
-  msg.textContent = 'Fetching…';
+async function tpFetchBusinessIncome(button) {
+  const fmgMsg = document.getElementById('tp-fmg-msg');
+  const esaiMsg = document.getElementById('tp-esai-msg');
+  if (fmgMsg) fmgMsg.textContent = 'Synchronizing read-only totals…';
+  if (esaiMsg) esaiMsg.textContent = 'Synchronizing read-only totals…';
+  if (button) {
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    button.textContent = 'Synchronizing…';
+  }
   try {
-    const data = await callApi({ action: 'fetch_fmg_tax_summary', year: String(CURRENT_YEAR), username, password: pw });
-    const incCents = Number(data.incomeCents || 0);
-    const expCents = Number(data.expenseCents || 0);
-    const dollars = Number(data.netCents || 0) / 100;
-    document.getElementById('tp-fmg').value = dollars.toFixed(2);
-    msg.textContent = `Fetched: ${fmt(incCents/100)} income − ${fmt(expCents/100)} expenses = ${fmt(dollars)} net`;
-    tpMarkFetched('fmg_fetched_at', 'tp-fmg-fetched');
-    tpChanged();
-  } catch (e) { msg.textContent = `Failed: ${e.message}`; }
-  finally { if (passwordInput) passwordInput.value = ''; }
-}
-
-async function tpFetchESAI() {
-  const passwordInput = document.getElementById('tp-esai-pw');
-  const msg = document.getElementById('tp-esai-msg');
-  const pw = passwordInput?.value;
-  if (!pw) { msg.textContent = 'Enter admin password first.'; return; }
-  msg.textContent = 'Fetching…';
-  try {
-    const data = await callApi({ action: 'fetch_esai_tax_summary', year: String(CURRENT_YEAR), password: pw });
-    const incCents = Number(data.incomeCents || 0);
-    const expCents = Number(data.expenseCents || 0);
-    const dollars = Number(data.netCents || 0) / 100;
-    document.getElementById('tp-esai').value = dollars.toFixed(2);
-    msg.textContent = `Fetched: ${fmt(incCents/100)} income − ${fmt(expCents/100)} expenses = ${fmt(dollars)} net`;
-    tpMarkFetched('esai_fetched_at', 'tp-esai-fetched');
-    tpChanged();
-  } catch (e) { msg.textContent = `Failed: ${e.message}`; }
-  finally { if (passwordInput) passwordInput.value = ''; }
+    const response = await callApi({ action: 'refresh_business_income', year: String(CURRENT_YEAR) });
+    const results = response.results || {};
+    const tp = tpLoadLocal();
+    const applyResult = (key, inputId, fetchedId, msgEl, label) => {
+      const result = results[key];
+      if (!result?.ok) {
+        if (msgEl) msgEl.textContent = `Failed: ${result?.error || `${label} refresh failed`}`;
+        return false;
+      }
+      const incomeCents = Number(result.incomeCents || 0);
+      const expenseCents = Number(result.expenseCents || 0);
+      const dollars = Number(result.netCents || 0) / 100;
+      const input = document.getElementById(inputId);
+      if (input) input.value = dollars.toFixed(2);
+      tp[`${key}_fetched_at`] = result.fetchedAt;
+      const fetchedEl = document.getElementById(fetchedId);
+      if (fetchedEl) fetchedEl.textContent = tpFetchedLabel(result.fetchedAt);
+      if (msgEl) msgEl.textContent = `Synchronized: ${fmt(incomeCents/100)} income − ${fmt(expenseCents/100)} expenses = ${fmt(dollars)} net`;
+      return true;
+    };
+    const fmgChanged = applyResult('fmg', 'tp-fmg', 'tp-fmg-fetched', fmgMsg, 'FMG');
+    const esaiChanged = applyResult('esai', 'tp-esai', 'tp-esai-fetched', esaiMsg, 'Eastern Shore AI');
+    if (fmgChanged || esaiChanged) tpChanged();
+  } catch (error) {
+    if (fmgMsg) fmgMsg.textContent = `Failed: ${error.message}`;
+    if (esaiMsg) esaiMsg.textContent = `Failed: ${error.message}`;
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+      button.textContent = 'Refresh business income';
+    }
+  }
 }
 
 function tpAddPayment() {
@@ -10794,8 +10784,7 @@ window.toggleTheme             = toggleTheme;
 window.postNormalMonth         = postNormalMonth;
 window.tpChanged               = tpChanged;
 window.tpToggleLock            = tpToggleLock;
-window.tpFetchFMG              = tpFetchFMG;
-window.tpFetchESAI             = tpFetchESAI;
+window.tpFetchBusinessIncome   = tpFetchBusinessIncome;
 window.tpAddPayment            = tpAddPayment;
 window.tpRemovePayment         = tpRemovePayment;
 window.tpPayDate               = tpPayDate;

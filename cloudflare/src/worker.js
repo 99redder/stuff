@@ -103,6 +103,17 @@ async function runScheduledRobinhoodRefresh(env, scheduledTime) {
   } catch (error) {
     console.error(JSON.stringify({ event: 'scheduled_precious_metals_refresh_error', message: error instanceof Error ? error.message : String(error) }));
   }
+  const easternYear = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+  }).format(new Date(scheduledTime));
+  const businessResult = await refreshBusinessIncome(env, easternYear);
+  console.log(JSON.stringify({
+    event: 'scheduled_business_income_refresh',
+    year: easternYear,
+    fmg: businessResult.fmg.ok,
+    esai: businessResult.esai.ok,
+  }));
 }
 
 async function handleDataApi(request, env) {
@@ -151,8 +162,9 @@ async function handleDataApi(request, env) {
   // Non-property actions
   if (action === 'get_tax_planning') return handleGetTaxPlanning(env, body.year);
   if (action === 'save_tax_planning') return handleSaveTaxPlanning(env, body.year, body.data);
-  if (action === 'fetch_fmg_tax_summary') return handleFetchFmgTaxSummary(body);
-  if (action === 'fetch_esai_tax_summary') return handleFetchEsaiTaxSummary(body);
+  if (action === 'fetch_fmg_tax_summary') return handleFetchFmgTaxSummary(env, body.year);
+  if (action === 'fetch_esai_tax_summary') return handleFetchEsaiTaxSummary(env, body.year);
+  if (action === 'refresh_business_income') return handleRefreshBusinessIncome(env, body.year);
   if (action === 'get_budget') return handleGetBudget(env);
   if (action === 'save_budget') return handleSaveBudget(env, body.data);
   if (action === 'get_cash_flow') return handleGetCashFlow(env, body.year);
@@ -345,99 +357,89 @@ async function handleLogout(request, env) {
   });
 }
 
-async function handleFetchFmgTaxSummary(body) {
-  const username = String(body.username || '').trim();
-  const password = String(body.password || '');
-  const year = String(body.year || '').trim();
+const BUSINESS_TAX_SOURCES = {
+  fmg: {
+    label: 'FMG',
+    url: 'https://florencemaegifts.com/api/tax/summary',
+    secret: 'FMG_TAX_READ_TOKEN',
+  },
+  esai: {
+    label: 'Eastern Shore AI',
+    url: 'https://eastern-shore-ai-contact.99redder.workers.dev/api/tax/summary',
+    secret: 'ESAI_TAX_READ_TOKEN',
+  },
+};
 
-  if (!username || !password) return jsonResponse({ error: 'FMG username and password are required' }, 400);
-  if (!/^\d{4}$/.test(year)) return jsonResponse({ error: 'Invalid year' }, 400);
+async function fetchBusinessTaxSummary(env, sourceKey, year) {
+  const source = BUSINESS_TAX_SOURCES[sourceKey];
+  if (!source || !/^\d{4}$/.test(String(year || ''))) throw new Error('Invalid business tax request');
+  const token = String(env[source.secret] || '').trim();
+  if (!token) throw new Error(`${source.label} read-only tax integration is not configured`);
 
-  let loginRes;
+  let response;
   try {
-    loginRes = await fetch('https://florencemaegifts.com/api/admin/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
+    response = await fetch(`${source.url}?year=${encodeURIComponent(year)}`, {
+      headers: { 'X-Tax-Read-Token': token, Accept: 'application/json' },
     });
-  } catch (err) {
-    return jsonResponse({ error: `Failed to reach FMG: ${err.message}` }, 502);
+  } catch (error) {
+    throw new Error(`Failed to reach ${source.label}: ${error instanceof Error ? error.message : String(error)}`);
   }
+  const payload = await readJsonLimited(response, MAX_UPSTREAM_JSON_BYTES).catch(() => ({}));
+  if (!response.ok) throw new Error(`${source.label} read-only tax request failed (${response.status})`);
 
-  if (!loginRes.ok) {
-    const err = await readJsonLimited(loginRes, MAX_UPSTREAM_JSON_BYTES).catch(() => ({}));
-    // Never relay upstream auth failures as 401 — the frontend treats a 401
-    // from this API as an expired rentals session and forces a logout.
-    return jsonResponse({ error: err.error || `FMG login failed (${loginRes.status})` }, loginRes.status === 429 ? 429 : 502);
+  const incomeCents = Number(payload.incomeCents);
+  const expenseCents = Number(payload.expenseCents);
+  const netCents = Number(payload.netCents);
+  if (![incomeCents, expenseCents, netCents].every(Number.isFinite)) {
+    throw new Error(`${source.label} returned an invalid tax summary`);
   }
-
-  const setCookie = loginRes.headers.get('Set-Cookie') || '';
-  const sessionCookie = setCookie.split(';')[0];
-  if (!sessionCookie) return jsonResponse({ error: 'FMG login did not return a session cookie' }, 502);
-
-  const txUrl = `https://florencemaegifts.com/api/tax/transactions?year=${encodeURIComponent(year)}&type=all&limit=5000`;
-  let txRes;
-  try {
-    txRes = await fetch(txUrl, { headers: { Cookie: sessionCookie } });
-  } catch (err) {
-    return jsonResponse({ error: `Failed to fetch FMG tax data: ${err.message}` }, 502);
-  }
-  let data;
-  try {
-    data = await readJsonLimited(txRes, MAX_UPSTREAM_JSON_BYTES);
-  } catch (err) {
-    data = {};
-    if (txRes.ok) return jsonResponse({ error: `FMG returned an invalid or oversized response: ${err.message}` }, 502);
-  }
-
-  if (!txRes.ok) {
-    return jsonResponse({ error: data.error || `FMG tax fetch failed (${txRes.status})` }, 502);
-  }
-
-  const incomeCents = Array.isArray(data.income)
-    ? data.income.reduce((s, r) => s + Number(r.amount_cents || 0), 0)
-    : 0;
-  const expenseCents = Array.isArray(data.expenses)
-    ? data.expenses.reduce((s, r) => s + Number(r.amount_cents || 0), 0)
-    : 0;
-
-  return jsonResponse({ ok: true, incomeCents, expenseCents, netCents: incomeCents - expenseCents });
+  return { ok: true, incomeCents, expenseCents, netCents, fetchedAt: new Date().toISOString() };
 }
 
-async function handleFetchEsaiTaxSummary(body) {
-  const password = String(body.password || '');
-  const year = String(body.year || '').trim();
-
-  if (!password) return jsonResponse({ error: 'ESAI admin password is required' }, 400);
-  if (!/^\d{4}$/.test(year)) return jsonResponse({ error: 'Invalid year' }, 400);
-
-  const txUrl = `https://eastern-shore-ai-contact.99redder.workers.dev/api/tax/transactions?year=${encodeURIComponent(year)}&type=all&limit=5000`;
-  let txRes;
-  try {
-    txRes = await fetch(txUrl, { headers: { 'X-Admin-Password': password } });
-  } catch (err) {
-    return jsonResponse({ error: `Failed to reach ESAI: ${err.message}` }, 502);
+async function refreshBusinessIncome(env, year) {
+  const validYear = String(year || '');
+  if (!/^\d{4}$/.test(validYear)) {
+    return { fmg: { ok: false, error: 'Invalid year' }, esai: { ok: false, error: 'Invalid year' } };
   }
+  const [fmgSettled, esaiSettled] = await Promise.allSettled([
+    fetchBusinessTaxSummary(env, 'fmg', validYear),
+    fetchBusinessTaxSummary(env, 'esai', validYear),
+  ]);
+  const result = {
+    fmg: fmgSettled.status === 'fulfilled' ? fmgSettled.value : { ok: false, error: fmgSettled.reason instanceof Error ? fmgSettled.reason.message : 'FMG refresh failed' },
+    esai: esaiSettled.status === 'fulfilled' ? esaiSettled.value : { ok: false, error: esaiSettled.reason instanceof Error ? esaiSettled.reason.message : 'Eastern Shore AI refresh failed' },
+  };
 
-  let data;
-  try {
-    data = await readJsonLimited(txRes, MAX_UPSTREAM_JSON_BYTES);
-  } catch (err) {
-    data = {};
-    if (txRes.ok) return jsonResponse({ error: `ESAI returned an invalid or oversized response: ${err.message}` }, 502);
+  if (result.fmg.ok || result.esai.ok) {
+    const data = await env.RENTALS.get(`tax_planning:${validYear}`, 'json') || {};
+    if (result.fmg.ok) {
+      data.fmg = result.fmg.netCents / 100;
+      data.fmg_fetched_at = result.fmg.fetchedAt;
+    }
+    if (result.esai.ok) {
+      data.esai = result.esai.netCents / 100;
+      data.esai_fetched_at = result.esai.fetchedAt;
+    }
+    await env.RENTALS.put(`tax_planning:${validYear}`, JSON.stringify(data));
   }
-  if (!txRes.ok) {
-    return jsonResponse({ error: data.error || `ESAI tax fetch failed (${txRes.status})` }, txRes.status === 429 ? 429 : 502);
-  }
+  return result;
+}
 
-  const incomeCents = Array.isArray(data.income)
-    ? data.income.reduce((s, r) => s + Number(r.amount_cents || 0), 0)
-    : 0;
-  const expenseCents = Array.isArray(data.expenses)
-    ? data.expenses.reduce((s, r) => s + Number(r.amount_cents || 0), 0)
-    : 0;
+async function handleRefreshBusinessIncome(env, year) {
+  if (!/^\d{4}$/.test(String(year || ''))) return jsonResponse({ error: 'Invalid year' }, 400);
+  return jsonResponse({ results: await refreshBusinessIncome(env, String(year)) });
+}
 
-  return jsonResponse({ ok: true, incomeCents, expenseCents, netCents: incomeCents - expenseCents });
+async function handleFetchFmgTaxSummary(env, year) {
+  if (!/^\d{4}$/.test(String(year || ''))) return jsonResponse({ error: 'Invalid year' }, 400);
+  try { return jsonResponse(await fetchBusinessTaxSummary(env, 'fmg', String(year))); }
+  catch (error) { return jsonResponse({ error: error instanceof Error ? error.message : 'FMG refresh failed' }, 502); }
+}
+
+async function handleFetchEsaiTaxSummary(env, year) {
+  if (!/^\d{4}$/.test(String(year || ''))) return jsonResponse({ error: 'Invalid year' }, 400);
+  try { return jsonResponse(await fetchBusinessTaxSummary(env, 'esai', String(year))); }
+  catch (error) { return jsonResponse({ error: error instanceof Error ? error.message : 'Eastern Shore AI refresh failed' }, 502); }
 }
 
 async function isAuthenticated(request, env) {

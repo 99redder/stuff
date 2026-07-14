@@ -36,3 +36,4 @@ crons = ["0 10 * * *", "0 11 * * *"]
 
 # Environment variables (set via: wrangler env.<env>.secret put KEY VALUE)
 # wrangler secret put ADMIN_PASSWORD
+# Read-only business tax integrations: FMG_TAX_READ_TOKEN, ESAI_TAX_READ_TOKEN
