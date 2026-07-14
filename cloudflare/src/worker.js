@@ -2267,7 +2267,7 @@ async function handleGetVehicleTrims(body) {
 // ── Plaid / Robinhood Checking ───────────────────────────────────────────────
 
 const ROBINHOOD_BALANCE_CACHE_KEY = 'plaid:robinhood_checking_balance';
-const ROBINHOOD_TOKEN_FINGERPRINT_KEY = 'plaid:robinhood_checking_token_fingerprint';
+const ROBINHOOD_ACCOUNT_SELECTION_KEY = 'plaid:robinhood_checking_selection';
 const ROBINHOOD_BALANCE_CACHE_MS = 5 * 60 * 1000;
 const PLAID_FORCE_REFRESH_MIN_MS = 60 * 1000;
 
@@ -2279,12 +2279,13 @@ async function plaidTokenFingerprint(accessToken) {
 async function resolvePlaidTokenForAccount(env, accountId) {
   const tokens = plaidAccessTokens(env);
   if (!tokens.length) throw new Error('No Plaid access token is configured');
-  if (tokens.length === 1) return tokens[0];
 
   const fingerprints = await Promise.all(tokens.map(plaidTokenFingerprint));
-  const savedFingerprint = await env.RENTALS.get(ROBINHOOD_TOKEN_FINGERPRINT_KEY);
-  const savedIndex = fingerprints.indexOf(savedFingerprint || '');
-  if (savedIndex >= 0) return tokens[savedIndex];
+  const saved = await env.RENTALS.get(ROBINHOOD_ACCOUNT_SELECTION_KEY, 'json');
+  const savedIndex = fingerprints.indexOf(String(saved?.tokenFingerprint || ''));
+  if (savedIndex >= 0 && typeof saved?.accountId === 'string' && saved.accountId) {
+    return { accessToken: tokens[savedIndex], accountId: saved.accountId };
+  }
 
   const matches = await Promise.all(tokens.map(async (accessToken, index) => {
     try {
@@ -2304,19 +2305,29 @@ async function resolvePlaidTokenForAccount(env, accountId) {
         console.warn(JSON.stringify({ event: 'plaid_checking_item_lookup_error', status: response.status, code }));
         return false;
       }
-      return Array.isArray(payload.accounts) && payload.accounts.some(account => account.account_id === accountId)
-        ? index
-        : false;
+      const accounts = Array.isArray(payload.accounts) ? payload.accounts : [];
+      const exactAccount = accountId ? accounts.find(account => account.account_id === accountId) : null;
+      const robinhoodChecking = String(payload.item?.institution_id || '') === 'ins_54'
+        ? accounts.find(account => account.subtype === 'checking'
+          || (account.type === 'depository' && /checking/i.test(`${account.name || ''} ${account.official_name || ''}`)))
+        : null;
+      const matchedAccount = exactAccount || robinhoodChecking;
+      return matchedAccount
+        ? { index, accountId: String(matchedAccount.account_id || ''), exact: !!exactAccount }
+        : null;
     } catch (error) {
       console.warn(JSON.stringify({ event: 'plaid_checking_item_lookup_error', message: error instanceof Error ? error.message : String(error) }));
-      return false;
+      return null;
     }
   }));
-  const matchingIndex = matches.find(index => index !== false);
-  if (matchingIndex === undefined) throw new Error('The configured Robinhood checking account was not found in the linked Plaid Items');
+  const matching = matches.filter(Boolean).sort((a, b) => Number(b.exact) - Number(a.exact))[0];
+  if (!matching?.accountId) throw new Error('Robinhood checking was not found in the linked Plaid Items');
 
-  await env.RENTALS.put(ROBINHOOD_TOKEN_FINGERPRINT_KEY, fingerprints[matchingIndex]);
-  return tokens[matchingIndex];
+  await env.RENTALS.put(ROBINHOOD_ACCOUNT_SELECTION_KEY, JSON.stringify({
+    tokenFingerprint: fingerprints[matching.index],
+    accountId: matching.accountId,
+  }));
+  return { accessToken: tokens[matching.index], accountId: matching.accountId };
 }
 
 async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client') {
@@ -2346,13 +2357,13 @@ async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client') {
     return jsonResponse({ error: 'Live balance refresh limit reached. Try again shortly.' }, 429, { 'Retry-After': '60' });
   }
 
-  if (!env.PLAID_CLIENT_ID || !env.PLAID_SECRET || !plaidAccessTokens(env).length || !env.PLAID_ACCOUNT_ID) {
+  if (!env.PLAID_CLIENT_ID || !env.PLAID_SECRET || !plaidAccessTokens(env).length) {
     if (cached) return jsonResponse({ ...cached, source: 'cache', stale: true, warning: 'Live balance is not configured.' });
     return jsonResponse({ error: 'Live Robinhood balance is not configured' }, 503);
   }
 
   try {
-    const accessToken = await resolvePlaidTokenForAccount(env, env.PLAID_ACCOUNT_ID);
+    const selection = await resolvePlaidTokenForAccount(env, env.PLAID_ACCOUNT_ID);
     const response = await fetch('https://production.plaid.com/accounts/balance/get', {
       method: 'POST',
       headers: {
@@ -2362,8 +2373,8 @@ async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client') {
         'Plaid-Version': '2020-09-14',
       },
       body: JSON.stringify({
-        access_token: accessToken,
-        options: { account_ids: [env.PLAID_ACCOUNT_ID] },
+        access_token: selection.accessToken,
+        options: { account_ids: [selection.accountId] },
       }),
     });
 
@@ -2371,7 +2382,7 @@ async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client') {
     if (!response.ok) throw new Error(`Plaid balance request failed (${response.status})`);
 
     const account = Array.isArray(data.accounts)
-      ? data.accounts.find(item => item.account_id === env.PLAID_ACCOUNT_ID)
+      ? data.accounts.find(item => item.account_id === selection.accountId)
       : null;
     if (!account) throw new Error('Configured Robinhood checking account was not returned');
 
