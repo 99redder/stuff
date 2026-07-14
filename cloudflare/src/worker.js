@@ -1257,6 +1257,7 @@ async function handleGetMomBudgetPublicSummary(request, env, requestedMonth) {
   const data = normalizeMomBudget(raw);
   syncMomHouseholdTransfers(data, fairShare);
   const month = calcMomBudgetMonth(data, monthKey);
+  const transactions = momBudgetMonthTransactions(data, monthKey);
   const yearSummary = calcMomBudgetYear(data, year);
 
   const response = new Response(JSON.stringify({
@@ -1269,7 +1270,8 @@ async function handleGetMomBudgetPublicSummary(request, env, requestedMonth) {
       otherOverages: month.otherOverages,
       discretionarySpent: month.discretionarySpent,
       discretionaryAdjusted: month.discretionaryAdjusted,
-      fairShare
+      fairShare,
+      transactions
     },
     year: yearSummary
   }), {
@@ -1449,6 +1451,66 @@ function calcMomBudgetMonth(data, monthKey) {
     budgetSpent,
     variance: base.planned - budgetSpent
   };
+}
+
+function momBudgetMonthTransactions(data, monthKey) {
+  const t = data.template;
+  const m = data.months[monthKey] || blankMomBudgetMonth();
+  const defaultDate = `${monthKey}-01`;
+  const entries = [];
+
+  for (const item of t.fixed || []) {
+    if (!m.fixedPaid?.[item.id]) continue;
+    const expected = momFixedExpectedPayment(item, monthKey);
+    const fallback = expected || (Number(item.amount) || 0);
+    const actual = Number(m.fixedActual?.[item.id]);
+    const amount = momFixedBillKind(item) === 'variable' && Number.isFinite(actual) && actual > 0
+      ? actual
+      : fallback;
+    if (amount > 0) {
+      entries.push({
+        id: `fixed-${item.id}`,
+        date: defaultDate,
+        name: item.name || 'Fixed bill',
+        amount,
+        group: 'Fixed bills'
+      });
+    }
+  }
+
+  for (const entry of m.discretionary || []) {
+    const amount = Number(entry.amount) || 0;
+    if (amount <= 0) continue;
+    entries.push({
+      id: entry.id || `discretionary-${entry.date || defaultDate}-${entry.name || entry.description || amount}`,
+      date: validDateString(entry.date) ? entry.date : defaultDate,
+      name: entry.name || entry.description || 'Discretionary',
+      amount,
+      group: 'Discretionary'
+    });
+  }
+
+  for (const entry of m.otherExpenses || []) {
+    const amount = Number(entry.amount) || 0;
+    if (amount <= 0) continue;
+    entries.push({
+      id: entry.id || `other-${entry.date || defaultDate}-${entry.name || entry.description || amount}`,
+      date: validDateString(entry.date) ? entry.date : defaultDate,
+      name: entry.name || entry.description || 'Other expense',
+      amount,
+      group: 'Other expenses'
+    });
+  }
+
+  return entries.sort((a, b) => {
+    const dateCompare = String(b.date || '').localeCompare(String(a.date || ''));
+    if (dateCompare) return dateCompare;
+    return String(a.name || '').localeCompare(String(b.name || ''));
+  });
+}
+
+function validDateString(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
 }
 
 function momMonthHasActivity(month) {

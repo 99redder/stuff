@@ -230,6 +230,86 @@
       font-variant-numeric: tabular-nums;
     }
 
+    .transactions-toggle {
+      width: 100%;
+      min-height: 56px;
+      margin: 14px 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--text);
+      font-size: 1.04rem;
+      font-weight: 850;
+      box-shadow: var(--shadow);
+    }
+
+    .transactions {
+      display: none;
+      padding: 16px;
+      margin-bottom: 8px;
+    }
+
+    .transactions.is-open { display: block; }
+
+    .transactions-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+      font-size: 1.18rem;
+      font-weight: 900;
+    }
+
+    .transactions-total {
+      color: var(--muted);
+      font-size: 0.92rem;
+      font-weight: 800;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .transaction-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px 12px;
+      padding: 12px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .transaction-name {
+      min-width: 0;
+      font-size: 1.03rem;
+      line-height: 1.2;
+      font-weight: 850;
+      overflow-wrap: anywhere;
+    }
+
+    .transaction-meta {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.25;
+      font-weight: 700;
+    }
+
+    .transaction-amount {
+      color: var(--bad);
+      font-size: 1.06rem;
+      font-weight: 900;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .transactions-empty {
+      padding: 12px 0 2px;
+      color: var(--muted);
+      font-size: 0.98rem;
+      font-weight: 750;
+      line-height: 1.35;
+      border-top: 1px solid var(--border);
+    }
+
     .footer {
       padding: 8px 2px 0;
       color: var(--muted);
@@ -302,6 +382,18 @@
       <div class="year-row"><span id="year-variance-label">Under allocated</span><strong id="year-variance">$0</strong></div>
     </section>
 
+    <button class="transactions-toggle" type="button" id="transactions-toggle" aria-expanded="false">Show This Month's Transactions</button>
+
+    <section class="card transactions" id="transactions-card">
+      <div class="transactions-title">
+        <span>This Month's Transactions</span>
+        <span class="transactions-total" id="transactions-total">$0</span>
+      </div>
+      <div id="transactions-list">
+        <div class="transactions-empty">No transactions recorded for this month.</div>
+      </div>
+    </section>
+
     <div class="footer" id="updated">Read-only. Updates automatically.</div>
   </main>
 
@@ -325,7 +417,11 @@
       yearPlanned: document.getElementById('year-planned'),
       yearActual: document.getElementById('year-actual'),
       yearVarianceLabel: document.getElementById('year-variance-label'),
-      yearVariance: document.getElementById('year-variance')
+      yearVariance: document.getElementById('year-variance'),
+      transactionsToggle: document.getElementById('transactions-toggle'),
+      transactionsCard: document.getElementById('transactions-card'),
+      transactionsTotal: document.getElementById('transactions-total'),
+      transactionsList: document.getElementById('transactions-list')
     };
 
     function money(value) {
@@ -345,6 +441,25 @@
     function setAmount(el, value) {
       el.textContent = money(value);
       el.classList.toggle('is-negative', Number(value) < 0);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[char]));
+    }
+
+    function formatDate(value) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) return '';
+      const [year, month, day] = String(value).split('-').map(Number);
+      return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric'
+      });
     }
 
     let isLoading = false;
@@ -417,8 +532,42 @@
       els.yearVarianceLabel.textContent = variance >= 0 ? 'Under allocated' : 'Over allocated';
       els.yearVariance.textContent = money(Math.abs(variance));
       els.yearVariance.style.color = variance >= 0 ? 'var(--good)' : 'var(--bad)';
+      renderTransactions(month.transactions || []);
       els.status.textContent = 'Updated';
       els.updated.textContent = `Read-only. Last updated ${shortTime(data.updatedAt)}.`;
+    }
+
+    function renderTransactions(transactions) {
+      const items = Array.isArray(transactions) ? transactions : [];
+      const total = items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+      els.transactionsTotal.textContent = money(total);
+      updateTransactionsToggleText(items.length);
+
+      if (!items.length) {
+        els.transactionsList.innerHTML = '<div class="transactions-empty">No transactions recorded for this month.</div>';
+        return;
+      }
+
+      els.transactionsList.innerHTML = items.map((item) => {
+        const date = formatDate(item.date);
+        const group = item.group || 'Transaction';
+        const meta = [date, group].filter(Boolean).join(' · ');
+        return `
+          <div class="transaction-row">
+            <div>
+              <div class="transaction-name">${escapeHtml(item.name || 'Transaction')}</div>
+              <div class="transaction-meta">${escapeHtml(meta)}</div>
+            </div>
+            <div class="transaction-amount">-${money(item.amount)}</div>
+          </div>`;
+      }).join('');
+    }
+
+    function updateTransactionsToggleText(count) {
+      const open = els.transactionsCard.classList.contains('is-open');
+      els.transactionsToggle.textContent = open
+        ? "Hide This Month's Transactions"
+        : (count ? `Show This Month's Transactions (${count})` : "Show This Month's Transactions");
     }
 
     els.refresh.addEventListener('click', loadSummary);
@@ -427,6 +576,13 @@
       els.yearCard.classList.toggle('is-open', open);
       els.yearToggle.setAttribute('aria-expanded', String(open));
       els.yearToggle.textContent = open ? 'Hide Year Status' : 'Show Year Status';
+    });
+    els.transactionsToggle.addEventListener('click', () => {
+      const open = !els.transactionsCard.classList.contains('is-open');
+      els.transactionsCard.classList.toggle('is-open', open);
+      els.transactionsToggle.setAttribute('aria-expanded', String(open));
+      const count = els.transactionsList.querySelector('.transactions-empty') ? 0 : els.transactionsList.children.length;
+      updateTransactionsToggleText(count);
     });
 
     // Re-fetch whenever the app returns to the foreground. An installed PWA is normally
