@@ -1908,7 +1908,8 @@ const state = {
   netWorth: null,
   saleCloseoutDrafts: {},
   robinhoodBalance: null,
-  robinhoodBalanceLoading: false
+  robinhoodBalanceLoading: false,
+  robinhoodBalanceError: ''
 };
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -8648,13 +8649,15 @@ async function loadSavings() {
 async function refreshRobinhoodBalance(forceRefresh = false) {
   try {
     const result = await callApi({ action: 'get_robinhood_balance', refresh: forceRefresh });
+    state.robinhoodBalanceError = '';
     if (Number.isFinite(Number(result.balance))) {
       state.robinhoodBalance = result;
       state.savings.accounts.robinhoodChecking = Number(result.balance);
     }
     return result;
-  } catch {
+  } catch (error) {
     state.robinhoodBalance = null;
+    state.robinhoodBalanceError = error instanceof Error ? error.message : 'Live balance refresh failed';
     return null;
   }
 }
@@ -8809,9 +8812,11 @@ function _renderSavingsHtml() {
           <div style="padding:.68rem .75rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);font-size:1.05rem;font-weight:700">${fmt(s.accounts.robinhoodChecking || 0)}</div>
           <div style="font-size:.68rem;color:var(--text-muted);margin-top:.28rem">${state.robinhoodBalanceLoading
             ? '<span class="spinner" style="width:.72rem;height:.72rem;border-width:2px;vertical-align:-.13rem;margin-right:.25rem"></span> Pulling checking data from Plaid…'
-            : (state.robinhoodBalance
-              ? `${state.robinhoodBalance.stale ? 'Cached' : 'Live'} · updated ${fmtDateTime(state.robinhoodBalance.refreshedAt)}`
-              : 'Last synchronized Plaid balance · live refresh unavailable')}</div>
+            : (state.robinhoodBalanceError
+              ? `<span style="color:var(--danger)">${escHtml(state.robinhoodBalanceError)}</span>`
+              : (state.robinhoodBalance
+                ? `${state.robinhoodBalance.refreshLimited ? 'Recently refreshed' : (state.robinhoodBalance.stale ? 'Cached' : 'Live')} · updated ${fmtDateTime(state.robinhoodBalance.refreshedAt)}${state.robinhoodBalance.warning ? ` · ${escHtml(state.robinhoodBalance.warning)}` : ''}`
+                : 'Last synchronized Plaid balance · live refresh unavailable'))}</div>
         </div>
         <div>
           <label style="display:block;font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Robinhood Brokerage</label>

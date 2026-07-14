@@ -2267,8 +2267,57 @@ async function handleGetVehicleTrims(body) {
 // ── Plaid / Robinhood Checking ───────────────────────────────────────────────
 
 const ROBINHOOD_BALANCE_CACHE_KEY = 'plaid:robinhood_checking_balance';
+const ROBINHOOD_TOKEN_FINGERPRINT_KEY = 'plaid:robinhood_checking_token_fingerprint';
 const ROBINHOOD_BALANCE_CACHE_MS = 5 * 60 * 1000;
 const PLAID_FORCE_REFRESH_MIN_MS = 60 * 1000;
+
+async function plaidTokenFingerprint(accessToken) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(accessToken));
+  return [...new Uint8Array(digest).slice(0, 16)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function resolvePlaidTokenForAccount(env, accountId) {
+  const tokens = plaidAccessTokens(env);
+  if (!tokens.length) throw new Error('No Plaid access token is configured');
+  if (tokens.length === 1) return tokens[0];
+
+  const fingerprints = await Promise.all(tokens.map(plaidTokenFingerprint));
+  const savedFingerprint = await env.RENTALS.get(ROBINHOOD_TOKEN_FINGERPRINT_KEY);
+  const savedIndex = fingerprints.indexOf(savedFingerprint || '');
+  if (savedIndex >= 0) return tokens[savedIndex];
+
+  const matches = await Promise.all(tokens.map(async (accessToken, index) => {
+    try {
+      const response = await fetch('https://production.plaid.com/accounts/get', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'PLAID-CLIENT-ID': env.PLAID_CLIENT_ID,
+          'PLAID-SECRET': env.PLAID_SECRET,
+          'Plaid-Version': '2020-09-14',
+        },
+        body: JSON.stringify({ access_token: accessToken }),
+      });
+      const payload = await readJsonLimited(response, MAX_UPSTREAM_JSON_BYTES);
+      if (!response.ok) {
+        const code = String(payload.error_code || payload.error_type || 'UNKNOWN_ERROR').slice(0, 80);
+        console.warn(JSON.stringify({ event: 'plaid_checking_item_lookup_error', status: response.status, code }));
+        return false;
+      }
+      return Array.isArray(payload.accounts) && payload.accounts.some(account => account.account_id === accountId)
+        ? index
+        : false;
+    } catch (error) {
+      console.warn(JSON.stringify({ event: 'plaid_checking_item_lookup_error', message: error instanceof Error ? error.message : String(error) }));
+      return false;
+    }
+  }));
+  const matchingIndex = matches.find(index => index !== false);
+  if (matchingIndex === undefined) throw new Error('The configured Robinhood checking account was not found in the linked Plaid Items');
+
+  await env.RENTALS.put(ROBINHOOD_TOKEN_FINGERPRINT_KEY, fingerprints[matchingIndex]);
+  return tokens[matchingIndex];
+}
 
 async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client') {
   const cached = await env.RENTALS.get(ROBINHOOD_BALANCE_CACHE_KEY, 'json');
@@ -2297,12 +2346,13 @@ async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client') {
     return jsonResponse({ error: 'Live balance refresh limit reached. Try again shortly.' }, 429, { 'Retry-After': '60' });
   }
 
-  if (!env.PLAID_CLIENT_ID || !env.PLAID_SECRET || !env.PLAID_ACCESS_TOKEN || !env.PLAID_ACCOUNT_ID) {
+  if (!env.PLAID_CLIENT_ID || !env.PLAID_SECRET || !plaidAccessTokens(env).length || !env.PLAID_ACCOUNT_ID) {
     if (cached) return jsonResponse({ ...cached, source: 'cache', stale: true, warning: 'Live balance is not configured.' });
     return jsonResponse({ error: 'Live Robinhood balance is not configured' }, 503);
   }
 
   try {
+    const accessToken = await resolvePlaidTokenForAccount(env, env.PLAID_ACCOUNT_ID);
     const response = await fetch('https://production.plaid.com/accounts/balance/get', {
       method: 'POST',
       headers: {
@@ -2312,7 +2362,7 @@ async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client') {
         'Plaid-Version': '2020-09-14',
       },
       body: JSON.stringify({
-        access_token: env.PLAID_ACCESS_TOKEN,
+        access_token: accessToken,
         options: { account_ids: [env.PLAID_ACCOUNT_ID] },
       }),
     });
