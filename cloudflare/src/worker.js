@@ -367,6 +367,7 @@ const BUSINESS_TAX_SOURCES = {
     label: 'Eastern Shore AI',
     url: 'https://eastern-shore-ai-contact.99redder.workers.dev/api/tax/summary',
     secret: 'ESAI_TAX_READ_TOKEN',
+    serviceBinding: 'ESAI_API',
   },
 };
 
@@ -378,9 +379,11 @@ async function fetchBusinessTaxSummary(env, sourceKey, year) {
 
   let response;
   try {
-    response = await fetch(`${source.url}?year=${encodeURIComponent(year)}`, {
+    const request = new Request(`${source.url}?year=${encodeURIComponent(year)}`, {
       headers: { 'X-Tax-Read-Token': token, Accept: 'application/json' },
     });
+    const service = source.serviceBinding ? env[source.serviceBinding] : null;
+    response = service ? await service.fetch(request) : await fetch(request);
   } catch (error) {
     throw new Error(`Failed to reach ${source.label}: ${error instanceof Error ? error.message : String(error)}`);
   }

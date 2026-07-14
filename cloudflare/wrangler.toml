@@ -7,6 +7,11 @@ compatibility_date = "2024-01-01"
 binding = "RENTALS"
 id = "75372b2a892343c8b45e3d8abafcbce3"
 
+# Direct Worker-to-Worker path for the Eastern Shore AI aggregate tax summary.
+[[services]]
+binding = "ESAI_API"
+service = "eastern-shore-ai-contact"
+
 # Per-IP rate limiting for the public Mom Budget phone endpoint
 # (get_mom_budget_public_summary). 60 requests / 60s per IP, counted in-memory
 # at the edge — no KV writes. The handler fails open if this binding is absent.
