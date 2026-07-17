@@ -3363,7 +3363,7 @@ function mipRowHtml(prop, e) {
   const categoryCell = _mipEditMode
     ? `<select class="no-print" aria-label="Category" onchange="changeMoveInPurchaseCategory('${escAttr(e.id)}', this.value)"
                style="font-size:.8rem;padding:.2rem .35rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);max-width:170px">${mipCategoryOptionsHtml(cats, current)}</select>`
-    : `<span class="no-print" style="font-size:.85rem;white-space:nowrap">${escHtml(current)}</span>`;
+    : `<span style="font-size:.85rem;white-space:nowrap">${escHtml(current)}</span>`;
   return `
     <tr${e.purchased ? ' style="opacity:.62"' : ''}>
       <td class="no-print" style="width:44px;text-align:center;padding:.4rem .5rem">
@@ -3375,7 +3375,6 @@ function mipRowHtml(prop, e) {
         ${productLink ? `<div style="font-size:.8rem;margin-top:.25rem"><a href="${escAttr(productLink)}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:600;text-decoration:none">Open Link</a></div>` : ''}
       </td>
       <td style="padding:.4rem .5rem">
-        <span class="print-only" style="font-size:.85rem">${escHtml(current)}</span>
         ${categoryCell}
       </td>
       <td style="white-space:nowrap;padding:.4rem .5rem;color:var(--text-muted);font-size:.85rem">${e.date ? fmtDate(e.date) : '—'}</td>
