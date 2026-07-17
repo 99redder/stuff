@@ -3260,6 +3260,13 @@ async function seedMaintData(prop) {
 
 // ── View: Move-In Purchases ───────────────────────────────────────────────────
 
+let _mipSort = 'default';  // 'default' | 'price-desc' | 'price-asc'
+
+function setMoveInPurchaseSort(mode) {
+  _mipSort = mode;
+  renderMoveInPurchases();
+}
+
 async function renderMoveInPurchases() {
   const prop = state.currentProperty;
   if (prop !== MOVE_IN_PURCHASE_PROPERTY) {
@@ -3274,6 +3281,8 @@ async function renderMoveInPurchases() {
 function renderMoveInPurchasesSection(prop) {
   const entries = (state.data[prop].moveInPurchases || []).slice().sort((a, b) => {
     if (!!a.purchased !== !!b.purchased) return a.purchased ? 1 : -1;
+    if (_mipSort === 'price-desc') return (Number(b.estimatedPrice) || 0) - (Number(a.estimatedPrice) || 0);
+    if (_mipSort === 'price-asc') return (Number(a.estimatedPrice) || 0) - (Number(b.estimatedPrice) || 0);
     return String(b.date || '').localeCompare(String(a.date || ''));
   });
   const total = entries.reduce((s, e) => s + (Number(e.estimatedPrice) || 0), 0);
@@ -3318,7 +3327,13 @@ function renderMoveInPurchasesSection(prop) {
             Track new-construction move-in items, estimated prices, notes, and purchase status.
           </div>
         </div>
-        <button class="btn btn-primary btn-sm no-print" onclick="openAddMoveInPurchase()">+ Add Purchase</button>
+        <div style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap">
+          <span class="no-print" style="font-size:.78rem;color:var(--text-muted)">Sort:</span>
+          <button class="btn btn-sm no-print ${_mipSort === 'default' ? 'btn-primary' : 'btn-ghost'}" style="padding:.15rem .5rem" onclick="setMoveInPurchaseSort('default')">Default</button>
+          <button class="btn btn-sm no-print ${_mipSort === 'price-desc' ? 'btn-primary' : 'btn-ghost'}" style="padding:.15rem .5rem" onclick="setMoveInPurchaseSort('price-desc')">Price ↓</button>
+          <button class="btn btn-sm no-print ${_mipSort === 'price-asc' ? 'btn-primary' : 'btn-ghost'}" style="padding:.15rem .5rem" onclick="setMoveInPurchaseSort('price-asc')">Price ↑</button>
+          <button class="btn btn-primary btn-sm no-print" onclick="openAddMoveInPurchase()">+ Add Purchase</button>
+        </div>
       </div>
       ${entries.length === 0
         ? `<div class="card-body"><div class="empty-state" style="padding:1.5rem;text-align:center">No move-in purchases yet. Click "+ Add Purchase" to start the list.</div></div>`
