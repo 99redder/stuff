@@ -1468,6 +1468,23 @@
   </div>
 </div>
 
+<!-- ── Move-In Purchase Categories Modal ── -->
+<div class="modal-overlay hidden" id="mip-categories-modal" onclick="handleModalOverlayClick(event,'mip-categories-modal')">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mip-cat-title" style="max-width:560px">
+    <div class="modal-header">
+      <div class="modal-icon primary">🏷️</div>
+      <div>
+        <div class="modal-title" id="mip-cat-title">Manage Categories</div>
+        <div class="modal-subtitle">Add, rename, or delete move-in purchase categories</div>
+      </div>
+    </div>
+    <div class="modal-body" id="mip-cat-modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeMoveInCategoriesModal()">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Fair Share Cost-Sharing Agreement Modal ── -->
 <div class="modal-overlay hidden" id="fs-agreement-modal" onclick="handleModalOverlayClick(event,'fs-agreement-modal')">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="fs-agreement-title" style="max-width:780px">
@@ -2491,6 +2508,7 @@ function handleModalOverlayClick(e, modalId) {
     if (modalId === 'budget-worksheet-modal') closeBudgetWorksheetModal();
     if (modalId === 'solar-calc-modal') closeSolarCalcModal();
     if (modalId === 'fs-agreement-modal') closeFsAgreementModal();
+    if (modalId === 'mip-categories-modal') closeMoveInCategoriesModal();
   }
 }
 
@@ -3448,14 +3466,12 @@ function renderMoveInPurchasesSection(prop) {
           <button class="btn btn-sm no-print ${_mipSort === 'price-desc' ? 'btn-primary' : 'btn-ghost'}" style="padding:.15rem .5rem" onclick="setMoveInPurchaseSort('price-desc')">Price ↓</button>
           <button class="btn btn-sm no-print ${_mipSort === 'price-asc' ? 'btn-primary' : 'btn-ghost'}" style="padding:.15rem .5rem" onclick="setMoveInPurchaseSort('price-asc')">Price ↑</button>
           <button class="btn btn-sm no-print ${_mipEditMode ? 'btn-primary' : 'btn-ghost'}" style="padding:.15rem .5rem" onclick="toggleMoveInEditMode()">${_mipEditMode ? '✓ Done Editing' : '✎ Edit Items'}</button>
-          ${_mipEditMode ? `<button class="btn btn-ghost btn-sm no-print" style="padding:.15rem .5rem" onclick="toggleMoveInCategoriesCard()">Manage Categories</button>` : ''}
+          ${_mipEditMode ? `<button class="btn btn-ghost btn-sm no-print" style="padding:.15rem .5rem" onclick="openMoveInCategoriesModal()">Manage Categories</button>` : ''}
           <button class="btn btn-primary btn-sm no-print" onclick="openAddMoveInPurchase()">+ Add Purchase</button>
         </div>
       </div>
       ${bodyHtml}
     </div>
-
-    ${renderMoveInCategoriesCard(prop)}
 
     <div class="card mt-2 hidden" id="movein-form-card">
       <div class="card-header">
@@ -3636,42 +3652,44 @@ async function deleteMoveInPurchase(id) {
 
 // ── Move-In Purchase Categories ───────────────────────────────────────────────
 
-function renderMoveInCategoriesCard(prop) {
+function renderMoveInCategoriesModalBody(prop) {
   const cats = moveInCategories(prop);
   const entries = state.data[prop].moveInPurchases || [];
   const rows = cats.map((c, i) => {
     const items = entries.filter(e => moveInCategoryOf(e) === c);
     const catTotal = items.reduce((s, e) => s + (Number(e.estimatedPrice) || 0), 0);
     return `
-      <div style="display:flex;gap:.5rem;align-items:center;padding:.4rem 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
-        <input type="text" value="${escAttr(c)}" id="mip-cat-name-${i}"
-               style="flex:1;min-width:140px;font-size:.85rem;padding:.3rem .5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text)">
+      <div style="display:flex;gap:.5rem;align-items:center;padding:.45rem 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
+        <input type="text" value="${escAttr(c)}" id="mip-cat-name-${i}" onkeydown="if(event.key==='Enter') renameMoveInCategory('${escAttr(c)}', this.value)"
+               style="flex:1;min-width:150px;font-size:.85rem;padding:.35rem .5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text)">
         <span style="font-size:.78rem;color:var(--text-muted);white-space:nowrap">${items.length} item${items.length === 1 ? '' : 's'} · ${fmt(catTotal)}</span>
         <button class="btn btn-ghost btn-sm" style="padding:.2rem .5rem" onclick="renameMoveInCategory('${escAttr(c)}', document.getElementById('mip-cat-name-${i}').value)">Rename</button>
         <button class="btn btn-ghost btn-sm" style="color:var(--danger);padding:.2rem .5rem" onclick="deleteMoveInCategory('${escAttr(c)}')">Delete</button>
       </div>`;
   }).join('');
   return `
-    <div class="card mt-2 hidden" id="mip-categories-card">
-      <div class="card-header">
-        <div class="card-title">Manage Categories</div>
-        <button class="btn btn-ghost btn-sm" onclick="toggleMoveInCategoriesCard()">Close</button>
-      </div>
-      <div class="card-body">
-        <div style="margin-bottom:.75rem">${rows}</div>
-        <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
-          <input type="text" id="mip-new-category" placeholder="New category name"
-                 style="flex:1;min-width:160px;font-size:.85rem;padding:.35rem .5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text)">
-          <button class="btn btn-primary btn-sm" onclick="addMoveInCategory()">+ Add Category</button>
-        </div>
-        <div id="mip-category-error" class="error-msg mt-1 hidden"></div>
-      </div>
-    </div>`;
+    <div style="margin-bottom:1rem">${rows || '<div style="color:var(--text-muted);font-size:.85rem">No categories yet.</div>'}</div>
+    <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;padding-top:.6rem;border-top:1px solid var(--border)">
+      <input type="text" id="mip-new-category" placeholder="New category name" onkeydown="if(event.key==='Enter') addMoveInCategory()"
+             style="flex:1;min-width:170px;font-size:.85rem;padding:.4rem .5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text)">
+      <button class="btn btn-primary btn-sm" onclick="addMoveInCategory()">+ Add Category</button>
+    </div>
+    <div id="mip-category-error" class="error-msg mt-1 hidden"></div>`;
 }
 
-function toggleMoveInCategoriesCard() {
-  const card = document.getElementById('mip-categories-card');
-  if (card) card.classList.toggle('hidden');
+function openMoveInCategoriesModal() {
+  document.getElementById('mip-cat-modal-body').innerHTML = renderMoveInCategoriesModalBody(MOVE_IN_PURCHASE_PROPERTY);
+  document.getElementById('mip-categories-modal').classList.remove('hidden');
+}
+
+function closeMoveInCategoriesModal() {
+  const m = document.getElementById('mip-categories-modal');
+  if (m) m.classList.add('hidden');
+}
+
+function moveInCategoriesModalOpen() {
+  const m = document.getElementById('mip-categories-modal');
+  return m && !m.classList.contains('hidden');
 }
 
 function mipCategoryError(msg) {
@@ -3686,11 +3704,12 @@ async function saveMoveInCategoriesList(prop, list) {
   state.data[prop].moveInCategories = Array.isArray(result.categories) ? result.categories : list;
 }
 
-// Re-render, then re-open the manage card (innerHTML is replaced on render).
-function reRenderKeepingCategoriesCard() {
+// Re-render the main list and, if the manage modal is open, repopulate its body.
+function refreshMoveInCategoriesUI() {
   renderMoveInPurchases().then(() => {
-    const card = document.getElementById('mip-categories-card');
-    if (card) card.classList.remove('hidden');
+    if (moveInCategoriesModalOpen()) {
+      document.getElementById('mip-cat-modal-body').innerHTML = renderMoveInCategoriesModalBody(MOVE_IN_PURCHASE_PROPERTY);
+    }
   });
 }
 
@@ -3703,7 +3722,7 @@ async function addMoveInCategory() {
   if (list.some(c => c.toLowerCase() === name.toLowerCase())) { mipCategoryError('That category already exists.'); return; }
   try {
     await saveMoveInCategoriesList(prop, [...list, name]);
-    reRenderKeepingCategoriesCard();
+    refreshMoveInCategoriesUI();
   } catch (e) { mipCategoryError('Save failed: ' + e.message); }
 }
 
@@ -3725,7 +3744,7 @@ async function renameMoveInCategory(oldName, newNameRaw) {
       const res = await callApi({ action: 'save_move_in_purchases', property: prop, entries: updated });
       state.data[prop].moveInPurchases = res.entries || updated;
     }
-    reRenderKeepingCategoriesCard();
+    refreshMoveInCategoriesUI();
   } catch (e) { mipCategoryError('Save failed: ' + e.message); }
 }
 
@@ -3751,7 +3770,7 @@ function deleteMoveInCategory(name) {
           const res = await callApi({ action: 'save_move_in_purchases', property: prop, entries: updated });
           state.data[prop].moveInPurchases = res.entries || updated;
         }
-        reRenderKeepingCategoriesCard();
+        refreshMoveInCategoriesUI();
       } catch (e) { alert('Delete failed: ' + e.message); }
     }
   });
@@ -11152,6 +11171,14 @@ window.editMoveInPurchase      = editMoveInPurchase;
 window.saveMoveInPurchase      = saveMoveInPurchase;
 window.toggleMoveInPurchase    = toggleMoveInPurchase;
 window.deleteMoveInPurchase    = deleteMoveInPurchase;
+window.setMoveInPurchaseSort   = setMoveInPurchaseSort;
+window.toggleMoveInEditMode    = toggleMoveInEditMode;
+window.changeMoveInPurchaseCategory = changeMoveInPurchaseCategory;
+window.openMoveInCategoriesModal = openMoveInCategoriesModal;
+window.closeMoveInCategoriesModal = closeMoveInCategoriesModal;
+window.addMoveInCategory       = addMoveInCategory;
+window.renameMoveInCategory    = renameMoveInCategory;
+window.deleteMoveInCategory    = deleteMoveInCategory;
 window.saveInvestmentConfig    = saveInvestmentConfig;
 window.closeOutInvestmentSale  = closeOutInvestmentSale;
 window.syncSaleClosingCosts    = syncSaleClosingCosts;
@@ -11216,6 +11243,7 @@ document.addEventListener('keydown', e => {
     closeSolarCalcModal();
     closeDedDeleteModal();
     closeFsAgreementModal();
+    closeMoveInCategoriesModal();
   }
 });
 
