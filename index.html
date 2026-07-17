@@ -3409,6 +3409,11 @@ function renderMoveInPurchasesSection(prop) {
     }
     const groupHtml = [...groups.entries()].map(([cat, items]) => {
       if (!items.length) return '';
+      // Within each category, sort highest → lowest price (purchased items last).
+      items.sort((a, b) => {
+        if (!!a.purchased !== !!b.purchased) return a.purchased ? 1 : -1;
+        return (Number(b.estimatedPrice) || 0) - (Number(a.estimatedPrice) || 0);
+      });
       const groupTotal = items.reduce((s, e) => s + (Number(e.estimatedPrice) || 0), 0);
       const header = `
         <tr style="background:var(--bg-alt)">
