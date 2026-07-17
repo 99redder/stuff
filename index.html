@@ -3446,6 +3446,7 @@ function renderMoveInPurchasesSection(prop) {
   }
 
   return `
+    <div style="max-width:920px;margin:0 auto">
     <div class="stats-row">
       <div class="stat-card"><div class="stat-label">Estimated Total</div><div class="stat-value">${fmt(total)}</div></div>
       <div class="stat-card"><div class="stat-label">Still Needed</div><div class="stat-value" style="color:var(--warning)">${fmt(remainingTotal)}</div></div>
@@ -3521,6 +3522,7 @@ function renderMoveInPurchasesSection(prop) {
         </div>
         <div id="movein-form-error" class="error-msg mt-1 hidden"></div>
       </div>
+    </div>
     </div>`;
 }
 
