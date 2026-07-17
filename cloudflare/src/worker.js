@@ -210,7 +210,8 @@ async function handleDataApi(request, env) {
     'save_summary', 'delete_summary',
     'save_defaults', 'save_depreciation',
     'save_maintenance', 'seed_maintenance', 'add_maintenance_entry', 'update_maintenance_entry', 'delete_maintenance_entry',
-    'save_move_in_purchases', 'add_move_in_purchase', 'update_move_in_purchase', 'delete_move_in_purchase'
+    'save_move_in_purchases', 'add_move_in_purchase', 'update_move_in_purchase', 'delete_move_in_purchase',
+    'save_move_in_categories'
   ]);
   if (readOnlyWhenSold.has(action) && await isPropertySold(env, property)) {
     return jsonResponse({ error: 'Property is sold/closed. Records are historical and read-only.' }, 409);
@@ -282,6 +283,12 @@ async function handleDataApi(request, env) {
 
     case 'delete_move_in_purchase':
       return handleDeleteMoveInPurchase(env, property, body.id);
+
+    case 'get_move_in_categories':
+      return handleGetMoveInCategories(env, property);
+
+    case 'save_move_in_categories':
+      return handleSaveMoveInCategories(env, property, body.categories);
 
     case 'get_investment':
       return handleGetInvestment(env, property);
@@ -811,6 +818,7 @@ function normalizeMoveInPurchase(entry) {
     productLink: normalizeMoveInPurchaseLink(entry.productLink),
     notes: String(entry.notes || '').trim(),
     purchased: !!entry.purchased,
+    category: String(entry.category || '').trim(),
   };
 }
 
@@ -878,6 +886,40 @@ async function handleDeleteMoveInPurchase(env, property, id) {
   if (filtered.length === entries.length) return jsonResponse({ error: 'Entry not found' }, 404);
   await env.RENTALS.put(`move_in_purchases:${property}`, JSON.stringify(filtered));
   return jsonResponse({ success: true });
+}
+
+const MOVE_IN_CATEGORIES_DEFAULT = ['Living Room', 'Basement', 'Craft Room', 'Office', 'Kitchen / Dining Room', 'Ellie', 'Mom', 'Other'];
+
+function normalizeMoveInCategories(list) {
+  if (!Array.isArray(list)) return MOVE_IN_CATEGORIES_DEFAULT.slice();
+  const seen = new Set();
+  const out = [];
+  for (const raw of list) {
+    const name = String(raw || '').trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+    if (out.length >= 100) break;
+  }
+  return out.length ? out : MOVE_IN_CATEGORIES_DEFAULT.slice();
+}
+
+async function handleGetMoveInCategories(env, property) {
+  const propertyError = requireMoveInPurchaseProperty(property);
+  if (propertyError) return propertyError;
+  const stored = await env.RENTALS.get(`move_in_categories:${property}`, 'json');
+  const categories = Array.isArray(stored) && stored.length ? stored : MOVE_IN_CATEGORIES_DEFAULT.slice();
+  return jsonResponse({ categories });
+}
+
+async function handleSaveMoveInCategories(env, property, categories) {
+  const propertyError = requireMoveInPurchaseProperty(property);
+  if (propertyError) return propertyError;
+  const saved = normalizeMoveInCategories(categories);
+  await env.RENTALS.put(`move_in_categories:${property}`, JSON.stringify(saved));
+  return jsonResponse({ categories: saved });
 }
 
 // ── Tax Planning ─────────────────────────────────────────────────────────────

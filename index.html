@@ -1625,6 +1625,8 @@ const PRIMARY_PROPERTIES = new Set(['731WO', '4781MC']); // primary residences: 
 const MAINTENANCE_BASIS_PROPERTIES = new Set(['6AL', '95EB', ...PRIMARY_PROPERTIES]); // Maintenance entries marked Improvement increase Investment Return basis
 const MOVE_IN_PURCHASE_PROPERTY = '4781MC';
 const MOVE_IN_PURCHASE_DEFAULT_DATE = '2027-02-01';
+const MOVE_IN_CATEGORIES_DEFAULT = ['Living Room', 'Basement', 'Craft Room', 'Office', 'Kitchen / Dining Room', 'Ellie', 'Mom', 'Other'];
+const MOVE_IN_UNCATEGORIZED = 'Other';
 const PRIMARY_VIEWS = new Set(['investment-return', 'maintenance']);
 const GLOBAL_HEADER_VIEWS = new Set(['tax-planning', 'net-worth', 'budget', 'cash-flow', 'mom-budget', 'solar', 'deductions', 'savings']);
 const CASH_FLOW_YEAR = 2026;
@@ -1907,11 +1909,11 @@ const state = {
   currentView: 'current-year',
   password: '', // legacy only; runtime auth uses HttpOnly session cookie
   data: {
-    '6AL':   { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null, moveInPurchases: null },
-    '95EB':  { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null, moveInPurchases: null },
-    '446BB': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null, moveInPurchases: null },
-    '731WO': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null, moveInPurchases: null },
-    '4781MC': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null, moveInPurchases: null }
+    '6AL':   { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null, moveInPurchases: null, moveInCategories: null },
+    '95EB':  { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null, moveInPurchases: null, moveInCategories: null },
+    '446BB': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null, moveInPurchases: null, moveInCategories: null },
+    '731WO': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null, moveInPurchases: null, moveInCategories: null },
+    '4781MC': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null, moveInPurchases: null, moveInCategories: null }
   },
   pendingDefaultPrompt: null,  // { category, amount } after a save
   pendingMaintPrompt: null,    // { date, amount, description, category } after expense save
@@ -1960,7 +1962,8 @@ async function ensureLoaded(property, key) {
     depreciation: 'get_depreciation',
     maintenance:  'get_maintenance',
     investment:   'get_investment',
-    moveInPurchases: 'get_move_in_purchases'
+    moveInPurchases: 'get_move_in_purchases',
+    moveInCategories: 'get_move_in_categories'
   };
 
   const result = await callApi({ action: actionMap[key], property });
@@ -1968,6 +1971,10 @@ async function ensureLoaded(property, key) {
     state.data[property][key] = result.config || null; // null means not configured
   } else if (key === 'maintenance' || key === 'moveInPurchases') {
     state.data[property][key] = result.entries || [];
+  } else if (key === 'moveInCategories') {
+    state.data[property][key] = Array.isArray(result.categories) && result.categories.length
+      ? result.categories
+      : MOVE_IN_CATEGORIES_DEFAULT.slice();
   } else {
     state.data[property][key] = result[key] || (key === 'transactions' ? [] : {});
   }
@@ -3275,24 +3282,44 @@ async function renderMoveInPurchases() {
     return;
   }
   await ensureLoaded(prop, 'moveInPurchases');
+  await ensureLoaded(prop, 'moveInCategories');
   document.getElementById('app').innerHTML = renderMoveInPurchasesSection(prop);
 }
 
-function renderMoveInPurchasesSection(prop) {
-  const entries = (state.data[prop].moveInPurchases || []).slice().sort((a, b) => {
+// Category list for the property, always including any categories referenced by
+// existing items (so nothing renders as an orphan) with defaults as a fallback.
+function moveInCategories(prop) {
+  const stored = state.data[prop].moveInCategories;
+  const list = Array.isArray(stored) && stored.length ? stored.slice() : MOVE_IN_CATEGORIES_DEFAULT.slice();
+  for (const e of (state.data[prop].moveInPurchases || [])) {
+    const c = (e.category || '').trim();
+    if (c && !list.includes(c)) list.push(c);
+  }
+  return list;
+}
+
+function moveInCategoryOf(entry) {
+  const c = (entry.category || '').trim();
+  return c || MOVE_IN_UNCATEGORIZED;
+}
+
+function mipSortEntries(list) {
+  return list.slice().sort((a, b) => {
     if (!!a.purchased !== !!b.purchased) return a.purchased ? 1 : -1;
     if (_mipSort === 'price-desc') return (Number(b.estimatedPrice) || 0) - (Number(a.estimatedPrice) || 0);
     if (_mipSort === 'price-asc') return (Number(a.estimatedPrice) || 0) - (Number(b.estimatedPrice) || 0);
     return String(b.date || '').localeCompare(String(a.date || ''));
   });
-  const total = entries.reduce((s, e) => s + (Number(e.estimatedPrice) || 0), 0);
-  const purchasedEntries = entries.filter(e => e.purchased);
-  const purchasedTotal = purchasedEntries.reduce((s, e) => s + (Number(e.estimatedPrice) || 0), 0);
-  const remainingTotal = total - purchasedTotal;
+}
 
-  const rows = entries.map(e => {
-    const productLink = normalizePurchaseLink(e.productLink);
-    return `
+function mipRowHtml(prop, e) {
+  const productLink = normalizePurchaseLink(e.productLink);
+  const cats = moveInCategories(prop);
+  const current = moveInCategoryOf(e);
+  const options = cats.map(c =>
+    `<option value="${escAttr(c)}"${c === current ? ' selected' : ''}>${escHtml(c)}</option>`
+  ).join('');
+  return `
     <tr${e.purchased ? ' style="opacity:.62"' : ''}>
       <td class="no-print" style="width:44px;text-align:center;padding:.4rem .5rem">
         <input type="checkbox" ${e.purchased ? 'checked' : ''} onchange="toggleMoveInPurchase('${escAttr(e.id)}', this.checked)" aria-label="Mark purchased">
@@ -3302,15 +3329,75 @@ function renderMoveInPurchasesSection(prop) {
         ${e.notes ? `<div style="font-size:.8rem;color:var(--text-muted);margin-top:.2rem">${escHtml(e.notes)}</div>` : ''}
         ${productLink ? `<div style="font-size:.8rem;margin-top:.25rem"><a href="${escAttr(productLink)}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:600;text-decoration:none">Open Link</a></div>` : ''}
       </td>
+      <td style="padding:.4rem .5rem">
+        <span class="print-only" style="font-size:.85rem">${escHtml(current)}</span>
+        <select class="no-print" aria-label="Category" onchange="changeMoveInPurchaseCategory('${escAttr(e.id)}', this.value)"
+                style="font-size:.8rem;padding:.2rem .35rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);max-width:150px">${options}</select>
+      </td>
       <td style="white-space:nowrap;padding:.4rem .5rem;color:var(--text-muted);font-size:.85rem">${e.date ? fmtDate(e.date) : '—'}</td>
       <td class="text-right" style="white-space:nowrap;padding:.4rem .5rem">${fmt(e.estimatedPrice || 0)}</td>
       <td class="text-right no-print" style="padding:.4rem .5rem;white-space:nowrap">
         <button class="btn btn-ghost btn-sm" style="padding:.15rem .4rem" onclick="editMoveInPurchase('${escAttr(e.id)}')">Edit</button>
         <button class="btn btn-ghost btn-sm" style="color:var(--danger);padding:.15rem .4rem" onclick="deleteMoveInPurchase('${escAttr(e.id)}')">×</button>
       </td>
-    </tr>
-  `;
-  }).join('');
+    </tr>`;
+}
+
+function renderMoveInPurchasesSection(prop) {
+  const all = state.data[prop].moveInPurchases || [];
+  const entries = mipSortEntries(all);
+  const total = entries.reduce((s, e) => s + (Number(e.estimatedPrice) || 0), 0);
+  const purchasedEntries = entries.filter(e => e.purchased);
+  const purchasedTotal = purchasedEntries.reduce((s, e) => s + (Number(e.estimatedPrice) || 0), 0);
+  const remainingTotal = total - purchasedTotal;
+
+  let bodyHtml;
+  if (entries.length === 0) {
+    bodyHtml = `<div class="card-body"><div class="empty-state" style="padding:1.5rem;text-align:center">No move-in purchases yet. Click "+ Add Purchase" to start the list.</div></div>`;
+  } else if (_mipSort === 'category') {
+    // Group by category (category list order, then any extras), each with a subtotal header.
+    const cats = moveInCategories(prop);
+    const groups = new Map(cats.map(c => [c, []]));
+    for (const e of entries) {
+      const c = moveInCategoryOf(e);
+      if (!groups.has(c)) groups.set(c, []);
+      groups.get(c).push(e);
+    }
+    const groupHtml = [...groups.entries()].map(([cat, items]) => {
+      if (!items.length) return '';
+      const groupTotal = items.reduce((s, e) => s + (Number(e.estimatedPrice) || 0), 0);
+      const header = `
+        <tr style="background:var(--bg-alt)">
+          <td colspan="4" style="padding:.5rem .5rem;font-weight:700">${escHtml(cat)} <span style="font-weight:400;color:var(--text-muted);font-size:.82rem">(${items.length})</span></td>
+          <td class="text-right" style="padding:.5rem .5rem;font-weight:700;white-space:nowrap">${fmt(groupTotal)}</td>
+          <td class="no-print"></td>
+        </tr>`;
+      return header + items.map(e => mipRowHtml(prop, e)).join('');
+    }).join('');
+    bodyHtml = `<div class="table-wrap"><table class="hist-table">
+        <thead><tr>
+          <th class="no-print"></th>
+          <th>Item</th>
+          <th>Category</th>
+          <th>Target / Added</th>
+          <th class="text-right">Estimated Price</th>
+          <th class="no-print"></th>
+        </tr></thead>
+        <tbody>${groupHtml}</tbody>
+      </table></div>`;
+  } else {
+    bodyHtml = `<div class="table-wrap"><table class="hist-table">
+        <thead><tr>
+          <th class="no-print"></th>
+          <th>Item</th>
+          <th>Category</th>
+          <th>Target / Added</th>
+          <th class="text-right">Estimated Price</th>
+          <th class="no-print"></th>
+        </tr></thead>
+        <tbody>${entries.map(e => mipRowHtml(prop, e)).join('')}</tbody>
+      </table></div>`;
+  }
 
   return `
     <div class="stats-row">
@@ -3330,24 +3417,17 @@ function renderMoveInPurchasesSection(prop) {
         <div style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap">
           <span class="no-print" style="font-size:.78rem;color:var(--text-muted)">Sort:</span>
           <button class="btn btn-sm no-print ${_mipSort === 'default' ? 'btn-primary' : 'btn-ghost'}" style="padding:.15rem .5rem" onclick="setMoveInPurchaseSort('default')">Default</button>
+          <button class="btn btn-sm no-print ${_mipSort === 'category' ? 'btn-primary' : 'btn-ghost'}" style="padding:.15rem .5rem" onclick="setMoveInPurchaseSort('category')">Category</button>
           <button class="btn btn-sm no-print ${_mipSort === 'price-desc' ? 'btn-primary' : 'btn-ghost'}" style="padding:.15rem .5rem" onclick="setMoveInPurchaseSort('price-desc')">Price ↓</button>
           <button class="btn btn-sm no-print ${_mipSort === 'price-asc' ? 'btn-primary' : 'btn-ghost'}" style="padding:.15rem .5rem" onclick="setMoveInPurchaseSort('price-asc')">Price ↑</button>
+          <button class="btn btn-ghost btn-sm no-print" style="padding:.15rem .5rem" onclick="toggleMoveInCategoriesCard()">Manage Categories</button>
           <button class="btn btn-primary btn-sm no-print" onclick="openAddMoveInPurchase()">+ Add Purchase</button>
         </div>
       </div>
-      ${entries.length === 0
-        ? `<div class="card-body"><div class="empty-state" style="padding:1.5rem;text-align:center">No move-in purchases yet. Click "+ Add Purchase" to start the list.</div></div>`
-        : `<div class="table-wrap"><table class="hist-table">
-            <thead><tr>
-              <th class="no-print"></th>
-              <th>Item</th>
-              <th>Target / Added</th>
-              <th class="text-right">Estimated Price</th>
-              <th class="no-print"></th>
-            </tr></thead>
-            <tbody>${rows}</tbody>
-          </table></div>`}
+      ${bodyHtml}
     </div>
+
+    ${renderMoveInCategoriesCard(prop)}
 
     <div class="card mt-2 hidden" id="movein-form-card">
       <div class="card-header">
@@ -3373,6 +3453,12 @@ function renderMoveInPurchasesSection(prop) {
             <label style="display:flex;gap:.45rem;align-items:center;font-weight:600;text-transform:none;letter-spacing:0;color:var(--text)">
               <input type="checkbox" id="mip-purchased"> Purchased
             </label>
+          </div>
+          <div class="form-group">
+            <label>Category</label>
+            <select id="mip-category" style="font-size:.875rem;padding:.4rem .6rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);width:100%;box-sizing:border-box">
+              ${moveInCategories(prop).map(c => `<option value="${escAttr(c)}"${c === MOVE_IN_UNCATEGORIZED ? ' selected' : ''}>${escHtml(c)}</option>`).join('')}
+            </select>
           </div>
           <div class="form-group" style="grid-column:1/-1">
             <label>Product Link</label>
@@ -3418,6 +3504,8 @@ function closeMoveInPurchaseForm() {
   if (notes) notes.value = '';
   const purchased = document.getElementById('mip-purchased');
   if (purchased) purchased.checked = false;
+  const category = document.getElementById('mip-category');
+  if (category) category.value = MOVE_IN_UNCATEGORIZED;
   const title = document.getElementById('movein-form-title');
   if (title) title.textContent = 'Add Move-in Purchase';
   const submit = document.getElementById('movein-form-submit');
@@ -3436,6 +3524,7 @@ function editMoveInPurchase(id) {
   document.getElementById('mip-product-link').value = entry.productLink || '';
   document.getElementById('mip-notes').value = entry.notes || '';
   document.getElementById('mip-purchased').checked = !!entry.purchased;
+  document.getElementById('mip-category').value = moveInCategoryOf(entry);
   document.getElementById('movein-form-title').textContent = 'Edit Move-in Purchase';
   document.getElementById('movein-form-submit').textContent = 'Update Purchase';
   openAddMoveInPurchase();
@@ -3456,17 +3545,18 @@ async function saveMoveInPurchase() {
   const productLink = normalizePurchaseLink(document.getElementById('mip-product-link').value);
   const notes = document.getElementById('mip-notes').value.trim();
   const purchased = document.getElementById('mip-purchased').checked;
+  const category = document.getElementById('mip-category').value;
   const errEl = document.getElementById('movein-form-error');
 
   if (!item) { errEl.textContent = 'Item is required.'; errEl.classList.remove('hidden'); return; }
 
   try {
     if (editId) {
-      const result = await callApi({ action: 'update_move_in_purchase', property: prop, id: editId, entry: { item, date, estimatedPrice, productLink, notes, purchased } });
+      const result = await callApi({ action: 'update_move_in_purchase', property: prop, id: editId, entry: { item, date, estimatedPrice, productLink, notes, purchased, category } });
       const idx = state.data[prop].moveInPurchases.findIndex(e => e.id === editId);
       if (idx !== -1) state.data[prop].moveInPurchases[idx] = result.entry;
     } else {
-      const result = await callApi({ action: 'add_move_in_purchase', property: prop, entry: { item, date, estimatedPrice, productLink, notes, purchased } });
+      const result = await callApi({ action: 'add_move_in_purchase', property: prop, entry: { item, date, estimatedPrice, productLink, notes, purchased, category } });
       state.data[prop].moveInPurchases.push(result.entry);
     }
     closeMoveInPurchaseForm();
@@ -3514,6 +3604,145 @@ async function deleteMoveInPurchase(id) {
       }
     }
   });
+}
+
+// ── Move-In Purchase Categories ───────────────────────────────────────────────
+
+function renderMoveInCategoriesCard(prop) {
+  const cats = moveInCategories(prop);
+  const entries = state.data[prop].moveInPurchases || [];
+  const rows = cats.map((c, i) => {
+    const items = entries.filter(e => moveInCategoryOf(e) === c);
+    const catTotal = items.reduce((s, e) => s + (Number(e.estimatedPrice) || 0), 0);
+    return `
+      <div style="display:flex;gap:.5rem;align-items:center;padding:.4rem 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
+        <input type="text" value="${escAttr(c)}" id="mip-cat-name-${i}"
+               style="flex:1;min-width:140px;font-size:.85rem;padding:.3rem .5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text)">
+        <span style="font-size:.78rem;color:var(--text-muted);white-space:nowrap">${items.length} item${items.length === 1 ? '' : 's'} · ${fmt(catTotal)}</span>
+        <button class="btn btn-ghost btn-sm" style="padding:.2rem .5rem" onclick="renameMoveInCategory('${escAttr(c)}', document.getElementById('mip-cat-name-${i}').value)">Rename</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger);padding:.2rem .5rem" onclick="deleteMoveInCategory('${escAttr(c)}')">Delete</button>
+      </div>`;
+  }).join('');
+  return `
+    <div class="card mt-2 hidden" id="mip-categories-card">
+      <div class="card-header">
+        <div class="card-title">Manage Categories</div>
+        <button class="btn btn-ghost btn-sm" onclick="toggleMoveInCategoriesCard()">Close</button>
+      </div>
+      <div class="card-body">
+        <div style="margin-bottom:.75rem">${rows}</div>
+        <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+          <input type="text" id="mip-new-category" placeholder="New category name"
+                 style="flex:1;min-width:160px;font-size:.85rem;padding:.35rem .5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text)">
+          <button class="btn btn-primary btn-sm" onclick="addMoveInCategory()">+ Add Category</button>
+        </div>
+        <div id="mip-category-error" class="error-msg mt-1 hidden"></div>
+      </div>
+    </div>`;
+}
+
+function toggleMoveInCategoriesCard() {
+  const card = document.getElementById('mip-categories-card');
+  if (card) card.classList.toggle('hidden');
+}
+
+function mipCategoryError(msg) {
+  const errEl = document.getElementById('mip-category-error');
+  if (!errEl) return;
+  errEl.textContent = msg;
+  errEl.classList.remove('hidden');
+}
+
+async function saveMoveInCategoriesList(prop, list) {
+  const result = await callApi({ action: 'save_move_in_categories', property: prop, categories: list });
+  state.data[prop].moveInCategories = Array.isArray(result.categories) ? result.categories : list;
+}
+
+// Re-render, then re-open the manage card (innerHTML is replaced on render).
+function reRenderKeepingCategoriesCard() {
+  renderMoveInPurchases().then(() => {
+    const card = document.getElementById('mip-categories-card');
+    if (card) card.classList.remove('hidden');
+  });
+}
+
+async function addMoveInCategory() {
+  const prop = MOVE_IN_PURCHASE_PROPERTY;
+  const name = (document.getElementById('mip-new-category').value || '').trim();
+  document.getElementById('mip-category-error').classList.add('hidden');
+  if (!name) { mipCategoryError('Category name is required.'); return; }
+  const list = moveInCategories(prop);
+  if (list.some(c => c.toLowerCase() === name.toLowerCase())) { mipCategoryError('That category already exists.'); return; }
+  try {
+    await saveMoveInCategoriesList(prop, [...list, name]);
+    reRenderKeepingCategoriesCard();
+  } catch (e) { mipCategoryError('Save failed: ' + e.message); }
+}
+
+async function renameMoveInCategory(oldName, newNameRaw) {
+  const prop = MOVE_IN_PURCHASE_PROPERTY;
+  const newName = (newNameRaw || '').trim();
+  document.getElementById('mip-category-error').classList.add('hidden');
+  if (!newName) { mipCategoryError('Category name cannot be empty.'); return; }
+  if (newName === oldName) return;
+  const list = moveInCategories(prop);
+  if (list.some(c => c.toLowerCase() === newName.toLowerCase() && c !== oldName)) { mipCategoryError('That category already exists.'); return; }
+  const newList = list.map(c => (c === oldName ? newName : c));
+  const entries = state.data[prop].moveInPurchases || [];
+  const affected = entries.filter(e => moveInCategoryOf(e) === oldName);
+  try {
+    await saveMoveInCategoriesList(prop, newList);
+    if (affected.length) {
+      const updated = entries.map(e => (moveInCategoryOf(e) === oldName ? { ...e, category: newName } : e));
+      const res = await callApi({ action: 'save_move_in_purchases', property: prop, entries: updated });
+      state.data[prop].moveInPurchases = res.entries || updated;
+    }
+    reRenderKeepingCategoriesCard();
+  } catch (e) { mipCategoryError('Save failed: ' + e.message); }
+}
+
+function deleteMoveInCategory(name) {
+  const prop = MOVE_IN_PURCHASE_PROPERTY;
+  const entries = state.data[prop].moveInPurchases || [];
+  const affected = entries.filter(e => moveInCategoryOf(e) === name);
+  const fallback = name === MOVE_IN_UNCATEGORIZED ? '' : MOVE_IN_UNCATEGORIZED;
+  const msg = affected.length
+    ? `${affected.length} item${affected.length === 1 ? '' : 's'} in "${name}" will move to "${fallback || MOVE_IN_UNCATEGORIZED}".`
+    : `The "${name}" category will be removed.`;
+  showBrandedNotice({
+    title: 'Delete Category',
+    type: 'danger',
+    message: msg,
+    confirmLabel: 'Yes, Delete',
+    onConfirm: async () => {
+      try {
+        const list = moveInCategories(prop).filter(c => c !== name);
+        await saveMoveInCategoriesList(prop, list);
+        if (affected.length) {
+          const updated = entries.map(e => (moveInCategoryOf(e) === name ? { ...e, category: fallback } : e));
+          const res = await callApi({ action: 'save_move_in_purchases', property: prop, entries: updated });
+          state.data[prop].moveInPurchases = res.entries || updated;
+        }
+        reRenderKeepingCategoriesCard();
+      } catch (e) { alert('Delete failed: ' + e.message); }
+    }
+  });
+}
+
+async function changeMoveInPurchaseCategory(id, category) {
+  const prop = MOVE_IN_PURCHASE_PROPERTY;
+  const entries = state.data[prop].moveInPurchases || [];
+  const entry = entries.find(e => e.id === id);
+  if (!entry) return;
+  try {
+    const result = await callApi({ action: 'update_move_in_purchase', property: prop, id, entry: { ...entry, category } });
+    const idx = entries.findIndex(e => e.id === id);
+    if (idx !== -1) state.data[prop].moveInPurchases[idx] = result.entry;
+    renderMoveInPurchases();
+  } catch (err) {
+    alert('Failed to update: ' + err.message);
+    renderMoveInPurchases();
+  }
 }
 
 // ── View: Tax Summary ─────────────────────────────────────────────────────────
