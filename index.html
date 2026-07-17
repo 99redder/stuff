@@ -3374,10 +3374,10 @@ function mipRowHtml(prop, e) {
         ${e.notes ? `<div style="font-size:.8rem;color:var(--text-muted);margin-top:.2rem">${escHtml(e.notes)}</div>` : ''}
         ${productLink ? `<div style="font-size:.8rem;margin-top:.25rem"><a href="${escAttr(productLink)}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:600;text-decoration:none">Open Link</a></div>` : ''}
       </td>
-      <td class="text-right" style="white-space:nowrap;padding:.4rem .5rem;padding-left:1.5rem">${fmt(e.estimatedPrice || 0)}</td>
-      <td class="text-right" style="padding:.4rem .5rem;white-space:nowrap;padding-left:2rem">
+      <td class="text-right" style="padding:.4rem .5rem;white-space:nowrap;padding-left:1.5rem">
         ${categoryCell}
       </td>
+      <td class="text-right" style="white-space:nowrap;padding:.4rem .5rem;padding-left:2rem">${fmt(e.estimatedPrice || 0)}</td>
       <td class="text-right no-print" style="padding:.4rem .5rem;white-space:nowrap">
         ${_mipEditMode ? `
         <button class="btn btn-ghost btn-sm" style="padding:.15rem .4rem" onclick="editMoveInPurchase('${escAttr(e.id)}')">Edit</button>
@@ -3417,8 +3417,8 @@ function renderMoveInPurchasesSection(prop) {
       const header = `
         <tr style="background:var(--bg-alt)">
           <td colspan="2" style="padding:.5rem .5rem;font-weight:700">${moveInCategoryIcon(cat)} ${escHtml(cat)} <span style="font-weight:400;color:var(--text-muted);font-size:.82rem">(${items.length})</span></td>
-          <td class="text-right" style="padding:.5rem .5rem;padding-left:1.5rem;font-weight:700;white-space:nowrap">${fmt(groupTotal)}</td>
           <td></td>
+          <td class="text-right" style="padding:.5rem .5rem;padding-left:2rem;font-weight:700;white-space:nowrap">${fmt(groupTotal)}</td>
           <td class="no-print"></td>
         </tr>`;
       return header + items.map(e => mipRowHtml(prop, e)).join('');
@@ -3427,8 +3427,8 @@ function renderMoveInPurchasesSection(prop) {
         <thead><tr>
           <th class="no-print"></th>
           <th>Item</th>
-          <th class="text-right" style="width:1%;white-space:nowrap;padding-left:1.5rem">Estimated Price</th>
-          <th class="text-right" style="width:100%;white-space:nowrap;padding-left:2rem">Category</th>
+          <th class="text-right" style="width:1%;white-space:nowrap;padding-left:1.5rem">Category</th>
+          <th class="text-right" style="width:100%;white-space:nowrap;padding-left:2rem">Estimated Price</th>
           <th class="no-print"></th>
         </tr></thead>
         <tbody>${groupHtml}</tbody>
@@ -3438,8 +3438,8 @@ function renderMoveInPurchasesSection(prop) {
         <thead><tr>
           <th class="no-print"></th>
           <th>Item</th>
-          <th class="text-right" style="width:1%;white-space:nowrap;padding-left:1.5rem">Estimated Price</th>
-          <th class="text-right" style="width:100%;white-space:nowrap;padding-left:2rem">Category</th>
+          <th class="text-right" style="width:1%;white-space:nowrap;padding-left:1.5rem">Category</th>
+          <th class="text-right" style="width:100%;white-space:nowrap;padding-left:2rem">Estimated Price</th>
           <th class="no-print"></th>
         </tr></thead>
         <tbody>${entries.map(e => mipRowHtml(prop, e)).join('')}</tbody>
