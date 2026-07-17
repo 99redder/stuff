@@ -3377,7 +3377,6 @@ function mipRowHtml(prop, e) {
       <td style="padding:.4rem .5rem">
         ${categoryCell}
       </td>
-      <td style="white-space:nowrap;padding:.4rem .5rem;color:var(--text-muted);font-size:.85rem">${e.date ? fmtDate(e.date) : '—'}</td>
       <td class="text-right" style="white-space:nowrap;padding:.4rem .5rem">${fmt(e.estimatedPrice || 0)}</td>
       <td class="text-right no-print" style="padding:.4rem .5rem;white-space:nowrap">
         ${_mipEditMode ? `
@@ -3417,7 +3416,7 @@ function renderMoveInPurchasesSection(prop) {
       const groupTotal = items.reduce((s, e) => s + (Number(e.estimatedPrice) || 0), 0);
       const header = `
         <tr style="background:var(--bg-alt)">
-          <td colspan="4" style="padding:.5rem .5rem;font-weight:700">${moveInCategoryIcon(cat)} ${escHtml(cat)} <span style="font-weight:400;color:var(--text-muted);font-size:.82rem">(${items.length})</span></td>
+          <td colspan="3" style="padding:.5rem .5rem;font-weight:700">${moveInCategoryIcon(cat)} ${escHtml(cat)} <span style="font-weight:400;color:var(--text-muted);font-size:.82rem">(${items.length})</span></td>
           <td class="text-right" style="padding:.5rem .5rem;font-weight:700;white-space:nowrap">${fmt(groupTotal)}</td>
           <td class="no-print"></td>
         </tr>`;
@@ -3428,7 +3427,6 @@ function renderMoveInPurchasesSection(prop) {
           <th class="no-print"></th>
           <th>Item</th>
           <th>Category</th>
-          <th>Target / Added</th>
           <th class="text-right">Estimated Price</th>
           <th class="no-print"></th>
         </tr></thead>
@@ -3440,7 +3438,6 @@ function renderMoveInPurchasesSection(prop) {
           <th class="no-print"></th>
           <th>Item</th>
           <th>Category</th>
-          <th>Target / Added</th>
           <th class="text-right">Estimated Price</th>
           <th class="no-print"></th>
         </tr></thead>
