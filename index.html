@@ -7476,14 +7476,21 @@ const DEDUCTION_CATEGORIES = [
 
 let _dEdit = null; // { id: uuid|'new' }
 let _dSort = 'date'; // 'date' | 'amount' | 'alpha'
+let _dYear = String(CURRENT_YEAR);
+let _dedMutationBusy = false;
 
-async function renderDeductions() {
+async function renderDeductions(savedData = null) {
   closeDedDeleteModal();
   closeEditModal();
   closeDeleteModal();
-  const raw = await envRENTALS_get();
+  const raw = Array.isArray(savedData) ? savedData : await envRENTALS_get();
   const all = Array.isArray(raw) ? raw : [];
-  const year = String(CURRENT_YEAR);
+  const availableYears = [...new Set([
+    String(CURRENT_YEAR),
+    ...all.map(d => String(d.date || '').slice(0, 4)).filter(y => /^\d{4}$/.test(y))
+  ])].sort((a, b) => Number(b) - Number(a));
+  if (!availableYears.includes(_dYear)) _dYear = String(CURRENT_YEAR);
+  const year = _dYear;
   const yearDeductions = all.filter(d => d.date && d.date.startsWith(year));
   yearDeductions.sort((a, b) => {
     if (_dSort === 'date') return b.date.localeCompare(a.date);
@@ -7501,7 +7508,7 @@ async function renderDeductions() {
 
   const isAddingNew = _dEdit && _dEdit.id === 'new';
   const newRow = isAddingNew
-    ? _deductionEditRow({ id: 'new', date: appTodayIso(), description: '', category: 'Other', amount: '' })
+    ? _deductionEditRow({ id: 'new', date: year === String(CURRENT_YEAR) ? appTodayIso() : `${year}-01-01`, description: '', category: 'Other', amount: '' })
     : '';
   const existingRows = yearDeductions.length === 0
     ? (isAddingNew ? '' : `<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--text-muted)">No deductions recorded for ${year} yet.</td></tr>`)
@@ -7516,11 +7523,11 @@ async function renderDeductions() {
           <td style="padding:.45rem .5rem;text-align:right;font-weight:600">${fmt(d.amount)}</td>
           <td style="padding:.45rem .5rem;text-align:right;white-space:nowrap">
             ${!d.locked ? `
-              <button class="btn btn-ghost btn-sm" style="padding:.15rem .35rem;font-size:.75rem" onclick="dedEdit('${d.id}')">Edit</button>
-              <button class="btn btn-ghost btn-sm" style="padding:.15rem .35rem;font-size:.75rem;color:var(--danger)" onclick="dedOpenDelete('${d.id}')">×</button>
-              <button class="btn btn-ghost btn-sm" style="padding:.15rem .35rem;font-size:.75rem;opacity:.5" title="Lock" onclick="dedToggleLock('${d.id}')">🔓</button>
+              <button class="btn btn-ghost btn-sm" data-ded-mutation style="padding:.15rem .35rem;font-size:.75rem" onclick="dedEdit('${d.id}')">Edit</button>
+              <button class="btn btn-ghost btn-sm" data-ded-mutation style="padding:.15rem .35rem;font-size:.75rem;color:var(--danger)" onclick="dedOpenDelete('${d.id}')">×</button>
+              <button class="btn btn-ghost btn-sm" data-ded-mutation style="padding:.15rem .35rem;font-size:.75rem;opacity:.5" title="Lock" aria-label="Lock ${escAttr(d.description)}" onclick="dedToggleLock('${d.id}', this)">🔓</button>
             ` : `
-              <button class="btn btn-ghost btn-sm" style="padding:.15rem .35rem;font-size:.75rem;opacity:.5" title="Unlock" onclick="dedToggleLock('${d.id}')">🔒</button>
+              <button class="btn btn-ghost btn-sm" data-ded-mutation style="padding:.15rem .35rem;font-size:.75rem;opacity:.5" title="Unlock" aria-label="Unlock ${escAttr(d.description)}" onclick="dedToggleLock('${d.id}', this)">🔒</button>
             `}
           </td>
         </tr>`;
@@ -7541,6 +7548,13 @@ async function renderDeductions() {
       <button class="btn btn-ghost" style="padding:.15rem .35rem;font-size:.7rem;opacity:${_dSort==='alpha'?1:.4}" title="A→Z" onclick="dedSort('alpha')">A→Z</button>
     </div>`;
 
+  const yearTabs = availableYears.map(y => `
+    <button class="btn ${y === year ? 'btn-primary' : 'btn-ghost'} btn-sm"
+      style="padding:.3rem .65rem"
+      aria-pressed="${y === year}"
+      onclick="dedSelectYear('${y}')">${y}${y === String(CURRENT_YEAR) ? ' · Current' : ''}</button>
+  `).join('');
+
   document.getElementById('app').innerHTML = `
   <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
     <button class="btn btn-ghost btn-sm" onclick="switchView('current-year')" style="flex-shrink:0;background:linear-gradient(135deg,#f59e0b,#d97706);color:white;border:none;box-shadow:0 2px 8px rgba(245,158,11,0.35);transition:transform 0.15s,box-shadow 0.15s">← Back to Properties</button>
@@ -7557,6 +7571,12 @@ async function renderDeductions() {
     ${sortBtns}
   </div>
 
+  <div style="display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;margin-bottom:1rem;padding:.65rem .8rem;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius)">
+    <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-right:.15rem">Tax Year</div>
+    ${yearTabs}
+    <div style="font-size:.78rem;color:var(--text-muted);margin-left:auto">${year === String(CURRENT_YEAR) ? 'Current-year entries' : 'Historical review and corrections'}</div>
+  </div>
+
   <div style="display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:1.25rem;padding:.75rem 1rem;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius)">
     <div><div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Total Deductions (${year})</div>
          <div style="font-size:1.3rem;font-weight:700;color:var(--danger)">${fmt(totalAmt)}</div></div>
@@ -7567,7 +7587,7 @@ async function renderDeductions() {
   <div class="card" style="margin-bottom:1rem">
     <div class="card-header" style="padding:.6rem 1rem;display:flex;justify-content:space-between;align-items:center">
       <div class="card-title">Deduction Entries</div>
-      <button class="btn btn-primary btn-sm" style="padding:.35rem .75rem" onclick="dedAddNew()">+ Add Deduction</button>
+      <button class="btn btn-primary btn-sm" data-ded-mutation style="padding:.35rem .75rem" onclick="dedAddNew()">+ Add ${year} Deduction</button>
     </div>
     <div style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:.875rem">
@@ -7644,13 +7664,20 @@ function _deductionEditRow(d) {
       <input type="text" inputmode="decimal" id="ded-edit-amount" value="${escAttr(moneyInputValue(d.amount))}" placeholder="0.00" onblur="formatMoneyInput(this)" style="width:100%;padding:.3rem .4rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);font-size:.85rem;text-align:right">
     </td>
     <td style="padding:.35rem .5rem;text-align:right;white-space:nowrap">
-      <button class="btn btn-primary btn-sm" style="padding:.3rem .5rem" onclick="dedSave('${d.id}')">Save</button>
+      <button class="btn btn-primary btn-sm" data-ded-mutation style="padding:.3rem .5rem" onclick="dedSave('${d.id}')">Save</button>
       <button class="btn btn-ghost btn-sm" style="padding:.3rem .5rem" onclick="dedCancelEdit()">✕</button>
     </td>
   </tr>`;
 }
 
 function dedSort(sort) { _dSort = sort; renderDeductions(); }
+
+function dedSelectYear(year) {
+  if (!/^\d{4}$/.test(String(year))) return;
+  _dYear = String(year);
+  _dEdit = null;
+  renderDeductions();
+}
 
 function dedAddNew() {
   _dEdit = { id: 'new' };
@@ -7688,32 +7715,76 @@ async function dedSave(id) {
     return;
   }
 
-  const raw = await envRENTALS_get();
-  const all = Array.isArray(raw) ? raw : [];
+  if (_dedMutationBusy) return;
+  dedSetMutationBusy(true);
+  let savedData = null;
+  try {
+    const raw = await envRENTALS_get();
+    const all = Array.isArray(raw) ? raw : [];
+    const updated = all.map(d => ({ ...d }));
 
-  if (id === 'new') {
-    const newDed = { id: crypto.randomUUID(), date, description, category, amount, locked: false };
-    all.push(newDed);
-    await envRENTALS_put(all);
-  } else {
-    const idx = all.findIndex(d => d.id === id);
-    if (idx === -1) return;
-    all[idx] = { ...all[idx], date, description, category, amount };
-    await envRENTALS_put(all);
+    if (id === 'new') {
+      updated.push({ id: crypto.randomUUID(), date, description, category, amount, locked: false });
+    } else {
+      const idx = updated.findIndex(d => d.id === id);
+      if (idx === -1) throw new Error('This deduction could not be found.');
+      updated[idx] = { ...updated[idx], date, description, category, amount };
+    }
+
+    await envRENTALS_put(updated);
+    savedData = updated;
+    _dEdit = null;
+  } catch (error) {
+    dedShowMutationError('Deduction not saved', error);
+  } finally {
+    try {
+      await renderDeductions(savedData);
+    } finally {
+      dedSetMutationBusy(false);
+    }
   }
-
-  _dEdit = null;
-  renderDeductions();
 }
 
-function dedToggleLock(id) {
-  envRENTALS_get().then(raw => {
+async function dedToggleLock(id, button) {
+  if (_dedMutationBusy) return;
+  dedSetMutationBusy(true);
+  let savedData = null;
+  if (button) {
+    button.textContent = '…';
+    button.setAttribute('aria-busy', 'true');
+  }
+  try {
+    const raw = await envRENTALS_get();
     const all = Array.isArray(raw) ? raw : [];
-    const idx = all.findIndex(d => d.id === id);
-    if (idx === -1) return;
-    all[idx].locked = !all[idx].locked;
-    envRENTALS_put(all);
-    renderDeductions();
+    const updated = all.map(d => ({ ...d }));
+    const idx = updated.findIndex(d => d.id === id);
+    if (idx === -1) throw new Error('This deduction could not be found.');
+    updated[idx].locked = !updated[idx].locked;
+    await envRENTALS_put(updated);
+    savedData = updated;
+  } catch (error) {
+    dedShowMutationError('Lock not updated', error);
+  } finally {
+    try {
+      await renderDeductions(savedData);
+    } finally {
+      dedSetMutationBusy(false);
+    }
+  }
+}
+
+function dedSetMutationBusy(busy) {
+  _dedMutationBusy = busy;
+  document.querySelectorAll('[data-ded-mutation]').forEach(button => {
+    button.disabled = busy;
+  });
+}
+
+function dedShowMutationError(title, error) {
+  showBrandedNotice({
+    title,
+    message: error?.message || 'The change could not be saved. Please try again.',
+    confirmLabel: 'OK'
   });
 }
 
@@ -7736,18 +7807,30 @@ function closeDedDeleteModal() {
 }
 
 async function dedExecuteDelete() {
-  if (!_dedDelId) return;
-  const raw = await envRENTALS_get();
-  const all = Array.isArray(raw) ? raw : [];
-  const filtered = all.filter(d => d.id !== _dedDelId);
-  await envRENTALS_put(filtered);
-  closeDedDeleteModal();
-  renderDeductions();
+  if (!_dedDelId || _dedMutationBusy) return;
+  dedSetMutationBusy(true);
+  let savedData = null;
+  try {
+    const raw = await envRENTALS_get();
+    const all = Array.isArray(raw) ? raw : [];
+    const filtered = all.filter(d => d.id !== _dedDelId);
+    await envRENTALS_put(filtered);
+    savedData = filtered;
+    closeDedDeleteModal();
+  } catch (error) {
+    dedShowMutationError('Deduction not deleted', error);
+  } finally {
+    try {
+      await renderDeductions(savedData);
+    } finally {
+      dedSetMutationBusy(false);
+    }
+  }
 }
 
 async function envRENTALS_get() {
   const result = await callApi({ action: 'get_deductions' });
-  return result.deductions;
+  return Array.isArray(result.deductions) ? result.deductions : [];
 }
 
 async function envRENTALS_put(data) {
