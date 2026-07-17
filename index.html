@@ -1627,6 +1627,20 @@ const MOVE_IN_PURCHASE_PROPERTY = '4781MC';
 const MOVE_IN_PURCHASE_DEFAULT_DATE = '2027-02-01';
 const MOVE_IN_CATEGORIES_DEFAULT = ['Living Room', 'Basement', 'Craft Room', 'Office', 'Kitchen / Dining Room', 'Ellie', 'Mom', 'Other'];
 const MOVE_IN_UNCATEGORIZED = 'Other';
+const MOVE_IN_CATEGORY_ICONS = {
+  'Living Room': '🛋️',
+  'Basement': '🧰',
+  'Craft Room': '🎨',
+  'Office': '💼',
+  'Kitchen / Dining Room': '🍽️',
+  'Ellie': '🧸',
+  'Mom': '👵',
+  'Other': '📦',
+};
+const MOVE_IN_CATEGORY_ICON_FALLBACK = '🏷️';
+function moveInCategoryIcon(name) {
+  return MOVE_IN_CATEGORY_ICONS[name] || MOVE_IN_CATEGORY_ICON_FALLBACK;
+}
 const PRIMARY_VIEWS = new Set(['investment-return', 'maintenance']);
 const GLOBAL_HEADER_VIEWS = new Set(['tax-planning', 'net-worth', 'budget', 'cash-flow', 'mom-budget', 'solar', 'deductions', 'savings']);
 const CASH_FLOW_YEAR = 2026;
@@ -3267,11 +3281,23 @@ async function seedMaintData(prop) {
 
 // ── View: Move-In Purchases ───────────────────────────────────────────────────
 
-let _mipSort = 'default';  // 'default' | 'price-desc' | 'price-asc'
+let _mipSort = 'default';  // 'default' | 'category' | 'price-desc' | 'price-asc'
+let _mipEditMode = false;  // when off, per-item category dropdown + edit/delete are hidden
 
 function setMoveInPurchaseSort(mode) {
   _mipSort = mode;
   renderMoveInPurchases();
+}
+
+function toggleMoveInEditMode() {
+  _mipEditMode = !_mipEditMode;
+  renderMoveInPurchases();
+}
+
+function mipCategoryOptionsHtml(cats, current) {
+  return cats.map(c =>
+    `<option value="${escAttr(c)}"${c === current ? ' selected' : ''}>${moveInCategoryIcon(c)} ${escHtml(c)}</option>`
+  ).join('');
 }
 
 async function renderMoveInPurchases() {
@@ -3316,9 +3342,11 @@ function mipRowHtml(prop, e) {
   const productLink = normalizePurchaseLink(e.productLink);
   const cats = moveInCategories(prop);
   const current = moveInCategoryOf(e);
-  const options = cats.map(c =>
-    `<option value="${escAttr(c)}"${c === current ? ' selected' : ''}>${escHtml(c)}</option>`
-  ).join('');
+  const icon = moveInCategoryIcon(current);
+  const categoryCell = _mipEditMode
+    ? `<select class="no-print" aria-label="Category" onchange="changeMoveInPurchaseCategory('${escAttr(e.id)}', this.value)"
+               style="font-size:.8rem;padding:.2rem .35rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);max-width:170px">${mipCategoryOptionsHtml(cats, current)}</select>`
+    : `<span class="no-print" style="font-size:.85rem;white-space:nowrap">${icon} ${escHtml(current)}</span>`;
   return `
     <tr${e.purchased ? ' style="opacity:.62"' : ''}>
       <td class="no-print" style="width:44px;text-align:center;padding:.4rem .5rem">
@@ -3330,15 +3358,15 @@ function mipRowHtml(prop, e) {
         ${productLink ? `<div style="font-size:.8rem;margin-top:.25rem"><a href="${escAttr(productLink)}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:600;text-decoration:none">Open Link</a></div>` : ''}
       </td>
       <td style="padding:.4rem .5rem">
-        <span class="print-only" style="font-size:.85rem">${escHtml(current)}</span>
-        <select class="no-print" aria-label="Category" onchange="changeMoveInPurchaseCategory('${escAttr(e.id)}', this.value)"
-                style="font-size:.8rem;padding:.2rem .35rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);max-width:150px">${options}</select>
+        <span class="print-only" style="font-size:.85rem">${icon} ${escHtml(current)}</span>
+        ${categoryCell}
       </td>
       <td style="white-space:nowrap;padding:.4rem .5rem;color:var(--text-muted);font-size:.85rem">${e.date ? fmtDate(e.date) : '—'}</td>
       <td class="text-right" style="white-space:nowrap;padding:.4rem .5rem">${fmt(e.estimatedPrice || 0)}</td>
       <td class="text-right no-print" style="padding:.4rem .5rem;white-space:nowrap">
+        ${_mipEditMode ? `
         <button class="btn btn-ghost btn-sm" style="padding:.15rem .4rem" onclick="editMoveInPurchase('${escAttr(e.id)}')">Edit</button>
-        <button class="btn btn-ghost btn-sm" style="color:var(--danger);padding:.15rem .4rem" onclick="deleteMoveInPurchase('${escAttr(e.id)}')">×</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger);padding:.15rem .4rem" onclick="deleteMoveInPurchase('${escAttr(e.id)}')">×</button>` : ''}
       </td>
     </tr>`;
 }
@@ -3368,7 +3396,7 @@ function renderMoveInPurchasesSection(prop) {
       const groupTotal = items.reduce((s, e) => s + (Number(e.estimatedPrice) || 0), 0);
       const header = `
         <tr style="background:var(--bg-alt)">
-          <td colspan="4" style="padding:.5rem .5rem;font-weight:700">${escHtml(cat)} <span style="font-weight:400;color:var(--text-muted);font-size:.82rem">(${items.length})</span></td>
+          <td colspan="4" style="padding:.5rem .5rem;font-weight:700">${moveInCategoryIcon(cat)} ${escHtml(cat)} <span style="font-weight:400;color:var(--text-muted);font-size:.82rem">(${items.length})</span></td>
           <td class="text-right" style="padding:.5rem .5rem;font-weight:700;white-space:nowrap">${fmt(groupTotal)}</td>
           <td class="no-print"></td>
         </tr>`;
@@ -3420,7 +3448,8 @@ function renderMoveInPurchasesSection(prop) {
           <button class="btn btn-sm no-print ${_mipSort === 'category' ? 'btn-primary' : 'btn-ghost'}" style="padding:.15rem .5rem" onclick="setMoveInPurchaseSort('category')">Category</button>
           <button class="btn btn-sm no-print ${_mipSort === 'price-desc' ? 'btn-primary' : 'btn-ghost'}" style="padding:.15rem .5rem" onclick="setMoveInPurchaseSort('price-desc')">Price ↓</button>
           <button class="btn btn-sm no-print ${_mipSort === 'price-asc' ? 'btn-primary' : 'btn-ghost'}" style="padding:.15rem .5rem" onclick="setMoveInPurchaseSort('price-asc')">Price ↑</button>
-          <button class="btn btn-ghost btn-sm no-print" style="padding:.15rem .5rem" onclick="toggleMoveInCategoriesCard()">Manage Categories</button>
+          <button class="btn btn-sm no-print ${_mipEditMode ? 'btn-primary' : 'btn-ghost'}" style="padding:.15rem .5rem" onclick="toggleMoveInEditMode()">${_mipEditMode ? '✓ Done Editing' : '✎ Edit Items'}</button>
+          ${_mipEditMode ? `<button class="btn btn-ghost btn-sm no-print" style="padding:.15rem .5rem" onclick="toggleMoveInCategoriesCard()">Manage Categories</button>` : ''}
           <button class="btn btn-primary btn-sm no-print" onclick="openAddMoveInPurchase()">+ Add Purchase</button>
         </div>
       </div>
@@ -3457,7 +3486,7 @@ function renderMoveInPurchasesSection(prop) {
           <div class="form-group">
             <label>Category</label>
             <select id="mip-category" style="font-size:.875rem;padding:.4rem .6rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);width:100%;box-sizing:border-box">
-              ${moveInCategories(prop).map(c => `<option value="${escAttr(c)}"${c === MOVE_IN_UNCATEGORIZED ? ' selected' : ''}>${escHtml(c)}</option>`).join('')}
+              ${mipCategoryOptionsHtml(moveInCategories(prop), MOVE_IN_UNCATEGORIZED)}
             </select>
           </div>
           <div class="form-group" style="grid-column:1/-1">
@@ -3616,6 +3645,7 @@ function renderMoveInCategoriesCard(prop) {
     const catTotal = items.reduce((s, e) => s + (Number(e.estimatedPrice) || 0), 0);
     return `
       <div style="display:flex;gap:.5rem;align-items:center;padding:.4rem 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
+        <span style="font-size:1.05rem" aria-hidden="true">${moveInCategoryIcon(c)}</span>
         <input type="text" value="${escAttr(c)}" id="mip-cat-name-${i}"
                style="flex:1;min-width:140px;font-size:.85rem;padding:.3rem .5rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text)">
         <span style="font-size:.78rem;color:var(--text-muted);white-space:nowrap">${items.length} item${items.length === 1 ? '' : 's'} · ${fmt(catTotal)}</span>
