@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https://rentals-api.99redder.workers.dev; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <!-- cdn.plaid.com / production.plaid.com are required by Plaid Link, used only
+       by the "Reconnect" flow on the Net Worth tab. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.plaid.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://cdn.plaid.com; connect-src https://rentals-api.99redder.workers.dev https://production.plaid.com https://cdn.plaid.com; frame-src https://cdn.plaid.com; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
   <meta name="referrer" content="no-referrer">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>STUFF</title>
@@ -9063,22 +9065,87 @@ async function nwSaveEditor(){
 }
 
 function nwDelete(kind,id){ showBrandedNotice({type:'danger',title:'Delete net worth item?',message:'This removes the item and updates today’s net worth snapshot.',confirmLabel:'Yes, Delete',onConfirm:async()=>{const key=kind==='vehicle'?'vehicles':'manualItems';state.netWorth[key]=state.netWorth[key].filter(x=>x.id!==id);await nwPersist();}}); }
-// Banner shown when one or more linked banks failed to refresh. Reconnecting
-// is done outside the app (the access tokens live as worker secrets), so this
-// tells the user what is stale rather than offering a re-link button.
+// Banner shown when one or more linked banks failed to refresh. Connections that
+// need re-authentication get an inline Reconnect button that opens Plaid Link in
+// update mode; the existing access token is repaired in place.
 function nwSyncWarningHtml(){
   const warnings=state.netWorth?.syncWarnings||[];
   if(!warnings.length) return '';
-  const needsReconnect=warnings.some(w=>w.needsReconnect);
+  const anyReconnect=warnings.some(w=>w.needsReconnect&&w.itemId);
   return `<div class="card" style="border-left:3px solid var(--warning);margin-bottom:1rem">
     <div class="card-body" style="padding:.75rem 1rem">
-      <div style="font-weight:700;font-size:.85rem;margin-bottom:.25rem">⚠️ Some account balances are out of date</div>
-      <ul style="margin:.25rem 0 0;padding-left:1.1rem;font-size:.82rem;color:var(--text-muted);line-height:1.5">
-        ${warnings.map(w=>`<li>${escHtml(w.message)}</li>`).join('')}
-      </ul>
-      ${needsReconnect?`<div style="font-size:.8rem;color:var(--text-muted);margin-top:.5rem">These show their last known balance until the connection is re-linked.</div>`:''}
+      <div style="font-weight:700;font-size:.85rem;margin-bottom:.4rem">⚠️ Some account balances are out of date</div>
+      <div style="display:flex;flex-direction:column;gap:.4rem">
+        ${warnings.map(w=>`
+          <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+            <span style="flex:1;min-width:220px;font-size:.82rem;color:var(--text-muted);line-height:1.5">${escHtml(w.message)}</span>
+            ${w.needsReconnect&&w.itemId
+              ? `<button class="btn btn-primary btn-sm" onclick="nwReconnectBank('${escAttr(w.itemId)}',this)">Reconnect</button>`
+              : ''}
+          </div>`).join('')}
+      </div>
+      ${anyReconnect?`<div style="font-size:.8rem;color:var(--text-muted);margin-top:.55rem">Reconnecting opens your bank's secure sign-in. Until then these show their last known balance.</div>`:''}
     </div>
   </div>`;
+}
+
+// Plaid Link is loaded on demand so the SDK is only fetched when reconnecting.
+let _plaidLinkPromise=null;
+function loadPlaidLink(){
+  if(window.Plaid) return Promise.resolve(window.Plaid);
+  if(_plaidLinkPromise) return _plaidLinkPromise;
+  _plaidLinkPromise=new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.plaid.com/link/v2/stable/link-initialize.js';
+    s.onload=()=>window.Plaid?resolve(window.Plaid):reject(new Error('Bank sign-in could not be loaded.'));
+    s.onerror=()=>{_plaidLinkPromise=null;reject(new Error('Bank sign-in could not be loaded. Check your connection and try again.'));};
+    document.head.appendChild(s);
+  });
+  return _plaidLinkPromise;
+}
+
+async function nwReconnectBank(itemId,btn){
+  const original=btn.textContent;
+  btn.disabled=true;
+  btn.textContent='Opening…';
+  try{
+    const Plaid=await loadPlaidLink();
+    const {linkToken}=await callApi({action:'create_plaid_link_token',itemId});
+    if(!linkToken) throw new Error('Reconnect could not start. Please try again.');
+    const handler=Plaid.create({
+      token:linkToken,
+      onSuccess:async()=>{
+        // Update mode repairs the existing token, so a normal refresh is all
+        // that's needed to pull fresh balances.
+        try{
+          state.netWorth=(await callApi({action:'refresh_net_worth_plaid'})).data;
+          _renderNetWorthHtml();
+          const remaining=state.netWorth?.syncWarnings||[];
+          showBrandedNotice({
+            title:remaining.length?'Reconnected':'All accounts reconnected',
+            message:remaining.length
+              ? 'That account is reconnected and balances are up to date.\n\nStill needing attention:\n\n'+remaining.map(w=>w.message).join('\n\n')
+              : 'Balances are up to date.',
+            confirmLabel:'OK'
+          });
+        }catch(e){
+          showBrandedNotice({title:"Couldn't refresh accounts",message:e.message,confirmLabel:'OK'});
+        }
+      },
+      onExit:(err)=>{
+        btn.disabled=false;
+        btn.textContent=original;
+        if(err) showBrandedNotice({title:'Reconnect not completed',message:err.display_message||err.error_message||'The bank sign-in was closed before it finished.',confirmLabel:'OK'});
+      },
+    });
+    handler.open();
+    btn.textContent=original;
+  }catch(e){
+    showBrandedNotice({title:"Couldn't start reconnect",message:e.message,confirmLabel:'OK'});
+  }finally{
+    btn.disabled=false;
+    if(btn.textContent==='Opening…') btn.textContent=original;
+  }
 }
 
 async function nwRefreshPlaid(btn){

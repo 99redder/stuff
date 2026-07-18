@@ -194,6 +194,7 @@ async function handleDataApi(request, env) {
   if (action === 'get_net_worth') return handleGetNetWorth(env);
   if (action === 'save_net_worth') return handleSaveNetWorth(env, body.data);
   if (action === 'refresh_net_worth_plaid') return handleRefreshNetWorthPlaid(env);
+  if (action === 'create_plaid_link_token') return handleCreatePlaidLinkToken(env, body.itemId);
   if (action === 'get_vehicle_trims') return handleGetVehicleTrims(body);
   if (action === 'value_net_worth_vehicle') return handleValueNetWorthVehicle(env, body.vehicle);
   // Note: Fair Share settings live inside the `budget` KV record
@@ -2165,44 +2166,88 @@ async function plaidPost(env, path, body) {
   return { ok: response.ok, status: response.status, payload };
 }
 
-// Names the bank behind a failed connection. /accounts/get fails outright for a
-// broken Item, but /item/get still returns its institution, so use that to turn
-// "A linked account" into the actual bank name.
-async function resolveLinkedAccountLabel(env, accessToken, itemId) {
+// Identifies the bank behind a failed connection. /accounts/get fails outright
+// for a broken Item, but /item/get still responds, so use it to recover both the
+// institution name and the item id the reconnect flow needs.
+async function resolveLinkedAccountInfo(env, accessToken, itemId) {
   const labels = plaidItemLabels(env);
-  const direct = String(labels[itemId] || '').trim();
-  if (direct) return direct;
+  const info = { label: String(labels[itemId] || '').trim(), itemId: itemId || '' };
   try {
     const { ok, payload } = await plaidPost(env, '/item/get', { access_token: accessToken });
-    if (!ok) return '';
-    const resolvedItemId = String(payload.item?.item_id || '');
-    const labelled = String(labels[resolvedItemId] || '').trim();
-    if (labelled) return labelled;
+    if (!ok) return info;
+    info.itemId = String(payload.item?.item_id || '') || info.itemId;
+    const labelled = String(labels[info.itemId] || '').trim();
+    if (labelled) { info.label = labelled; return info; }
+    if (info.label) return info;
     const institutionId = String(payload.item?.institution_id || '');
-    if (!institutionId) return '';
-    if (KNOWN_INSTITUTION_NAMES[institutionId]) return KNOWN_INSTITUTION_NAMES[institutionId];
+    if (!institutionId) return info;
+    if (KNOWN_INSTITUTION_NAMES[institutionId]) { info.label = KNOWN_INSTITUTION_NAMES[institutionId]; return info; }
     const meta = await plaidPost(env, '/institutions/get_by_id', {
       institution_id: institutionId,
       country_codes: ['US'],
     });
-    return meta.ok ? String(meta.payload.institution?.name || '').trim().slice(0, 80) : '';
+    if (meta.ok) info.label = String(meta.payload.institution?.name || '').trim().slice(0, 80);
+    return info;
   } catch {
-    return '';
+    return info;
   }
 }
 
-function bankSyncWarning(failure, resolvedLabel) {
-  const label = String(resolvedLabel || '').trim() || 'A linked account';
+function bankSyncWarning(failure, info) {
+  const label = String(info?.label || '').trim() || 'A linked account';
   const reason = BANK_SYNC_REASONS[failure.code] || 'the bank connection returned an error';
   const needsReconnect = BANK_SYNC_RECONNECT_CODES.has(failure.code);
   return {
     label: label.slice(0, 100),
+    itemId: String(info?.itemId || ''),
     reason,
     needsReconnect,
     message: needsReconnect
       ? `${label} needs to be reconnected — ${reason}.`
       : `${label} could not be updated — ${reason}.`,
   };
+}
+
+// Update mode repairs the existing access token in place, so tokens can stay in
+// Worker secrets — we just need to find which one owns the failing Item.
+async function findPlaidAccessTokenForItem(env, itemId) {
+  if (!itemId) return '';
+  for (const accessToken of plaidAccessTokens(env)) {
+    try {
+      const { ok, payload } = await plaidPost(env, '/item/get', { access_token: accessToken });
+      if (ok && String(payload.item?.item_id || '') === itemId) return accessToken;
+    } catch { /* try the next token */ }
+  }
+  return '';
+}
+
+async function handleCreatePlaidLinkToken(env, itemId) {
+  if (!env.PLAID_CLIENT_ID || !env.PLAID_SECRET) {
+    return jsonResponse({ error: 'Account syncing is not set up yet.' }, 400);
+  }
+  const accessToken = await findPlaidAccessTokenForItem(env, String(itemId || '').slice(0, 100));
+  if (!accessToken) return jsonResponse({ error: 'That account connection was not found.' }, 404);
+  const body = {
+    client_name: "Red's STUFF",
+    language: 'en',
+    country_codes: ['US'],
+    user: { client_user_id: 'rentals-owner' },
+    access_token: accessToken, // presence of access_token = update mode
+  };
+  // Required by OAuth institutions; must also be registered in the Plaid dashboard.
+  if (env.PLAID_REDIRECT_URI) body.redirect_uri = env.PLAID_REDIRECT_URI;
+  const { ok, status, payload } = await plaidPost(env, '/link/token/create', body);
+  if (!ok) {
+    const code = String(payload.error_code || payload.error_type || 'UNKNOWN_ERROR').slice(0, 80);
+    console.error(JSON.stringify({ event: 'plaid_link_token_error', status, code }));
+    const needsRedirect = code === 'INVALID_FIELD' || code === 'INVALID_REDIRECT_URI';
+    return jsonResponse({
+      error: needsRedirect
+        ? 'Reconnect could not start: this bank requires an OAuth redirect URI to be registered first.'
+        : 'Reconnect could not start. Please try again in a moment.',
+    }, 502);
+  }
+  return jsonResponse({ linkToken: String(payload.link_token || ''), expiration: String(payload.expiration || '') });
 }
 
 async function refreshNetWorthPlaid(env) {
@@ -2246,7 +2291,7 @@ async function refreshNetWorthPlaid(env) {
   const responses = settled.filter(entry => !entry.failure);
   const failures = settled.filter(entry => entry.failure).map(entry => entry.failure);
   const syncWarnings = await Promise.all(failures.map(async failure =>
-    bankSyncWarning(failure, await resolveLinkedAccountLabel(env, failure.accessToken, failure.itemId))));
+    bankSyncWarning(failure, await resolveLinkedAccountInfo(env, failure.accessToken, failure.itemId))));
   if (!responses.length) {
     throw new Error(syncWarnings.map(w => w.message).join(' ') || 'Account balances could not be refreshed.');
   }
