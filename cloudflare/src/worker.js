@@ -2335,6 +2335,11 @@ async function refreshNetWorthPlaid(env) {
       if (institution==='Robinhood' && account.subtype==='brokerage' && owner) displayName=`${owner}'s Robinhood Individual Account`;
       if (institution==='Robinhood' && account.subtype==='ira' && owner) displayName=`${owner}'s Robinhood Traditional IRA`;
       if (institution==='Robinhood' && account.subtype==='crypto exchange' && owner) displayName=`${owner}'s Robinhood Crypto`;
+      // Catch-all so any other Robinhood account (Roth IRA, future types) still
+      // gets the owner prefix. Joint accounts stay unprefixed.
+      if (institution==='Robinhood' && owner && !/\bjoint\b/i.test(displayName) && !displayName.startsWith(`${owner}'s`)) {
+        displayName = `${owner}'s ${displayName}`;
+      }
       if (itemLabel) displayName=itemLabel;
       displayName = displayName.replace(/\btraditional\b/gi,'Traditional');
       if (institution === 'Navy Federal' && account.subtype === 'mortgage' && !/\(731WO\)/i.test(displayName)) {
