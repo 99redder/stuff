@@ -54,11 +54,12 @@ A full table of contents is in the `NAVIGATION GUIDE` block comment at the very 
 ### Navigation (two-tier)
 ```
 Property tabs:  [6AL]  [95EB]  [446BB]  [731WO]  [4781 MC]
-View tabs:      [Current Year]  [Tax Summary]  [Investment Return]  [Historical]  [Maintenance]  [All Properties]
-Header buttons: [Deductions Tracker]  [Monthly Budget]  [Mom Budget]  [☀️ Solar]  [Tax Planning]  [💰 Savings]
+View tabs:      [Current Year]  [Tax Summary]  [Investment Return]  [Historical]  [Maintenance]  [Move-In Purchases]  [All Properties]
+Header buttons: [Deductions Tracker]  [Monthly Budget]  [Mom Budget]  [☀️ Solar]  [Tax Planning]  [💰 Savings]  [Net Worth]  [Cash Flow]
 ```
-- Property tabs are hidden when **All Properties**, **Deductions Tracker**, **Monthly Budget**, **Mom Budget**, **Solar**, **Tax Planning**, or **Savings** views are active.
+- Property tabs are hidden for the global header views (`GLOBAL_HEADER_VIEWS`: `tax-planning`, `net-worth`, `budget`, `cash-flow`, `mom-budget`, `solar`, `deductions`, `savings`) and for **All Properties**.
 - **731WO** and **4781MC** are primary residences — only show Investment Return and Maintenance views (`PRIMARY_PROPERTIES` / `PRIMARY_VIEWS` constants).
+- **Move-In Purchases** is available only on **4781MC** (`MOVE_IN_PURCHASE_PROPERTY`).
 - Switching property tabs reloads the current view for the new property.
 
 ### Views
@@ -76,6 +77,8 @@ Header buttons: [Deductions Tracker]  [Monthly Budget]  [Mom Budget]  [☀️ So
 | Tax Planning | `tax-planning` | Projected federal + Maryland state/local tax liability with live inputs; includes the **AGI Threshold Watch** card (`#tp-warnings`, built by `tpAgiWarningsHtml()`) flagging 2026 MFJ phase-outs with source links |
 | Deductions Tracker | `deductions` | Global itemized deductions log for the current year |
 | Savings | `savings` | Account balances + annual obligations tracker with paid/unpaid checkboxes per year |
+| Move-In Purchases | `move-in-purchases` | **4781MC only** — move-in shopping list with per-item categories, price totals, and an edit mode |
+| Net Worth | `net-worth` | Assets minus liabilities — linked bank balances, manual items, vehicles, property equity, treasury portfolio; includes the bank-sync warning banner + **Reconnect** flow |
 
 ### State Model
 ```javascript
@@ -84,18 +87,20 @@ const state = {
   currentView: 'current-year',  // active view
   password: '',                  // legacy only; runtime auth uses session cookie/token
   data: {
-    '6AL':   { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
-    '95EB':  { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
-    '446BB': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
-    '731WO': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null },
-    '4781MC': { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null }
+    // every property carries the same keys; moveInPurchases/moveInCategories are only used by 4781MC
+    '6AL':   { transactions: null, summaries: null, defaults: null, depreciation: null, maintenance: null, investment: null, moveInPurchases: null, moveInCategories: null },
+    '95EB':  { ...same },
+    '446BB': { ...same },
+    '731WO': { ...same },
+    '4781MC': { ...same }
   },
   pendingDefaultPrompt: null,   // { category, amount } — shown after saving a transaction
   pendingMaintPrompt: null,     // { date, amount, description, category } — shown after expense save
   budget: null,                 // loaded once, global — { income, expenses, worksheets }
   momBudget: null,              // loaded once, global — { template, months }
   solar: { config: null, entries: null, summaries: null },
-  savings: null                 // loaded once, global — { accounts, obligations, payments }
+  savings: null,                // loaded once, global — { accounts, obligations, payments }
+  netWorth: null                // loaded once, global — see Net Worth section
 };
 // Note: budget also carries a `fairShare` sub-object — { householdSize, roundDollar, shared:{[itemId]:bool} } —
 // for the Fair Share section embedded in the Monthly Budget view (saved inside the `budget` record).
@@ -367,6 +372,76 @@ On load, if no obligation has a `kind` field, a one-time migration backfills `ki
 
 ---
 
+### Move-In Purchases View (4781MC only)
+
+Shopping list for the 4781 MC new build — items, estimated prices, notes, product links, purchase status, and a per-item **category**. Gated to `MOVE_IN_PURCHASE_PROPERTY` (`'4781MC'`); `renderMoveInPurchases()` redirects to the property's default view for any other property.
+
+**Primary anchors in `index.html`:**
+- Section starts at `// ── View: Move-In Purchases`
+- Category helpers/modal at `// ── Move-In Purchase Categories`
+- CSS lives in the stylesheet under `/* ── Move-In Purchases` — all `.mip-*` classes
+- Render path: `renderMoveInPurchases()` → `renderMoveInPurchasesSection(prop)` → `mipTableHtml()` / `mipRowHtml()`
+
+**Constants:**
+```javascript
+const MOVE_IN_PURCHASE_PROPERTY = '4781MC';
+const MOVE_IN_PURCHASE_DEFAULT_DATE = '2027-02-01';
+const MOVE_IN_CATEGORIES_DEFAULT = ['Living Room','Basement','Craft Room','Office','Kitchen / Dining Room','Ellie','Mom','Other'];
+const MOVE_IN_UNCATEGORIZED = 'Other';   // fallback for items with no category
+const MOVE_IN_CATEGORY_ICONS = { 'Living Room':'🛋️', Basement:'🧰', 'Craft Room':'🎨', Office:'💼', 'Kitchen / Dining Room':'🍽️', Ellie:'🧸', Mom:'👵', Other:'📦' };
+```
+Icons are **only** rendered in the category-sort group headers (`moveInCategoryIcon()`); custom categories fall back to 🏷️.
+
+**Entry shape** (one per purchase, server-assigned `id`):
+```javascript
+{ id, item, date, estimatedPrice, productLink, notes, purchased, category }
+```
+
+**View state (module-level, not persisted):**
+- `_mipSort` — `'category'` (default) · `'name'` · `'price-desc'` · `'price-asc'`; options listed in `MIP_SORTS`
+- `_mipEditMode` — when **off**, the category renders as a read-only pill and per-item Edit/✕ are hidden; when **on**, a category `<select>` and Edit/✕ appear plus the **⚙ Categories** button
+- `_mipSearch` — free-text filter over item name, notes, and category (`mipFilterEntries`). `mipSetSearch()` re-renders and then restores focus/caret, since the whole view is re-rendered per keystroke.
+
+**Layout:** header (title + `N items · N purchased` meta + `+ Add Purchase`) → progress bar (% of estimated total purchased) → toolbar strip (search · segmented Sort control · Edit / Categories) → table. Columns are `Item | Category | Est. Price`; the Item column carries `width:100%` so it absorbs slack and the other two hug the right edge. Card is capped at `760px`, widened to `900px` in edit mode so the selects and action buttons don't force horizontal scrolling.
+
+**Category sort** groups rows by category in `moveInCategories()` order with a subtotal header row per group; within a group items sort **price high → low** with purchased items last.
+
+**Categories** are stored per-property and are fully editable via the branded `#mip-categories-modal` (`openMoveInCategoriesModal()`): add, rename, delete. Renaming cascades to every item in that category and deleting reassigns its items to `Other` — both persist the item changes via the bulk `save_move_in_purchases` action. `moveInCategories(prop)` returns the stored list plus any category referenced by an existing item, so nothing renders orphaned.
+
+> **Gotcha:** a global `input, select, textarea { width: 100% }` rule squeezes any inline `<select>` inside a table cell and clips its text. The row category select sets `width:auto` (`.mip-cat-select`) to size to its widest option.
+
+---
+
+### Net Worth: linked bank accounts
+
+The Net Worth view combines manual items, vehicles, property equity, a treasury portfolio, and balances pulled from linked bank accounts. This section covers the account-sync half.
+
+**No user-facing mention of the provider.** The button is **↻ Refresh Accounts**, labels read "Linked account", and error text says "linked account". Internal identifiers (`nwRefreshPlaid`, `refresh_net_worth_plaid`, `state.netWorth.plaidAccounts`) still use the old name — keep user-visible strings generic.
+
+**Access tokens live in Worker secrets**, not KV — `PLAID_ACCESS_TOKENS` (JSON array) or the legacy single `PLAID_ACCESS_TOKEN`, read by `plaidAccessTokens(env)`. `PLAID_ITEM_LABELS` / `PLAID_ITEM_OWNERS` map an Item ID to a display label / owner name.
+
+**Resilient refresh (`refreshNetWorthPlaid`).** Each Item is fetched independently and settled rather than thrown, so one broken connection cannot wipe out the others:
+- Successful institutions refresh normally.
+- Failed ones keep their **last known accounts** (merged back in by id) so balances don't vanish from net worth.
+- Failures become `syncWarnings: [{ label, itemId, reason, needsReconnect, message }]`, built by `bankSyncWarning()` from `BANK_SYNC_REASONS` / `BANK_SYNC_RECONNECT_CODES`.
+- It only throws when **every** connection fails.
+- `normalizeNetWorth()` strips unknown keys, so `handleRefreshNetWorthPlaid` attaches `syncWarnings` to the response **after** normalization — don't move it inside the record.
+
+**Naming a failed connection.** `/accounts/get` returns no usable item id for a broken Item, so `resolveLinkedAccountInfo()` falls back to `/item/get` (which still responds for an Item needing re-auth) to recover both the institution name and the `itemId` the reconnect flow needs.
+
+**Reconnect flow (in-app).** `nwSyncWarningHtml()` renders a warning banner with a **Reconnect** button on each connection where `needsReconnect && itemId`:
+1. `nwReconnectBank()` lazy-loads the Link SDK (`loadPlaidLink()`).
+2. `create_plaid_link_token` finds the access token owning that `itemId` (`findPlaidAccessTokenForItem`) and creates an **update-mode** link token.
+3. **Update mode repairs the existing access token in place** — there is no new token and no exchange step, which is why tokens can stay in Worker secrets. On success the frontend just calls the normal refresh.
+
+Set the optional `PLAID_REDIRECT_URI` secret for OAuth institutions (must also be registered in the provider's dashboard); a missing/invalid one returns a specific error.
+
+> **CSP:** the `Content-Security-Policy` meta tag in `index.html` allows `https://cdn.plaid.com` (`script-src`, `frame-src`, `img-src`) and `https://production.plaid.com` (`connect-src`) purely for this flow. Removing them breaks Reconnect.
+
+**Account display names** are built in `refreshNetWorthPlaid`. Robinhood accounts get owner prefixes by subtype (brokerage / ira / crypto), followed by a **catch-all** that prefixes any remaining Robinhood account with the item owner — so a Roth IRA becomes "Chris's Robinhood Roth IRA" without hardcoding a subtype string. Already-prefixed names are skipped and joint accounts stay unprefixed. An explicit `PLAID_ITEM_LABELS` entry overrides everything.
+
+---
+
 ### Fair Share (section inside Monthly Budget)
 
 A collapsible **section inside the Monthly Budget view** — not a standalone tab. It **reuses the budget's own expense items** (no double entry): it totals the expenses marked **shared**, divides by household size, and shows the fair per-person amount Red's mother contributes once she lives with the family.
@@ -531,6 +606,29 @@ Maintenance entries use `capitalImprovement: true` when marked **Improvement** i
 | `save_mom_budget` | `data: { template, months }` | `{ success: true }` — full overwrite of the `mom_budget` KV record |
 | `get_mom_budget_public_summary` | optional `month: "YYYY-MM"` | `{ monthKey, monthLabel, updatedAt, month: { overallSpendingRemaining, discretionaryRemaining, discretionaryAdjusted, otherOverages, discretionarySpent, fairShare }, year: {...} }` — public unauthenticated read-only summary for `mom-budget-phone.html`; returns calculated numbers only, never raw editable records. `month.fairShare` is computed live from the `budget` KV record (`calcFairShareFromBudget`). Guarded by a per-IP rate limit (`env.PUBLIC_RATELIMIT`, 60 req/60s → `429`, fails open) and a ~45s edge cache (synthetic GET cache key keyed by month, `Cache-Control: public, s-maxage=45`). Both are invisible to the phone and cap bot/flood abuse. |
 
+#### Move-In Purchases (per-property — 4781MC only)
+All of these reject any property other than `4781MC` (`requireMoveInPurchaseProperty`) with a 400.
+
+| Action | Extra payload | Returns |
+|---|---|---|
+| `get_move_in_purchases` | — | `{ entries: [...] }` |
+| `save_move_in_purchases` | `entries: [...]` | `{ entries: [...] }` — full overwrite; used by category rename/delete cascades |
+| `add_move_in_purchase` | `entry: { item, date, estimatedPrice, productLink, notes, purchased, category }` | `{ entry: { id, ... } }` — server-side UUID |
+| `update_move_in_purchase` | `id`, `entry: {...}` | `{ entry: {...} }` |
+| `delete_move_in_purchase` | `id` | `{ success: true }` |
+| `get_move_in_categories` | — | `{ categories: [...] }` — seeds `MOVE_IN_CATEGORIES_DEFAULT` when unset |
+| `save_move_in_categories` | `categories: [...]` | `{ categories: [...] }` — trims, drops blanks, de-dupes case-insensitively, caps at 100 |
+
+#### Net Worth (global — not per-property)
+| Action | Extra payload | Returns |
+|---|---|---|
+| `get_net_worth` | — | `{ data: {...} }` |
+| `save_net_worth` | `data: {...}` | `{ data: {...} }` |
+| `refresh_net_worth_plaid` | — | `{ data: {...} }` — `data.syncWarnings` present when some connections failed; 502 only if **all** failed |
+| `create_plaid_link_token` | `itemId` | `{ linkToken, expiration }` — update-mode token for reconnecting that Item |
+| `value_net_worth_vehicle` | `vehicle` | `{ value, valuedAt, source }` |
+| `get_vehicle_trims` | vehicle lookup fields | trim options |
+
 #### Deductions (global — not per-property)
 | Action | Extra payload | Returns |
 |---|---|---|
@@ -585,8 +683,13 @@ solar:summaries            →  { [year]: { ... } }
 deductions                 →  Array of deduction entry objects
 tax_planning:{year}        →  Tax planning inputs for that year
 savings                    →  { accounts: {robinhoodChecking, robinhoodBrokerage}, obligations: [...], payments: { [year]: { [oid]: [bool, ...] } } }
+net_worth                  →  { manualItems, vehicles, propertyAssets, plaidAccounts, treasuryPortfolio, plaidRefreshedAt, history }
+move_in_purchases:{property}  →  Array of move-in purchase objects (4781MC only)
+move_in_categories:{property} →  Array of category name strings (4781MC only)
 ```
 Valid properties: `6AL`, `95EB`, `446BB`, `731WO`, `4781MC`
+
+Bank access tokens are **not** in KV — they live in Worker secrets (`PLAID_ACCESS_TOKENS`). See the Net Worth section.
 
 ---
 
@@ -632,6 +735,9 @@ To update: commit changes to `index.html` and push to `main`. GitHub Pages deplo
 - Amounts are **always dollars**. Never store or display cents. The original codebase had a bug (`amount * 100`) that was fixed — do not reintroduce it.
 - When rendering user-supplied strings into HTML, always use `escHtml()`. When rendering into HTML attributes, use `escAttr()`.
 - The `budget` KV record stores `worksheets` alongside `income` and `expenses`. When loading budget state, all three must be pulled from `raw` — omitting any will lose data on the next save.
+- **The main `<script>` is NOT wrapped in an IIFE.** The `})();` at the end of the file closes the `initApp()` call only. Top-level `function` declarations are therefore already global, which is why `onclick=` handlers work without registration. The long `window.X = X` block near the bottom is legacy and largely redundant — harmless to add to, but not required. (`const`/`let` at top level are *not* on `window`, so `state` is unreachable from the console.)
+- **CSS variables:** `--card-bg` is an alias of `--surface` and follows the dark theme automatically. Before it was declared it resolved to `transparent`, which looked fine on cards but left page-level panels unfilled — if you add a variable, declare it in `:root`.
+- The global `input, select, textarea { width: 100% }` rule will squeeze inline `<select>`s in table cells and clip their text. Set `width:auto` on those.
 
 ---
 
@@ -648,6 +754,25 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-07-18 — Net Worth: resilient bank sync + in-app reconnect
+
+- **One expired bank login no longer breaks every account.** `refreshNetWorthPlaid` fetched all Items with a single `Promise.all` that threw on the first error, so an `ITEM_LOGIN_REQUIRED` on one institution failed the whole refresh. Each Item is now settled independently: healthy institutions refresh, failed ones **retain their last known accounts** (merged by id) so balances don't disappear from net worth, and only a total failure throws.
+- **Plain-language warnings.** Failures map through `BANK_SYNC_REASONS` / `BANK_SYNC_RECONNECT_CODES` into `syncWarnings: [{ label, itemId, reason, needsReconnect, message }]`, rendered as a banner (`nwSyncWarningHtml()`) plus a modal after a manual refresh. Attached to the response *after* `normalizeNetWorth()`, which strips unknown keys.
+- **Naming the failed bank.** `/accounts/get` gives no usable item id for a broken Item, so `resolveLinkedAccountInfo()` falls back to `/item/get` (still responsive during re-auth) for the institution name **and** the `itemId`.
+- **In-app Reconnect** (`nwReconnectBank`): lazy-loads Link, calls the new `create_plaid_link_token` action for an **update-mode** token, and re-runs the normal refresh on success. Update mode repairs the existing access token in place — no exchange step, so tokens stay in Worker secrets rather than moving to KV. Optional `PLAID_REDIRECT_URI` secret for OAuth institutions. **CSP was widened** for `cdn.plaid.com` / `production.plaid.com`.
+- **Provider name removed from the UI** — button is now "↻ Refresh Accounts" and all labels/errors say "linked account". Internal identifiers unchanged.
+- **Robinhood Roth IRA naming:** only brokerage/ira/crypto had owner-prefix rules, so a Roth rendered as "Robinhood Roth IRA". Added a catch-all that prefixes any remaining Robinhood account with the item owner (skips already-prefixed and joint accounts) rather than guessing the provider's Roth subtype string.
+- **Declared the missing `--card-bg` CSS variable.** Referenced in 29 places but never defined, so it resolved to `transparent`: fine on cards (transparent over `--surface`), but page-level panels rendered as empty outlined boxes. Declared as `var(--surface)` — confirmed by `.mb-fixed-template-row` (`--surface2`) using `--card-bg` as its contrasting `.is-alt` stripe.
+
+### 2026-07-18 — Move-In Purchases: categories + UI rebuild
+
+- **Per-item categories** with a default set (Living Room · Basement · Craft Room · Office · Kitchen / Dining Room · Ellie · Mom · Other), persisted per property in the new `move_in_categories:{property}` KV record via `get_move_in_categories` / `save_move_in_categories`. Entries gained a `category` field.
+- **Category management** in a branded modal (`#mip-categories-modal`) — add, rename, delete. Rename cascades to every item in the category; delete reassigns items to `Other`. Both persist through the bulk `save_move_in_purchases` action.
+- **Sorting:** Category (default, grouped with per-category subtotals and an emoji icon in each group header, items price high→low inside a group) · Name · Price ↓ · Price ↑.
+- **Edit mode** (`_mipEditMode`): off by default, showing the category as a read-only pill with no per-item Edit/✕. On, it reveals the category dropdown, Edit/✕, and the Categories button. The card widens 760px → 900px in edit mode so the extra controls don't force horizontal scrolling.
+- **Card UI rebuilt** from a single cramped toolbar row into header (title + meta + `+ Add Purchase`) / progress bar / toolbar strip (search · segmented sort · edit) / table, with a dedicated `.mip-*` stylesheet section replacing the inline styles. Added free-text **search** over item, notes, and category. Removed the Target/Added column and replaced the date-based "Default" sort with Name.
+- **Fixed clipped category dropdowns** caused by the global `select { width: 100% }` rule — `.mip-cat-select` sets `width:auto`.
 
 ### 2026-07-04 — Tax Planning audit: Maryland 2025 tax-law overhaul + LTCG stacking fix
 
