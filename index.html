@@ -3362,7 +3362,7 @@ function mipRowHtml(prop, e) {
   const current = moveInCategoryOf(e);
   const categoryCell = _mipEditMode
     ? `<select class="no-print" aria-label="Category" onchange="changeMoveInPurchaseCategory('${escAttr(e.id)}', this.value)"
-               style="font-size:.8rem;padding:.2rem .35rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text);max-width:170px">${mipCategoryOptionsHtml(cats, current)}</select>`
+               style="width:auto;font-size:.8rem;padding:.2rem .35rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text)">${mipCategoryOptionsHtml(cats, current)}</select>`
     : `<span style="font-size:.85rem;white-space:nowrap">${escHtml(current)}</span>`;
   return `
     <tr${e.purchased ? ' style="opacity:.62"' : ''}>
@@ -3427,7 +3427,7 @@ function renderMoveInPurchasesSection(prop) {
         <thead><tr>
           <th class="no-print"></th>
           <th>Item</th>
-          <th class="text-right" style="width:1%;white-space:nowrap;padding-left:1.5rem">Category</th>
+          <th class="text-right" style="white-space:nowrap;padding-left:1.5rem">Category</th>
           <th class="text-right" style="width:100%;white-space:nowrap;padding-left:2rem">Estimated Price</th>
           <th class="no-print"></th>
         </tr></thead>
@@ -3438,7 +3438,7 @@ function renderMoveInPurchasesSection(prop) {
         <thead><tr>
           <th class="no-print"></th>
           <th>Item</th>
-          <th class="text-right" style="width:1%;white-space:nowrap;padding-left:1.5rem">Category</th>
+          <th class="text-right" style="white-space:nowrap;padding-left:1.5rem">Category</th>
           <th class="text-right" style="width:100%;white-space:nowrap;padding-left:2rem">Estimated Price</th>
           <th class="no-print"></th>
         </tr></thead>
