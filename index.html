@@ -4056,7 +4056,7 @@ async function renderInvestmentReturn() {
   const mortgagePayoff = isSold && typeof savedMortgagePayoff === 'number'
     ? savedMortgagePayoff
     : liveMortgage.amount;
-  const mortgagePayoffLabel = !isSold && liveMortgage.live ? '− Mortgage Payoff (Plaid)' : '− Mortgage Payoff';
+  const mortgagePayoffLabel = !isSold && liveMortgage.live ? '− Mortgage Payoff (linked)' : '− Mortgage Payoff';
 
   let netSaleProceeds     = null;
   let saleClosingAmt      = null;
@@ -8370,7 +8370,7 @@ function cfPropertySaleProceedsItem(prop) {
     date,
     name: `${prop} Sale Net Proceeds After Taxes${mortgagePayoff ? ' & Mortgage Payoff' : ''}`,
     amount: 0,
-    note: `Auto from ${prop} Investment Return sale worksheet after closing costs and estimated sale taxes${mortgagePayoff ? `, less ${fmt(mortgagePayoff)} ${mortgageInfo.live ? 'live Plaid ' : ''}mortgage payoff` : ''}`
+    note: `Auto from ${prop} Investment Return sale worksheet after closing costs and estimated sale taxes${mortgagePayoff ? `, less ${fmt(mortgagePayoff)} ${mortgageInfo.live ? 'live ' : ''}mortgage payoff` : ''}`
   };
   if (!salePrice) {
     return { ...base, note: `${base.note} - enter a sale price to calculate` };
@@ -8540,9 +8540,9 @@ function cfPinnedCheckingRow(color) {
                style="width:100%;padding-left:1.35rem;text-align:right;font-size:.84rem;font-weight:700;color:${color};background:var(--bg);cursor:not-allowed">
       </div>
     </td>
-    <td style="padding:.55rem .4rem;border-bottom:${expanded ? 'none' : '1px solid var(--border)'};text-align:right;color:var(--text-muted);font-size:.72rem;white-space:nowrap">${state.robinhoodBalanceLoading ? '<span class="spinner" style="width:.8rem;height:.8rem;border-width:2px;vertical-align:-.15rem;margin-right:.25rem"></span> updating balance' : 'Plaid'}</td>
+    <td style="padding:.55rem .4rem;border-bottom:${expanded ? 'none' : '1px solid var(--border)'};text-align:right;color:var(--text-muted);font-size:.72rem;white-space:nowrap">${state.robinhoodBalanceLoading ? '<span class="spinner" style="width:.8rem;height:.8rem;border-width:2px;vertical-align:-.15rem;margin-right:.25rem"></span> updating balance' : 'Linked'}</td>
   </tr>
-  ${expanded ? `<tr style="background:rgba(16,185,129,.08)"><td colspan="4" style="padding:0 .6rem .65rem 2.25rem;border-bottom:1px solid var(--border);font-size:.72rem;color:var(--text-muted)">Pulled from the Savings tab Robinhood Checking balance via Plaid. Date: Current.</td></tr>` : ''}`;
+  ${expanded ? `<tr style="background:rgba(16,185,129,.08)"><td colspan="4" style="padding:0 .6rem .65rem 2.25rem;border-bottom:1px solid var(--border);font-size:.72rem;color:var(--text-muted)">Pulled from the Savings tab Robinhood Checking balance via the linked bank connection. Date: Current.</td></tr>` : ''}`;
 }
 
 function cfAutoRow(item, color) {
@@ -8831,7 +8831,7 @@ function nwRenderAssets(data) {
   const rows = [
     ...(data.treasuryPortfolio ? [{ item:data.treasuryPortfolio, origin:'treasury', html:nwTreasuryLine(data.treasuryPortfolio) }] : []),
     ...(data.propertyAssets || []).map(item => ({ item, origin:'property', html:nwPropertyLine(item) })),
-    ...data.plaidAccounts.filter(item=>item.side!=='liability').map(raw => { const item=nwLabeledPlaidAccount(raw); return { item, origin:'plaid', html:nwLine(item,'Plaid · read-only',false) }; }),
+    ...data.plaidAccounts.filter(item=>item.side!=='liability').map(raw => { const item=nwLabeledPlaidAccount(raw); return { item, origin:'plaid', html:nwLine(item,'Linked account · read-only',false) }; }),
     ...data.vehicles.map(item => ({ item, origin:'vehicle', html:nwLine(item, `${item.year||''} ${item.make||''} ${item.model||''}${item.trim?` ${item.trim}`:''} · ${item.mileage?`${Number(item.mileage).toLocaleString()} miles · `:''}${item.valuedAt?`Estimate updated ${item.valuedAt.slice(0,10)}`:'Vehicle'}`, true, 'vehicle') })),
     ...data.manualItems.filter(item=>item.side!=='liability').map(item => ({ item, origin:'manual', html:nwLine(item,item.category==='Precious Metals'?`${item.metal==='silver'?'Silver':'Gold'} · ${Number(item.weight||0).toLocaleString()} troy oz · ${nwFmt(Number(item.pricePerOunce)||0)}/oz · Spot updated ${item.valuedAt?item.valuedAt.slice(0,10):'pending'}`:'Manual',true) }))
   ].map(row => ({ ...row, type:nwAssetType(row.item,row.origin) }));
@@ -8963,12 +8963,13 @@ function _renderNetWorthHtml() {
   const totals = nwTotals();
   const assets = nwRenderAssets(data);
   const liabilities = [
-    ...data.plaidAccounts.filter(a=>a.side==='liability').map(a=>nwLine(nwLabeledPlaidAccount(a),a.subtype==='mortgage'&&(data.propertyAssets||[]).some(p=>Number(p.mortgagePayoff)>0)?'Plaid · already deducted in 731WO net proceeds · not subtracted twice':'Plaid · read-only',false)),
+    ...data.plaidAccounts.filter(a=>a.side==='liability').map(a=>nwLine(nwLabeledPlaidAccount(a),a.subtype==='mortgage'&&(data.propertyAssets||[]).some(p=>Number(p.mortgagePayoff)>0)?'Linked account · already deducted in 731WO net proceeds · not subtracted twice':'Linked account · read-only',false)),
     ...data.manualItems.filter(a=>a.side==='liability').map(a=>nwLine(a,'Manual',true))
   ].join('');
   const us = nwUsPercentile(totals.netWorth), global = nwGlobalPercentile(totals.netWorth);
   document.getElementById('app').innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap"><div><h2 style="margin:0">Net Worth</h2><div class="tp-note">Assets minus liabilities · Plaid balances are cached and free to retrieve</div></div><div style="display:flex;gap:.5rem;flex-wrap:wrap"><button class="btn btn-secondary" aria-pressed="${_nwPrivacy}" onclick="nwTogglePrivacy()">${_nwPrivacy?'◉ Show values':'◌ Hide values'}</button><button class="btn btn-secondary" onclick="nwRefreshPlaid(this)">↻ Refresh Plaid accounts</button></div></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap"><div><h2 style="margin:0">Net Worth</h2><div class="tp-note">Assets minus liabilities · linked balances are cached and refreshed on demand</div></div><div style="display:flex;gap:.5rem;flex-wrap:wrap"><button class="btn btn-secondary" aria-pressed="${_nwPrivacy}" onclick="nwTogglePrivacy()">${_nwPrivacy?'◉ Show values':'◌ Hide values'}</button><button class="btn btn-secondary" onclick="nwRefreshPlaid(this)">↻ Refresh Accounts</button></div></div>
+    ${nwSyncWarningHtml()}
     <div class="nw-hero"><div class="card"><div class="label">Net Worth</div><div class="nw-big" style="color:${totals.netWorth>=0?'var(--success)':'var(--danger)'}">${!_nwPrivacy&&totals.netWorth<0?'−':''}${nwFmt(Math.abs(totals.netWorth))}</div></div><div class="card"><div class="label">Compared with U.S.</div><div class="nw-big">${_nwPrivacy?'••••••':`Higher than ~${us.toFixed(0)}%`}</div><div class="nw-source">Estimated from Federal Reserve 2022 SCF family net-worth thresholds.</div></div><div class="card"><div class="label">Compared globally</div><div class="nw-big">${_nwPrivacy?'••••••':`Higher than ~${global.toFixed(0)}%`}</div><div class="nw-source">Estimated from UBS Global Wealth Report 2026 (2025 wealth bands).</div></div></div>
     ${nwEditorHtml()}
     <div class="nw-layout"><section class="card"><div class="card-header"><div><div class="card-title">Assets</div><div class="tp-note">${nwFmt(totals.assets)}</div></div><div class="nw-actions"><select class="form-input" style="width:auto;font-size:.78rem;padding:.38rem .5rem" aria-label="Sort assets" onchange="nwSetAssetSort(this.value)"><option value="amount"${_nwAssetSort==='amount'?' selected':''}>Amount: high to low</option><option value="alpha"${_nwAssetSort==='alpha'?' selected':''}>Alphabetical</option><option value="type"${_nwAssetSort==='type'?' selected':''}>Group by type</option></select>${_nwPrivacy?'':`<button class="btn btn-primary btn-sm" onclick="nwAdd('asset')">+ Manual asset</button><button class="btn btn-secondary btn-sm" onclick="nwAddVehicle()">+ Vehicle</button>`}</div></div><div class="card-body">${assets||'<div class="tp-note">No assets added yet.</div>'}</div></section><section class="card"><div class="card-header"><div><div class="card-title">Liabilities</div><div class="tp-note">${nwFmt(totals.liabilities)}</div></div>${_nwPrivacy?'':'<button class="btn btn-primary btn-sm" onclick="nwAdd(\'liability\')">+ Manual liability</button>'}</div><div class="card-body">${liabilities||'<div class="tp-note">No liabilities added yet.</div>'}</div></section></div>
@@ -9062,7 +9063,46 @@ async function nwSaveEditor(){
 }
 
 function nwDelete(kind,id){ showBrandedNotice({type:'danger',title:'Delete net worth item?',message:'This removes the item and updates today’s net worth snapshot.',confirmLabel:'Yes, Delete',onConfirm:async()=>{const key=kind==='vehicle'?'vehicles':'manualItems';state.netWorth[key]=state.netWorth[key].filter(x=>x.id!==id);await nwPersist();}}); }
-async function nwRefreshPlaid(btn){btn.disabled=true;btn.textContent='Refreshing…';try{state.netWorth=(await callApi({action:'refresh_net_worth_plaid'})).data;_renderNetWorthHtml();}catch(e){showBrandedNotice({title:'Plaid refresh unavailable',message:e.message,confirmLabel:'OK'});} }
+// Banner shown when one or more linked banks failed to refresh. Reconnecting
+// is done outside the app (the access tokens live as worker secrets), so this
+// tells the user what is stale rather than offering a re-link button.
+function nwSyncWarningHtml(){
+  const warnings=state.netWorth?.syncWarnings||[];
+  if(!warnings.length) return '';
+  const needsReconnect=warnings.some(w=>w.needsReconnect);
+  return `<div class="card" style="border-left:3px solid var(--warning);margin-bottom:1rem">
+    <div class="card-body" style="padding:.75rem 1rem">
+      <div style="font-weight:700;font-size:.85rem;margin-bottom:.25rem">⚠️ Some account balances are out of date</div>
+      <ul style="margin:.25rem 0 0;padding-left:1.1rem;font-size:.82rem;color:var(--text-muted);line-height:1.5">
+        ${warnings.map(w=>`<li>${escHtml(w.message)}</li>`).join('')}
+      </ul>
+      ${needsReconnect?`<div style="font-size:.8rem;color:var(--text-muted);margin-top:.5rem">These show their last known balance until the connection is re-linked.</div>`:''}
+    </div>
+  </div>`;
+}
+
+async function nwRefreshPlaid(btn){
+  btn.disabled=true;
+  btn.textContent='Refreshing…';
+  try{
+    state.netWorth=(await callApi({action:'refresh_net_worth_plaid'})).data;
+    _renderNetWorthHtml();
+    const warnings=state.netWorth?.syncWarnings||[];
+    if(warnings.length){
+      showBrandedNotice({
+        title:'Some accounts need attention',
+        message:warnings.map(w=>w.message).join('\n\n')
+          +'\n\nEverything else refreshed normally. The affected balances are the last known values.',
+        confirmLabel:'OK'
+      });
+    }
+  }catch(e){
+    showBrandedNotice({title:"Couldn't refresh accounts",message:e.message,confirmLabel:'OK'});
+  }finally{
+    btn.disabled=false;
+    btn.textContent='↻ Refresh Accounts';
+  }
+}
 async function nwValueVehicle(id){const vehicle=state.netWorth.vehicles.find(x=>x.id===id);try{const result=await callApi({action:'value_net_worth_vehicle',vehicle});vehicle.value=result.value;vehicle.valuedAt=result.valuedAt;vehicle.valuationSource=result.source;await nwPersist();}catch(e){showBrandedNotice({title:'Vehicle valuation unavailable',message:e.message,confirmLabel:'OK'});} }
 
 // ── View: Savings ────────────────────────────────────────────────────────────
@@ -9314,12 +9354,12 @@ function _renderSavingsHtml() {
           </div>
           <div style="padding:.68rem .75rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);font-size:1.05rem;font-weight:700">${fmt(s.accounts.robinhoodChecking || 0)}</div>
           <div style="font-size:.68rem;color:var(--text-muted);margin-top:.28rem">${state.robinhoodBalanceLoading
-            ? '<span class="spinner" style="width:.72rem;height:.72rem;border-width:2px;vertical-align:-.13rem;margin-right:.25rem"></span> Pulling checking data from Plaid…'
+            ? '<span class="spinner" style="width:.72rem;height:.72rem;border-width:2px;vertical-align:-.13rem;margin-right:.25rem"></span> Pulling latest checking balance…'
             : (state.robinhoodBalanceError
               ? `<span style="color:var(--danger)">${escHtml(state.robinhoodBalanceError)}</span>`
               : (state.robinhoodBalance
                 ? `${state.robinhoodBalance.refreshLimited ? 'Recently refreshed' : (state.robinhoodBalance.stale ? 'Cached' : 'Live')} · updated ${fmtDateTime(state.robinhoodBalance.refreshedAt)}${state.robinhoodBalance.warning ? ` · ${escHtml(state.robinhoodBalance.warning)}` : ''}`
-                : 'Last synchronized Plaid balance · live refresh unavailable'))}</div>
+                : 'Last synchronized balance · live refresh unavailable'))}</div>
         </div>
         <div>
           <label style="display:block;font-size:.78rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Robinhood Brokerage</label>

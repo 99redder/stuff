@@ -2127,33 +2127,83 @@ function plaidItemLabels(env) {
   } catch { return {}; }
 }
 
+// Bank-connection failures we can describe in plain language. Anything that
+// needs the user to sign in again is flagged so the UI can say so.
+const BANK_SYNC_RECONNECT_CODES = new Set([
+  'ITEM_LOGIN_REQUIRED', 'PENDING_EXPIRATION', 'ITEM_LOCKED',
+  'INVALID_CREDENTIALS', 'INVALID_MFA', 'INVALID_UPDATED_USERNAME',
+]);
+const BANK_SYNC_REASONS = {
+  ITEM_LOGIN_REQUIRED: 'the saved sign-in has expired',
+  PENDING_EXPIRATION: 'the saved sign-in is about to expire',
+  ITEM_LOCKED: 'the account is locked at the bank',
+  INVALID_CREDENTIALS: 'the saved sign-in is no longer valid',
+  INVALID_MFA: 'the bank is asking for additional verification',
+  INVALID_UPDATED_USERNAME: 'the username at the bank has changed',
+  INSTITUTION_DOWN: 'the bank is temporarily unavailable',
+  INSTITUTION_NOT_RESPONDING: 'the bank is temporarily unavailable',
+  INSTITUTION_NO_LONGER_SUPPORTED: 'this bank is no longer supported',
+  RATE_LIMIT_EXCEEDED: 'it was refreshed too many times just now',
+};
+
+function bankSyncWarning(failure, itemLabels) {
+  const label = String(itemLabels[failure.itemId] || '').trim() || 'A linked account';
+  const reason = BANK_SYNC_REASONS[failure.code] || 'the bank connection returned an error';
+  const needsReconnect = BANK_SYNC_RECONNECT_CODES.has(failure.code);
+  return {
+    label: label.slice(0, 100),
+    reason,
+    needsReconnect,
+    message: needsReconnect
+      ? `${label} needs to be reconnected — ${reason}.`
+      : `${label} could not be updated — ${reason}.`,
+  };
+}
+
 async function refreshNetWorthPlaid(env) {
-  if (!env.PLAID_CLIENT_ID || !env.PLAID_SECRET) throw new Error('Plaid credentials are not configured');
+  if (!env.PLAID_CLIENT_ID || !env.PLAID_SECRET) throw new Error('Account syncing is not set up yet.');
   const tokens = plaidAccessTokens(env);
-  if (!tokens.length) throw new Error('No Plaid access token is configured');
-  const responses = await Promise.all(tokens.map(async accessToken => {
-    const response = await fetch('https://production.plaid.com/accounts/get', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'PLAID-CLIENT-ID': env.PLAID_CLIENT_ID,
-        'PLAID-SECRET': env.PLAID_SECRET,
-        'Plaid-Version': '2020-09-14',
-      },
-      body: JSON.stringify({ access_token: accessToken }),
-    });
-    const payload = await readJsonLimited(response, MAX_UPSTREAM_JSON_BYTES);
-    if (!response.ok) {
-      const code = String(payload.error_code || payload.error_type || 'UNKNOWN_ERROR').slice(0, 80);
-      console.error(JSON.stringify({ event: 'plaid_net_worth_item_error', status: response.status, code }));
-      throw new Error(`Plaid accounts request failed: ${code} (${response.status})`);
+  if (!tokens.length) throw new Error('No bank accounts are linked yet.');
+  // One broken connection must not wipe out every other institution, so each
+  // item is settled independently and failures are reported as warnings.
+  const settled = await Promise.all(tokens.map(async accessToken => {
+    try {
+      const response = await fetch('https://production.plaid.com/accounts/get', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'PLAID-CLIENT-ID': env.PLAID_CLIENT_ID,
+          'PLAID-SECRET': env.PLAID_SECRET,
+          'Plaid-Version': '2020-09-14',
+        },
+        body: JSON.stringify({ access_token: accessToken }),
+      });
+      const payload = await readJsonLimited(response, MAX_UPSTREAM_JSON_BYTES);
+      if (!response.ok) {
+        const code = String(payload.error_code || payload.error_type || 'UNKNOWN_ERROR').slice(0, 80);
+        const itemId = String(payload.item_id || '');
+        console.error(JSON.stringify({ event: 'plaid_net_worth_item_error', status: response.status, code, itemId }));
+        return { failure: { code, itemId } };
+      }
+      return {
+        itemId: String(payload.item?.item_id || ''),
+        institutionId: String(payload.item?.institution_id || ''),
+        accounts: Array.isArray(payload.accounts) ? payload.accounts : [],
+      };
+    } catch (error) {
+      console.error(JSON.stringify({
+        event: 'plaid_net_worth_item_error',
+        message: error instanceof Error ? error.message : String(error),
+      }));
+      return { failure: { code: 'REQUEST_FAILED', itemId: '' } };
     }
-    return {
-      itemId: String(payload.item?.item_id || ''),
-      institutionId: String(payload.item?.institution_id || ''),
-      accounts: Array.isArray(payload.accounts) ? payload.accounts : [],
-    };
   }));
+  const responses = settled.filter(entry => !entry.failure);
+  const failures = settled.filter(entry => entry.failure).map(entry => entry.failure);
+  const syncWarnings = failures.map(failure => bankSyncWarning(failure, plaidItemLabels(env)));
+  if (!responses.length) {
+    throw new Error(syncWarnings.map(w => w.message).join(' ') || 'Account balances could not be refreshed.');
+  }
   const liabilityTypes = new Set(['credit', 'loan']);
   // Confirmed production Item IDs from Plaid CLI. Metadata lookup remains as
   // a fallback for any future institution linked to the app.
@@ -2231,22 +2281,32 @@ async function refreshNetWorthPlaid(env) {
     }
   }
   const data = normalizeNetWorth(await env.RENTALS.get(NET_WORTH_KEY, 'json'));
-  data.plaidAccounts = dedupedAccounts;
+  // When some connections failed, keep their last known accounts so a single
+  // expired login doesn't silently drop balances out of net worth.
+  let nextAccounts = dedupedAccounts;
+  if (failures.length) {
+    const freshIds = new Set(dedupedAccounts.map(account => account.id));
+    const retained = (data.plaidAccounts || []).filter(account => account.id && !freshIds.has(account.id));
+    nextAccounts = dedupedAccounts.concat(retained);
+  }
+  data.plaidAccounts = nextAccounts;
   data.plaidRefreshedAt = new Date().toISOString();
   addNetWorthSnapshot(data);
   await env.RENTALS.put(NET_WORTH_KEY, JSON.stringify(data));
-  return data;
+  return { data, syncWarnings };
 }
 
 async function handleRefreshNetWorthPlaid(env) {
   try {
-    await refreshNetWorthPlaid(env);
+    const { syncWarnings } = await refreshNetWorthPlaid(env);
     let data;
     try { data = await refreshTreasuryPortfolio(env); }
     catch { data = normalizeNetWorth(await env.RENTALS.get(NET_WORTH_KEY, 'json')); }
+    // normalizeNetWorth drops unknown keys, so attach warnings to the response.
+    if (syncWarnings.length) data.syncWarnings = syncWarnings;
     return jsonResponse({ data });
   } catch (error) {
-    return jsonResponse({ error: error instanceof Error ? error.message : 'Plaid refresh failed' }, 502);
+    return jsonResponse({ error: error instanceof Error ? error.message : 'Account balances could not be refreshed.' }, 502);
   }
 }
 
@@ -2325,7 +2385,7 @@ async function plaidTokenFingerprint(accessToken) {
 
 async function resolvePlaidTokenForAccount(env, accountId) {
   const tokens = plaidAccessTokens(env);
-  if (!tokens.length) throw new Error('No Plaid access token is configured');
+  if (!tokens.length) throw new Error('No bank accounts are linked yet.');
 
   const fingerprints = await Promise.all(tokens.map(plaidTokenFingerprint));
   const saved = await env.RENTALS.get(ROBINHOOD_ACCOUNT_SELECTION_KEY, 'json');
@@ -2368,7 +2428,7 @@ async function resolvePlaidTokenForAccount(env, accountId) {
     }
   }));
   const matching = matches.filter(Boolean).sort((a, b) => Number(b.exact) - Number(a.exact))[0];
-  if (!matching?.accountId) throw new Error('Robinhood checking was not found in the linked Plaid Items');
+  if (!matching?.accountId) throw new Error('Robinhood checking was not found in the linked accounts.');
 
   await env.RENTALS.put(ROBINHOOD_ACCOUNT_SELECTION_KEY, JSON.stringify({
     tokenFingerprint: fingerprints[matching.index],
@@ -2426,7 +2486,7 @@ async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client') {
     });
 
     const data = await readJsonLimited(response, MAX_UPSTREAM_JSON_BYTES);
-    if (!response.ok) throw new Error(`Plaid balance request failed (${response.status})`);
+    if (!response.ok) throw new Error(`Balance request failed (${response.status})`);
 
     const account = Array.isArray(data.accounts)
       ? data.accounts.find(item => item.account_id === selection.accountId)
