@@ -1248,6 +1248,103 @@
     .nw-source { font-size:.72rem; color:var(--text-muted); line-height:1.4; }
     @media (max-width:800px) { .nw-layout,.nw-hero { grid-template-columns:1fr; } }
 
+    /* ── Move-In Purchases ──────────────────────────────────────────────── */
+    .mip-head {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      gap: 1rem; flex-wrap: wrap; padding: 1rem 1.25rem 0.85rem;
+    }
+    .mip-title { font-size: 1rem; font-weight: 700; }
+    .mip-meta { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.2rem; }
+    .mip-meta b { color: var(--text); font-weight: 600; }
+    .mip-progress {
+      height: 5px; background: var(--border); border-radius: 999px;
+      overflow: hidden; margin: 0 1.25rem 0.85rem;
+    }
+    .mip-progress > i { display: block; height: 100%; background: var(--success); border-radius: 999px; }
+
+    .mip-toolbar {
+      display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+      padding: 0.6rem 1.25rem; background: var(--surface2);
+      border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    }
+    .mip-tool-label {
+      font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.5px; color: var(--text-muted);
+    }
+    .mip-search {
+      width: 100%; max-width: 210px; flex: 1 1 140px;
+      font-size: 0.8rem !important; padding: 0.35rem 0.6rem !important;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); color: var(--text);
+    }
+    .mip-seg {
+      display: inline-flex; gap: 2px; padding: 2px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+    }
+    .mip-seg button {
+      border: 0; background: transparent; color: var(--text-muted); cursor: pointer;
+      font-size: 0.76rem; font-weight: 600; padding: 0.28rem 0.7rem;
+      border-radius: 999px; white-space: nowrap;
+    }
+    .mip-seg button:hover { color: var(--text); }
+    .mip-seg button.is-on { background: var(--success); color: #fff; }
+    .mip-spacer { flex: 1 1 auto; }
+    .mip-tbtn {
+      display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer;
+      font-size: 0.76rem; font-weight: 600; padding: 0.35rem 0.7rem;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--surface); color: var(--text); white-space: nowrap;
+    }
+    .mip-tbtn:hover { border-color: var(--text-muted); }
+    .mip-tbtn.is-on { background: var(--success); border-color: var(--success); color: #fff; }
+
+    .mip-table { width: 100%; border-collapse: collapse; }
+    .mip-table th {
+      font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+      color: var(--text-muted); text-align: left; padding: 0.55rem 0.75rem;
+      border-bottom: 1px solid var(--border); background: var(--surface);
+    }
+    .mip-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+    .mip-table tbody tr:last-child td { border-bottom: 0; }
+    .mip-table tr.mip-row:hover td { background: var(--surface2); }
+    .mip-num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .mip-cat-col { text-align: right; white-space: nowrap; }
+    .mip-name { font-weight: 600; }
+    .mip-row.is-done .mip-name { text-decoration: line-through; color: var(--text-muted); }
+    .mip-row.is-done td { opacity: 0.7; }
+    .mip-sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.15rem; }
+    .mip-link { font-size: 0.78rem; color: var(--primary); font-weight: 600; text-decoration: none; }
+    .mip-link:hover { text-decoration: underline; }
+    .mip-grp td {
+      background: var(--surface2); font-weight: 700; font-size: 0.8rem;
+      border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    }
+    .mip-grp-count { font-weight: 400; color: var(--text-muted); font-size: 0.78rem; }
+    .mip-pill {
+      display: inline-block; font-size: 0.75rem; padding: 0.15rem 0.5rem;
+      border-radius: 999px; background: var(--surface2);
+      border: 1px solid var(--border); color: var(--text-muted); white-space: nowrap;
+    }
+    .mip-cat-select {
+      width: auto !important; font-size: 0.78rem !important;
+      padding: 0.25rem 0.4rem !important; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius); color: var(--text);
+    }
+    .mip-act { display: inline-flex; gap: 0.25rem; }
+    .mip-icon-btn {
+      border: 1px solid var(--border); background: var(--surface); color: var(--text-muted);
+      border-radius: var(--radius); cursor: pointer; font-size: 0.74rem;
+      padding: 0.2rem 0.45rem; line-height: 1.4;
+    }
+    .mip-icon-btn:hover { color: var(--text); border-color: var(--text-muted); }
+    .mip-icon-btn.is-danger:hover { color: var(--danger); border-color: var(--danger); }
+    .mip-empty { padding: 2.25rem 1.25rem; text-align: center; color: var(--text-muted); font-size: 0.875rem; }
+    @media (max-width: 640px) {
+      .mip-toolbar { gap: 0.45rem; }
+      .mip-search { max-width: none; }
+      .mip-spacer { display: none; }
+    }
+
     /* ── Print Styles ───────────────────────────────────────────────────── */
     @media print {
       .app-header, .view-nav, #print-btn, .btn, .no-print { display: none !important; }
@@ -3299,8 +3396,16 @@ async function seedMaintData(prop) {
 
 // ── View: Move-In Purchases ───────────────────────────────────────────────────
 
-let _mipSort = 'category';  // 'category' | 'default' | 'price-desc' | 'price-asc'
+let _mipSort = 'category';  // 'category' | 'name' | 'price-desc' | 'price-asc'
 let _mipEditMode = false;  // when off, per-item category dropdown + edit/delete are hidden
+let _mipSearch = '';       // free-text filter over item name, notes, and category
+
+const MIP_SORTS = [
+  { key: 'category',   label: 'Category' },
+  { key: 'name',       label: 'Name' },
+  { key: 'price-desc', label: 'Price ↓' },
+  { key: 'price-asc',  label: 'Price ↑' },
+];
 
 function setMoveInPurchaseSort(mode) {
   _mipSort = mode;
@@ -3310,6 +3415,18 @@ function setMoveInPurchaseSort(mode) {
 function toggleMoveInEditMode() {
   _mipEditMode = !_mipEditMode;
   renderMoveInPurchases();
+}
+
+// Re-renders on every keystroke, so restore focus + caret afterwards.
+function mipSetSearch(value) {
+  _mipSearch = value;
+  renderMoveInPurchases().then(() => {
+    const el = document.getElementById('mip-search');
+    if (!el) return;
+    el.focus();
+    const n = el.value.length;
+    try { el.setSelectionRange(n, n); } catch (_) { /* type=search may refuse */ }
+  });
 }
 
 function mipCategoryOptionsHtml(cats, current) {
@@ -3352,102 +3469,110 @@ function mipSortEntries(list) {
     if (!!a.purchased !== !!b.purchased) return a.purchased ? 1 : -1;
     if (_mipSort === 'price-desc') return (Number(b.estimatedPrice) || 0) - (Number(a.estimatedPrice) || 0);
     if (_mipSort === 'price-asc') return (Number(a.estimatedPrice) || 0) - (Number(b.estimatedPrice) || 0);
-    return String(b.date || '').localeCompare(String(a.date || ''));
+    if (_mipSort === 'name') return String(a.item || '').localeCompare(String(b.item || ''));
+    // 'category' groups elsewhere; within a group fall back to price high → low.
+    return (Number(b.estimatedPrice) || 0) - (Number(a.estimatedPrice) || 0);
   });
+}
+
+function mipFilterEntries(list) {
+  const q = _mipSearch.trim().toLowerCase();
+  if (!q) return list;
+  return list.filter(e =>
+    String(e.item || '').toLowerCase().includes(q) ||
+    String(e.notes || '').toLowerCase().includes(q) ||
+    moveInCategoryOf(e).toLowerCase().includes(q));
 }
 
 function mipRowHtml(prop, e) {
   const productLink = normalizePurchaseLink(e.productLink);
-  const cats = moveInCategories(prop);
   const current = moveInCategoryOf(e);
   const categoryCell = _mipEditMode
-    ? `<select class="no-print" aria-label="Category" onchange="changeMoveInPurchaseCategory('${escAttr(e.id)}', this.value)"
-               style="width:auto;font-size:.8rem;padding:.2rem .35rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--card-bg);color:var(--text)">${mipCategoryOptionsHtml(cats, current)}</select>`
-    : `<span style="font-size:.85rem;white-space:nowrap">${escHtml(current)}</span>`;
+    ? `<select class="mip-cat-select no-print" aria-label="Category" onchange="changeMoveInPurchaseCategory('${escAttr(e.id)}', this.value)">${mipCategoryOptionsHtml(moveInCategories(prop), current)}</select>`
+    : `<span class="mip-pill">${escHtml(current)}</span>`;
   return `
-    <tr${e.purchased ? ' style="opacity:.62"' : ''}>
-      <td class="no-print" style="width:44px;text-align:center;padding:.4rem .5rem">
-        <input type="checkbox" ${e.purchased ? 'checked' : ''} onchange="toggleMoveInPurchase('${escAttr(e.id)}', this.checked)" aria-label="Mark purchased">
+    <tr class="mip-row${e.purchased ? ' is-done' : ''}">
+      <td class="no-print" style="width:38px;text-align:center">
+        <input type="checkbox" ${e.purchased ? 'checked' : ''} onchange="toggleMoveInPurchase('${escAttr(e.id)}', this.checked)" aria-label="Mark ${escAttr(e.item)} purchased">
       </td>
-      <td style="padding:.4rem .5rem">
-        <strong style="white-space:nowrap${e.purchased ? ';text-decoration:line-through' : ''}">${escHtml(e.item)}</strong>
-        ${e.notes ? `<div style="font-size:.8rem;color:var(--text-muted);margin-top:.2rem">${escHtml(e.notes)}</div>` : ''}
-        ${productLink ? `<div style="font-size:.8rem;margin-top:.25rem"><a href="${escAttr(productLink)}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-weight:600;text-decoration:none">Open Link</a></div>` : ''}
+      <td>
+        <div class="mip-name">${escHtml(e.item)}</div>
+        ${e.notes ? `<div class="mip-sub">${escHtml(e.notes)}</div>` : ''}
+        ${productLink ? `<div style="margin-top:.2rem"><a class="mip-link" href="${escAttr(productLink)}" target="_blank" rel="noopener noreferrer">View product ↗</a></div>` : ''}
       </td>
-      <td class="text-right" style="padding:.4rem .5rem;white-space:nowrap;padding-left:1.5rem">
-        ${categoryCell}
-      </td>
-      <td class="text-right" style="white-space:nowrap;padding:.4rem .5rem;padding-left:2rem">${fmt(e.estimatedPrice || 0)}</td>
-      <td class="text-right no-print" style="padding:.4rem .5rem;white-space:nowrap">
-        ${_mipEditMode ? `
-        <button class="btn btn-ghost btn-sm" style="padding:.15rem .4rem" onclick="editMoveInPurchase('${escAttr(e.id)}')">Edit</button>
-        <button class="btn btn-ghost btn-sm" style="color:var(--danger);padding:.15rem .4rem" onclick="deleteMoveInPurchase('${escAttr(e.id)}')">×</button>` : ''}
+      <td class="mip-cat-col">${categoryCell}</td>
+      <td class="mip-num">${fmt(e.estimatedPrice || 0)}</td>
+      <td class="mip-num no-print" style="width:1%">
+        ${_mipEditMode ? `<span class="mip-act">
+          <button class="mip-icon-btn" title="Edit item" onclick="editMoveInPurchase('${escAttr(e.id)}')">Edit</button>
+          <button class="mip-icon-btn is-danger" title="Delete item" aria-label="Delete ${escAttr(e.item)}" onclick="deleteMoveInPurchase('${escAttr(e.id)}')">✕</button>
+        </span>` : ''}
       </td>
     </tr>`;
 }
 
+function mipTableHtml(rowsHtml) {
+  return `<table class="mip-table">
+      <thead><tr>
+        <th class="no-print"></th>
+        <th style="width:100%">Item</th>
+        <th class="mip-cat-col">Category</th>
+        <th class="mip-num">Est. Price</th>
+        <th class="no-print"></th>
+      </tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>`;
+}
+
 function renderMoveInPurchasesSection(prop) {
   const all = state.data[prop].moveInPurchases || [];
-  const entries = mipSortEntries(all);
-  const total = entries.reduce((s, e) => s + (Number(e.estimatedPrice) || 0), 0);
-  const purchasedEntries = entries.filter(e => e.purchased);
-  const purchasedTotal = purchasedEntries.reduce((s, e) => s + (Number(e.estimatedPrice) || 0), 0);
+  const visible = mipSortEntries(mipFilterEntries(all));
+
+  // Totals always reflect the whole list, not the current filter.
+  const total = all.reduce((s, e) => s + (Number(e.estimatedPrice) || 0), 0);
+  const purchasedTotal = all.reduce((s, e) => s + (e.purchased ? (Number(e.estimatedPrice) || 0) : 0), 0);
   const remainingTotal = total - purchasedTotal;
+  const purchasedCount = all.filter(e => e.purchased).length;
+  const pct = total > 0 ? Math.round((purchasedTotal / total) * 100) : 0;
+  const searching = _mipSearch.trim() !== '';
 
   let bodyHtml;
-  if (entries.length === 0) {
-    bodyHtml = `<div class="card-body"><div class="empty-state" style="padding:1.5rem;text-align:center">No move-in purchases yet. Click "+ Add Purchase" to start the list.</div></div>`;
+  if (all.length === 0) {
+    bodyHtml = `<div class="mip-empty">
+      <div style="font-size:1.6rem;margin-bottom:.4rem">📦</div>
+      Nothing on the list yet.<br>Use <b>+ Add Purchase</b> to add your first move-in item.
+    </div>`;
+  } else if (visible.length === 0) {
+    bodyHtml = `<div class="mip-empty">No items match “${escHtml(_mipSearch)}”.</div>`;
   } else if (_mipSort === 'category') {
-    // Group by category (category list order, then any extras), each with a subtotal header.
     const cats = moveInCategories(prop);
     const groups = new Map(cats.map(c => [c, []]));
-    for (const e of entries) {
+    for (const e of visible) {
       const c = moveInCategoryOf(e);
       if (!groups.has(c)) groups.set(c, []);
       groups.get(c).push(e);
     }
     const groupHtml = [...groups.entries()].map(([cat, items]) => {
       if (!items.length) return '';
-      // Within each category, sort highest → lowest price (purchased items last).
-      items.sort((a, b) => {
-        if (!!a.purchased !== !!b.purchased) return a.purchased ? 1 : -1;
-        return (Number(b.estimatedPrice) || 0) - (Number(a.estimatedPrice) || 0);
-      });
       const groupTotal = items.reduce((s, e) => s + (Number(e.estimatedPrice) || 0), 0);
-      const header = `
-        <tr style="background:var(--bg-alt)">
-          <td colspan="2" style="padding:.5rem .5rem;font-weight:700">${moveInCategoryIcon(cat)} ${escHtml(cat)} <span style="font-weight:400;color:var(--text-muted);font-size:.82rem">(${items.length})</span></td>
-          <td></td>
-          <td class="text-right" style="padding:.5rem .5rem;padding-left:2rem;font-weight:700;white-space:nowrap">${fmt(groupTotal)}</td>
+      return `
+        <tr class="mip-grp">
+          <td colspan="3">${moveInCategoryIcon(cat)} ${escHtml(cat)} <span class="mip-grp-count">${items.length}</span></td>
+          <td class="mip-num">${fmt(groupTotal)}</td>
           <td class="no-print"></td>
-        </tr>`;
-      return header + items.map(e => mipRowHtml(prop, e)).join('');
+        </tr>` + items.map(e => mipRowHtml(prop, e)).join('');
     }).join('');
-    bodyHtml = `<div class="table-wrap"><table class="hist-table">
-        <thead><tr>
-          <th class="no-print"></th>
-          <th>Item</th>
-          <th class="text-right" style="white-space:nowrap;padding-left:1.5rem">Category</th>
-          <th class="text-right" style="width:100%;white-space:nowrap;padding-left:2rem">Estimated Price</th>
-          <th class="no-print"></th>
-        </tr></thead>
-        <tbody>${groupHtml}</tbody>
-      </table></div>`;
+    bodyHtml = `<div class="table-wrap">${mipTableHtml(groupHtml)}</div>`;
   } else {
-    bodyHtml = `<div class="table-wrap"><table class="hist-table">
-        <thead><tr>
-          <th class="no-print"></th>
-          <th>Item</th>
-          <th class="text-right" style="white-space:nowrap;padding-left:1.5rem">Category</th>
-          <th class="text-right" style="width:100%;white-space:nowrap;padding-left:2rem">Estimated Price</th>
-          <th class="no-print"></th>
-        </tr></thead>
-        <tbody>${entries.map(e => mipRowHtml(prop, e)).join('')}</tbody>
-      </table></div>`;
+    bodyHtml = `<div class="table-wrap">${mipTableHtml(visible.map(e => mipRowHtml(prop, e)).join(''))}</div>`;
   }
 
+  const sortBtns = MIP_SORTS.map(s =>
+    `<button class="${_mipSort === s.key ? 'is-on' : ''}" onclick="setMoveInPurchaseSort('${s.key}')">${s.label}</button>`
+  ).join('');
+
   return `
-    <div style="max-width:${_mipEditMode ? '900px' : '760px'};margin:0 auto">
+    <div style="max-width:${_mipEditMode ? '900px' : '780px'};margin:0 auto">
     <div class="stats-row">
       <div class="stat-card"><div class="stat-label">Estimated Total</div><div class="stat-value">${fmt(total)}</div></div>
       <div class="stat-card"><div class="stat-label">Still Needed</div><div class="stat-value" style="color:var(--warning)">${fmt(remainingTotal)}</div></div>
@@ -3455,24 +3580,25 @@ function renderMoveInPurchasesSection(prop) {
     </div>
 
     <div class="card mt-2">
-      <div class="card-header">
+      <div class="mip-head">
         <div>
-          <div class="card-title">Move in Purchases — 4781 MC</div>
-          <div style="font-size:.8rem;color:var(--text-muted);margin-top:.1rem">
-            Track new-construction move-in items, estimated prices, notes, and purchase status.
-          </div>
+          <div class="mip-title">Move-In Purchases</div>
+          <div class="mip-meta">4781 MC · <b>${all.length}</b> item${all.length === 1 ? '' : 's'} · <b>${purchasedCount}</b> purchased${searching ? ` · <b>${visible.length}</b> shown` : ''}</div>
         </div>
-        <div style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap">
-          <span class="no-print" style="font-size:.78rem;color:var(--text-muted)">Sort:</span>
-          <button class="btn btn-sm no-print ${_mipSort === 'default' ? 'btn-primary' : 'btn-ghost'}" style="padding:.15rem .5rem" onclick="setMoveInPurchaseSort('default')">Default</button>
-          <button class="btn btn-sm no-print ${_mipSort === 'category' ? 'btn-primary' : 'btn-ghost'}" style="padding:.15rem .5rem" onclick="setMoveInPurchaseSort('category')">Category</button>
-          <button class="btn btn-sm no-print ${_mipSort === 'price-desc' ? 'btn-primary' : 'btn-ghost'}" style="padding:.15rem .5rem" onclick="setMoveInPurchaseSort('price-desc')">Price ↓</button>
-          <button class="btn btn-sm no-print ${_mipSort === 'price-asc' ? 'btn-primary' : 'btn-ghost'}" style="padding:.15rem .5rem" onclick="setMoveInPurchaseSort('price-asc')">Price ↑</button>
-          <button class="btn btn-sm no-print ${_mipEditMode ? 'btn-primary' : 'btn-ghost'}" style="padding:.15rem .5rem" onclick="toggleMoveInEditMode()">${_mipEditMode ? '✓ Done Editing' : '✎ Edit Items'}</button>
-          ${_mipEditMode ? `<button class="btn btn-ghost btn-sm no-print" style="padding:.15rem .5rem" onclick="openMoveInCategoriesModal()">Manage Categories</button>` : ''}
-          <button class="btn btn-primary btn-sm no-print" onclick="openAddMoveInPurchase()">+ Add Purchase</button>
-        </div>
+        <button class="btn btn-primary btn-sm no-print" onclick="openAddMoveInPurchase()">+ Add Purchase</button>
       </div>
+      ${all.length ? `<div class="mip-progress no-print" title="${pct}% of the estimated total purchased"><i style="width:${pct}%"></i></div>` : ''}
+
+      <div class="mip-toolbar no-print">
+        <input id="mip-search" class="mip-search" type="text" placeholder="Search items…"
+               value="${escAttr(_mipSearch)}" oninput="mipSetSearch(this.value)" aria-label="Search purchases">
+        <span class="mip-tool-label">Sort</span>
+        <div class="mip-seg">${sortBtns}</div>
+        <span class="mip-spacer"></span>
+        ${_mipEditMode ? `<button class="mip-tbtn" onclick="openMoveInCategoriesModal()">⚙ Categories</button>` : ''}
+        <button class="mip-tbtn ${_mipEditMode ? 'is-on' : ''}" onclick="toggleMoveInEditMode()">${_mipEditMode ? '✓ Done' : '✎ Edit'}</button>
+      </div>
+
       ${bodyHtml}
     </div>
 
@@ -11177,6 +11303,7 @@ window.toggleMoveInPurchase    = toggleMoveInPurchase;
 window.deleteMoveInPurchase    = deleteMoveInPurchase;
 window.setMoveInPurchaseSort   = setMoveInPurchaseSort;
 window.toggleMoveInEditMode    = toggleMoveInEditMode;
+window.mipSetSearch            = mipSetSearch;
 window.changeMoveInPurchaseCategory = changeMoveInPurchaseCategory;
 window.openMoveInCategoriesModal = openMoveInCategoriesModal;
 window.closeMoveInCategoriesModal = closeMoveInCategoriesModal;
