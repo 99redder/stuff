@@ -3447,7 +3447,7 @@ function renderMoveInPurchasesSection(prop) {
   }
 
   return `
-    <div style="max-width:760px;margin:0 auto">
+    <div style="max-width:${_mipEditMode ? '900px' : '760px'};margin:0 auto">
     <div class="stats-row">
       <div class="stat-card"><div class="stat-label">Estimated Total</div><div class="stat-value">${fmt(total)}</div></div>
       <div class="stat-card"><div class="stat-label">Still Needed</div><div class="stat-value" style="color:var(--warning)">${fmt(remainingTotal)}</div></div>
