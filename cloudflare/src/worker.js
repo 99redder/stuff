@@ -2146,8 +2146,53 @@ const BANK_SYNC_REASONS = {
   RATE_LIMIT_EXCEEDED: 'it was refreshed too many times just now',
 };
 
-function bankSyncWarning(failure, itemLabels) {
-  const label = String(itemLabels[failure.itemId] || '').trim() || 'A linked account';
+// Confirmed production Item IDs. Metadata lookup remains the fallback for any
+// future institution linked to the app.
+const KNOWN_INSTITUTION_NAMES = { ins_54: 'Robinhood', ins_15: 'Navy Federal', ins_56: 'Chase' };
+
+async function plaidPost(env, path, body) {
+  const response = await fetch(`https://production.plaid.com${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'PLAID-CLIENT-ID': env.PLAID_CLIENT_ID,
+      'PLAID-SECRET': env.PLAID_SECRET,
+      'Plaid-Version': '2020-09-14',
+    },
+    body: JSON.stringify(body),
+  });
+  const payload = await readJsonLimited(response, MAX_UPSTREAM_JSON_BYTES);
+  return { ok: response.ok, status: response.status, payload };
+}
+
+// Names the bank behind a failed connection. /accounts/get fails outright for a
+// broken Item, but /item/get still returns its institution, so use that to turn
+// "A linked account" into the actual bank name.
+async function resolveLinkedAccountLabel(env, accessToken, itemId) {
+  const labels = plaidItemLabels(env);
+  const direct = String(labels[itemId] || '').trim();
+  if (direct) return direct;
+  try {
+    const { ok, payload } = await plaidPost(env, '/item/get', { access_token: accessToken });
+    if (!ok) return '';
+    const resolvedItemId = String(payload.item?.item_id || '');
+    const labelled = String(labels[resolvedItemId] || '').trim();
+    if (labelled) return labelled;
+    const institutionId = String(payload.item?.institution_id || '');
+    if (!institutionId) return '';
+    if (KNOWN_INSTITUTION_NAMES[institutionId]) return KNOWN_INSTITUTION_NAMES[institutionId];
+    const meta = await plaidPost(env, '/institutions/get_by_id', {
+      institution_id: institutionId,
+      country_codes: ['US'],
+    });
+    return meta.ok ? String(meta.payload.institution?.name || '').trim().slice(0, 80) : '';
+  } catch {
+    return '';
+  }
+}
+
+function bankSyncWarning(failure, resolvedLabel) {
+  const label = String(resolvedLabel || '').trim() || 'A linked account';
   const reason = BANK_SYNC_REASONS[failure.code] || 'the bank connection returned an error';
   const needsReconnect = BANK_SYNC_RECONNECT_CODES.has(failure.code);
   return {
@@ -2183,7 +2228,7 @@ async function refreshNetWorthPlaid(env) {
         const code = String(payload.error_code || payload.error_type || 'UNKNOWN_ERROR').slice(0, 80);
         const itemId = String(payload.item_id || '');
         console.error(JSON.stringify({ event: 'plaid_net_worth_item_error', status: response.status, code, itemId }));
-        return { failure: { code, itemId } };
+        return { failure: { code, itemId, accessToken } };
       }
       return {
         itemId: String(payload.item?.item_id || ''),
@@ -2195,19 +2240,18 @@ async function refreshNetWorthPlaid(env) {
         event: 'plaid_net_worth_item_error',
         message: error instanceof Error ? error.message : String(error),
       }));
-      return { failure: { code: 'REQUEST_FAILED', itemId: '' } };
+      return { failure: { code: 'REQUEST_FAILED', itemId: '', accessToken } };
     }
   }));
   const responses = settled.filter(entry => !entry.failure);
   const failures = settled.filter(entry => entry.failure).map(entry => entry.failure);
-  const syncWarnings = failures.map(failure => bankSyncWarning(failure, plaidItemLabels(env)));
+  const syncWarnings = await Promise.all(failures.map(async failure =>
+    bankSyncWarning(failure, await resolveLinkedAccountLabel(env, failure.accessToken, failure.itemId))));
   if (!responses.length) {
     throw new Error(syncWarnings.map(w => w.message).join(' ') || 'Account balances could not be refreshed.');
   }
   const liabilityTypes = new Set(['credit', 'loan']);
-  // Confirmed production Item IDs from Plaid CLI. Metadata lookup remains as
-  // a fallback for any future institution linked to the app.
-  const institutionNames = { ins_54:'Robinhood', ins_15:'Navy Federal', ins_56:'Chase' };
+  const institutionNames = { ...KNOWN_INSTITUTION_NAMES };
   const institutionIds = [...new Set(responses.map(item => item.institutionId).filter(id => id && !institutionNames[id]))];
   await Promise.all(institutionIds.map(async institutionId => {
     try {
