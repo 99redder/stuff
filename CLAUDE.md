@@ -53,7 +53,7 @@ A full table of contents is in the `NAVIGATION GUIDE` block comment at the very 
 
 ### Navigation (two-tier)
 ```
-Property tabs:  [6AL]  [95EB]  [446BB]  [731WO]  [4781 MC]
+Property tabs:  [6AL]  [95EB]  [446BB]  [731WO]  [4781MC]
 View tabs:      [Current Year]  [Tax Summary]  [Investment Return]  [Historical]  [Maintenance]  [Move-In Purchases]  [All Properties]
 Header buttons: [Deductions Tracker]  [Monthly Budget]  [Mom Budget]  [☀️ Solar]  [Tax Planning]  [💰 Savings]  [Net Worth]  [Cash Flow]
 ```
