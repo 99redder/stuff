@@ -81,12 +81,15 @@ export default {
 };
 
 async function runScheduledRobinhoodRefresh(env, scheduledTime) {
-  const response = await handleGetRobinhoodBalance(env, true, 'scheduled');
+  const checkingResp = await handleGetRobinhoodBalance(env, true, 'scheduled', ROBINHOOD_ACCOUNTS.checking);
+  const brokerageResp = await handleGetRobinhoodBalance(env, true, 'scheduled', ROBINHOOD_ACCOUNTS.brokerage);
   console.log(JSON.stringify({
     event: 'scheduled_robinhood_balance_refresh',
     scheduledTime: new Date(scheduledTime).toISOString(),
-    status: response.status,
-    ok: response.ok,
+    checkingStatus: checkingResp.status,
+    checkingOk: checkingResp.ok,
+    brokerageStatus: brokerageResp.status,
+    brokerageOk: brokerageResp.ok,
   }));
   try {
     await refreshNetWorthPlaid(env);
@@ -190,7 +193,8 @@ async function handleDataApi(request, env) {
   // Savings — global
   if (action === 'get_savings')  return handleGetSavings(env);
   if (action === 'save_savings') return handleSaveSavings(env, body.data);
-  if (action === 'get_robinhood_balance') return handleGetRobinhoodBalance(env, body.refresh === true, 'client');
+  if (action === 'get_robinhood_balance') return handleGetRobinhoodBalance(env, body.refresh === true, 'client', ROBINHOOD_ACCOUNTS.checking);
+  if (action === 'get_robinhood_brokerage_balance') return handleGetRobinhoodBalance(env, body.refresh === true, 'client', ROBINHOOD_ACCOUNTS.brokerage);
   if (action === 'get_net_worth') return handleGetNetWorth(env);
   if (action === 'save_net_worth') return handleSaveNetWorth(env, body.data);
   if (action === 'refresh_net_worth_plaid') return handleRefreshNetWorthPlaid(env);
@@ -2467,22 +2471,49 @@ async function handleGetVehicleTrims(body) {
 
 // ── Plaid / Robinhood Checking ───────────────────────────────────────────────
 
-const ROBINHOOD_BALANCE_CACHE_KEY = 'plaid:robinhood_checking_balance';
-const ROBINHOOD_ACCOUNT_SELECTION_KEY = 'plaid:robinhood_checking_selection';
 const ROBINHOOD_BALANCE_CACHE_MS = 5 * 60 * 1000;
 const PLAID_FORCE_REFRESH_MIN_MS = 60 * 1000;
+
+// Robinhood balances pulled live from Plaid and mirrored into the Savings tab
+// account fields. Each descriptor identifies its account inside the linked
+// Robinhood (ins_54) Item and owns its own cache/selection KV keys, so pulling
+// one balance never clobbers the other.
+const ROBINHOOD_ACCOUNTS = {
+  checking: {
+    kind: 'checking',
+    label: 'Robinhood checking',
+    savingsField: 'robinhoodChecking',
+    cacheKey: 'plaid:robinhood_checking_balance',
+    selectionKey: 'plaid:robinhood_checking_selection',
+    envAccountId: 'PLAID_ACCOUNT_ID',
+    match: (account) => account.subtype === 'checking'
+      || (account.type === 'depository' && /checking/i.test(`${account.name || ''} ${account.official_name || ''}`)),
+  },
+  brokerage: {
+    kind: 'brokerage',
+    label: 'Robinhood brokerage',
+    savingsField: 'robinhoodBrokerage',
+    cacheKey: 'plaid:robinhood_brokerage_balance',
+    selectionKey: 'plaid:robinhood_brokerage_selection',
+    envAccountId: 'PLAID_BROKERAGE_ACCOUNT_ID',
+    // "Chris's Robinhood Individual Account" — the taxable brokerage account.
+    match: (account) => account.subtype === 'brokerage'
+      || (account.type === 'investment' && /individual/i.test(`${account.name || ''} ${account.official_name || ''}`)),
+  },
+};
 
 async function plaidTokenFingerprint(accessToken) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(accessToken));
   return [...new Uint8Array(digest).slice(0, 16)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-async function resolvePlaidTokenForAccount(env, accountId) {
+async function resolvePlaidTokenForAccount(env, descriptor) {
   const tokens = plaidAccessTokens(env);
   if (!tokens.length) throw new Error('No bank accounts are linked yet.');
+  const preferredAccountId = descriptor.envAccountId ? env[descriptor.envAccountId] : null;
 
   const fingerprints = await Promise.all(tokens.map(plaidTokenFingerprint));
-  const saved = await env.RENTALS.get(ROBINHOOD_ACCOUNT_SELECTION_KEY, 'json');
+  const saved = await env.RENTALS.get(descriptor.selectionKey, 'json');
   const savedIndex = fingerprints.indexOf(String(saved?.tokenFingerprint || ''));
   if (savedIndex >= 0 && typeof saved?.accountId === 'string' && saved.accountId) {
     return { accessToken: tokens[savedIndex], accountId: saved.accountId };
@@ -2503,36 +2534,35 @@ async function resolvePlaidTokenForAccount(env, accountId) {
       const payload = await readJsonLimited(response, MAX_UPSTREAM_JSON_BYTES);
       if (!response.ok) {
         const code = String(payload.error_code || payload.error_type || 'UNKNOWN_ERROR').slice(0, 80);
-        console.warn(JSON.stringify({ event: 'plaid_checking_item_lookup_error', status: response.status, code }));
+        console.warn(JSON.stringify({ event: 'plaid_item_lookup_error', kind: descriptor.kind, status: response.status, code }));
         return false;
       }
       const accounts = Array.isArray(payload.accounts) ? payload.accounts : [];
-      const exactAccount = accountId ? accounts.find(account => account.account_id === accountId) : null;
-      const robinhoodChecking = String(payload.item?.institution_id || '') === 'ins_54'
-        ? accounts.find(account => account.subtype === 'checking'
-          || (account.type === 'depository' && /checking/i.test(`${account.name || ''} ${account.official_name || ''}`)))
+      const exactAccount = preferredAccountId ? accounts.find(account => account.account_id === preferredAccountId) : null;
+      const typedAccount = String(payload.item?.institution_id || '') === 'ins_54'
+        ? accounts.find(descriptor.match)
         : null;
-      const matchedAccount = exactAccount || robinhoodChecking;
+      const matchedAccount = exactAccount || typedAccount;
       return matchedAccount
         ? { index, accountId: String(matchedAccount.account_id || ''), exact: !!exactAccount }
         : null;
     } catch (error) {
-      console.warn(JSON.stringify({ event: 'plaid_checking_item_lookup_error', message: error instanceof Error ? error.message : String(error) }));
+      console.warn(JSON.stringify({ event: 'plaid_item_lookup_error', kind: descriptor.kind, message: error instanceof Error ? error.message : String(error) }));
       return null;
     }
   }));
   const matching = matches.filter(Boolean).sort((a, b) => Number(b.exact) - Number(a.exact))[0];
-  if (!matching?.accountId) throw new Error('Robinhood checking was not found in the linked accounts.');
+  if (!matching?.accountId) throw new Error(`${descriptor.label} was not found in the linked accounts.`);
 
-  await env.RENTALS.put(ROBINHOOD_ACCOUNT_SELECTION_KEY, JSON.stringify({
+  await env.RENTALS.put(descriptor.selectionKey, JSON.stringify({
     tokenFingerprint: fingerprints[matching.index],
     accountId: matching.accountId,
   }));
   return { accessToken: tokens[matching.index], accountId: matching.accountId };
 }
 
-async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client') {
-  const cached = await env.RENTALS.get(ROBINHOOD_BALANCE_CACHE_KEY, 'json');
+async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client', descriptor = ROBINHOOD_ACCOUNTS.checking) {
+  const cached = await env.RENTALS.get(descriptor.cacheKey, 'json');
   const cachedAt = cached?.refreshedAt ? Date.parse(cached.refreshedAt) : 0;
   const cacheAge = cachedAt > 0 ? Date.now() - cachedAt : Infinity;
   const cacheIsFresh = cacheAge < ROBINHOOD_BALANCE_CACHE_MS;
@@ -2551,7 +2581,7 @@ async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client') {
     });
   }
 
-  if (forceRefresh && source === 'client' && !(await plaidRefreshAllowed(env))) {
+  if (forceRefresh && source === 'client' && !(await plaidRefreshAllowed(env, `robinhood-balance-refresh-${descriptor.kind}`))) {
     if (cached) {
       return jsonResponse({ ...cached, source: 'cache', stale: cacheAge >= ROBINHOOD_BALANCE_CACHE_MS, refreshLimited: true });
     }
@@ -2564,7 +2594,7 @@ async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client') {
   }
 
   try {
-    const selection = await resolvePlaidTokenForAccount(env, env.PLAID_ACCOUNT_ID);
+    const selection = await resolvePlaidTokenForAccount(env, descriptor);
     const response = await fetch('https://production.plaid.com/accounts/balance/get', {
       method: 'POST',
       headers: {
@@ -2585,12 +2615,12 @@ async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client') {
     const account = Array.isArray(data.accounts)
       ? data.accounts.find(item => item.account_id === selection.accountId)
       : null;
-    if (!account) throw new Error('Configured Robinhood checking account was not returned');
+    if (!account) throw new Error(`Configured ${descriptor.label} account was not returned`);
 
     const current = Number(account.balances?.current);
     const available = Number(account.balances?.available);
     const balance = Number.isFinite(current) ? current : available;
-    if (!Number.isFinite(balance)) throw new Error('Robinhood checking balance was unavailable');
+    if (!Number.isFinite(balance)) throw new Error(`${descriptor.label} balance was unavailable`);
 
     const result = {
       balance,
@@ -2602,12 +2632,12 @@ async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client') {
     };
 
     await Promise.all([
-      env.RENTALS.put(ROBINHOOD_BALANCE_CACHE_KEY, JSON.stringify(result)),
-      syncRobinhoodCheckingSavings(env, balance),
+      env.RENTALS.put(descriptor.cacheKey, JSON.stringify(result)),
+      syncRobinhoodSavingsField(env, descriptor.savingsField, balance),
     ]);
     return jsonResponse(result);
   } catch (error) {
-    console.error(JSON.stringify({ event: 'plaid_balance_error', message: error instanceof Error ? error.message : String(error) }));
+    console.error(JSON.stringify({ event: 'plaid_balance_error', kind: descriptor.kind, message: error instanceof Error ? error.message : String(error) }));
     if (cached) {
       return jsonResponse({
         ...cached,
@@ -2616,14 +2646,14 @@ async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client') {
         warning: 'Plaid could not refresh the balance. Showing the last successful value.',
       });
     }
-    return jsonResponse({ error: 'Unable to refresh Robinhood checking balance' }, 502);
+    return jsonResponse({ error: `Unable to refresh ${descriptor.label} balance` }, 502);
   }
 }
 
-async function plaidRefreshAllowed(env) {
+async function plaidRefreshAllowed(env, key = 'robinhood-balance-refresh') {
   if (!env.PLAID_RATELIMIT) return true;
   try {
-    const { success } = await env.PLAID_RATELIMIT.limit({ key: 'robinhood-balance-refresh' });
+    const { success } = await env.PLAID_RATELIMIT.limit({ key });
     return success;
   } catch (error) {
     console.warn(JSON.stringify({ event: 'plaid_rate_limit_error', message: error instanceof Error ? error.message : String(error) }));
@@ -2631,11 +2661,11 @@ async function plaidRefreshAllowed(env) {
   }
 }
 
-async function syncRobinhoodCheckingSavings(env, balance) {
+async function syncRobinhoodSavingsField(env, field, balance) {
   const savings = await env.RENTALS.get('savings', 'json');
   if (!savings || typeof savings !== 'object') return;
   const accounts = savings.accounts && typeof savings.accounts === 'object' ? savings.accounts : {};
-  savings.accounts = { ...accounts, robinhoodChecking: balance };
+  savings.accounts = { ...accounts, [field]: balance };
   await env.RENTALS.put('savings', JSON.stringify(savings));
 }
 
@@ -2644,22 +2674,27 @@ async function handleSaveSavings(env, data) {
     return jsonResponse({ error: 'Missing data object' }, 400);
   }
 
-  const accounts = (data.accounts && typeof data.accounts === 'object') ? data.accounts : {};
   const existingSavings = await env.RENTALS.get('savings', 'json') || {};
-  const cachedPlaid = await env.RENTALS.get(ROBINHOOD_BALANCE_CACHE_KEY, 'json');
-  const plaidChecking = typeof cachedPlaid?.balance === 'number' ? cachedPlaid.balance : NaN;
+  const cachedChecking = await env.RENTALS.get(ROBINHOOD_ACCOUNTS.checking.cacheKey, 'json');
+  const cachedBrokerage = await env.RENTALS.get(ROBINHOOD_ACCOUNTS.brokerage.cacheKey, 'json');
+  const plaidChecking = typeof cachedChecking?.balance === 'number' ? cachedChecking.balance : NaN;
+  const plaidBrokerage = typeof cachedBrokerage?.balance === 'number' ? cachedBrokerage.balance : NaN;
   const savedChecking = typeof existingSavings?.accounts?.robinhoodChecking === 'number'
     ? existingSavings.accounts.robinhoodChecking
     : NaN;
+  const savedBrokerage = typeof existingSavings?.accounts?.robinhoodBrokerage === 'number'
+    ? existingSavings.accounts.robinhoodBrokerage
+    : NaN;
   const sanitizedAccounts = {
-    // Robinhood Checking is server-owned and can only be changed by a successful
-    // Plaid balance pull. Ignore all client-supplied checking values.
+    // Robinhood Checking and Brokerage are both server-owned and can only be
+    // changed by a successful Plaid balance pull. Ignore client-supplied values,
+    // falling back to the last saved balance until the first live pull lands.
     robinhoodChecking: Number.isFinite(plaidChecking)
       ? plaidChecking
       : (Number.isFinite(savedChecking) ? savedChecking : 0),
-    robinhoodBrokerage: (typeof accounts.robinhoodBrokerage === 'number' && isFinite(accounts.robinhoodBrokerage))
-      ? accounts.robinhoodBrokerage
-      : ((typeof accounts.ibkr === 'number' && isFinite(accounts.ibkr)) ? accounts.ibkr : 0),
+    robinhoodBrokerage: Number.isFinite(plaidBrokerage)
+      ? plaidBrokerage
+      : (Number.isFinite(savedBrokerage) ? savedBrokerage : 0),
   };
 
   const obligations = Array.isArray(data.obligations) ? data.obligations.map(o => ({

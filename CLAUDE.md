@@ -342,7 +342,7 @@ Global view (not per-property) for tracking liquid account balances against the 
 **Data shape (`state.savings`):**
 ```javascript
 {
-  accounts: { robinhoodChecking: 0, robinhoodBrokerage: 0 },   // manually edited dollar balances
+  accounts: { robinhoodChecking: 0, robinhoodBrokerage: 0 },   // server-owned — both pulled live from the linked bank connection (Plaid), never client-edited
   obligations: [
     { id: 'uuid', name: '6AL Taxes', amount: 7400, paymentsPerYear: 2, kind: 'recurring', note: 'Paid twice a year' },
     { id: 'uuid', name: 'Mom Assistance Fund', amount: 3500, paymentsPerYear: 1, kind: 'static', note: 'Target: $25,000' },
@@ -645,7 +645,8 @@ All of these reject any property other than `4781MC` (`requireMoveInPurchaseProp
 | Action | Extra payload | Returns |
 |---|---|---|
 | `get_savings` | — | `{ data: { accounts, obligations, payments } }` |
-| `save_savings` | `data: { accounts, obligations, payments }` | `{ success: true, data }` — full overwrite of the `savings` KV record. The worker sanitizes: clamps `accounts.{robinhoodChecking,robinhoodBrokerage}` to numbers, coerces `paymentsPerYear` to `1` or `2`, drops any year key that isn't a 4-digit string. |
+| `save_savings` | `data: { accounts, obligations, payments }` | `{ success: true, data }` — full overwrite of the `savings` KV record. The worker sanitizes: **ignores client-supplied `accounts.{robinhoodChecking,robinhoodBrokerage}`** (both are server-owned — set only from the latest Plaid balance cache, falling back to the last saved balance), coerces `paymentsPerYear` to `1` or `2`, drops any year key that isn't a 4-digit string. |
+| `get_robinhood_balance` / `get_robinhood_brokerage_balance` | optional `refresh: true` | `{ balance, current, available, refreshedAt, source, stale, ... }` — live balance for the Robinhood **checking** / **brokerage** (Chris's Individual Account) accounts. Resolves the account inside the linked Robinhood (`ins_54`) Item by subtype (checking / brokerage), caches per-account (5-min TTL, 1-min force-refresh floor), and mirrors the value into `savings.accounts.{robinhoodChecking,robinhoodBrokerage}`. Both refresh on Savings-tab load and on the daily 6am ET cron. |
 
 > **Fair Share** has no dedicated action/KV key — its settings (`householdSize`, `roundDollar`, per-item `shared` overrides) live inside the `budget` record under `data.fairShare` and are saved via `save_budget`.
 
@@ -754,6 +755,12 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-07-22 — Savings: Robinhood Brokerage pulled live
+
+- **Robinhood Brokerage is now auto-synced from the linked bank connection**, same as Robinhood Checking — it was previously a manual dollar entry. It maps to the Net Worth "Chris's Robinhood Individual Account" (Plaid `subtype: brokerage` under the Robinhood `ins_54` Item).
+- **Worker:** the checking-balance machinery was generalized into a per-account descriptor map (`ROBINHOOD_ACCOUNTS.{checking,brokerage}`), each with its own cache/selection KV keys, `savingsField`, and account matcher. `resolvePlaidTokenForAccount` / `handleGetRobinhoodBalance` now take a descriptor; `syncRobinhoodCheckingSavings` → `syncRobinhoodSavingsField(env, field, balance)`. New action `get_robinhood_brokerage_balance`. `handleSaveSavings` now treats **both** balances as server-owned (ignores client values, sourced from the per-account Plaid cache, falling back to the last saved balance). The daily 6am ET cron refreshes both. Optional `PLAID_BROKERAGE_ACCOUNT_ID` secret can pin the exact account id (otherwise resolved by subtype).
+- **Frontend:** the manual brokerage `<input>` (+ `savUpdateAccount`) was replaced with a read-only live-balance card and a "Refresh live" button (`savRefreshRobinhoodBrokerage`), mirroring checking. Refresh logic was parameterized via `ROBINHOOD_BALANCE_KINDS.{checking,brokerage}` (`refreshRobinhoodBalanceFor` / `startRobinhoodBalanceRefreshFor`); both balances refresh on Savings-tab load.
 
 ### 2026-07-18 — Net Worth: resilient bank sync + in-app reconnect
 
@@ -877,7 +884,7 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ### 2026-05-11 — Savings
 
-- **Savings view added** (`💰 Savings` header button) — global view with manual account balances (Robinhood Checking, Robinhood Brokerage) on the left and the year's annual obligations on the right. Funding summary at top shows whether available account balances cover total annual obligations, with surplus/shortfall as the primary metric and Outstanding as a simple number. Each obligation has 1 or 2 paid checkboxes (H1/H2 for twice-a-year items). Payments are keyed by year so Jan 1 auto-resets to all-unpaid; past years stay in KV.
+- **Savings view added** (`💰 Savings` header button) — global view with account balances (Robinhood Checking, Robinhood Brokerage — both pulled live from the linked bank connection) on the left and the year's annual obligations on the right. Funding summary at top shows whether available account balances cover total annual obligations, with surplus/shortfall as the primary metric and Outstanding as a simple number. Each obligation has 1 or 2 paid checkboxes (H1/H2 for twice-a-year items). Payments are keyed by year so Jan 1 auto-resets to all-unpaid; past years stay in KV.
 - **Obligation sorting** — sort buttons in the Savings card header: Default (input order), Amount (largest first), A→Z, Unpaid (highest outstanding first). Sort state is in-memory only (not persisted).
 - **Default obligations seed** — `DEFAULT_SAVINGS_OBLIGATIONS` (32 items, sourced from the 2026 goal-budget spreadsheet) is auto-seeded on first visit if the `savings` KV record has no obligations.
 - **Branded delete modals** — all delete confirmations now go through `showBrandedNotice({ type:'danger', ... })` instead of native `confirm()`. Affected flows: historical year summary, maintenance entry, solar entry, solar summary, savings obligation. `showBrandedNotice` accepts a new `confirmLabel` option (defaults to "Yes, Delete" when type is `danger`).
