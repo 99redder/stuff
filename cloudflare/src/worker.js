@@ -2561,6 +2561,42 @@ async function resolvePlaidTokenForAccount(env, descriptor) {
   return { accessToken: tokens[matching.index], accountId: matching.accountId };
 }
 
+// Returns the Plaid account object for the selected account. Prefers the
+// real-time /accounts/balance/get endpoint, but Robinhood's investment accounts
+// (brokerage/IRA) reject that call with a 400, so it falls back to /accounts/get
+// (cached balances — the same source the Net Worth view reads successfully).
+async function fetchPlaidAccountBalance(env, selection) {
+  const headers = {
+    'Content-Type': 'application/json',
+    'PLAID-CLIENT-ID': env.PLAID_CLIENT_ID,
+    'PLAID-SECRET': env.PLAID_SECRET,
+    'Plaid-Version': '2020-09-14',
+  };
+  const attempts = [
+    { url: 'https://production.plaid.com/accounts/balance/get', body: { access_token: selection.accessToken, options: { account_ids: [selection.accountId] } } },
+    { url: 'https://production.plaid.com/accounts/get', body: { access_token: selection.accessToken } },
+  ];
+  let lastError = 'unknown';
+  for (const attempt of attempts) {
+    try {
+      const response = await fetch(attempt.url, { method: 'POST', headers, body: JSON.stringify(attempt.body) });
+      const data = await readJsonLimited(response, MAX_UPSTREAM_JSON_BYTES);
+      if (!response.ok) {
+        lastError = String(data.error_code || data.error_type || response.status).slice(0, 80);
+        continue;
+      }
+      const account = Array.isArray(data.accounts)
+        ? data.accounts.find(item => item.account_id === selection.accountId)
+        : null;
+      if (account) return account;
+      lastError = 'account_not_returned';
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+  }
+  throw new Error(`Balance request failed (${lastError})`);
+}
+
 async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client', descriptor = ROBINHOOD_ACCOUNTS.checking) {
   const cached = await env.RENTALS.get(descriptor.cacheKey, 'json');
   const cachedAt = cached?.refreshedAt ? Date.parse(cached.refreshedAt) : 0;
@@ -2595,27 +2631,7 @@ async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client', d
 
   try {
     const selection = await resolvePlaidTokenForAccount(env, descriptor);
-    const response = await fetch('https://production.plaid.com/accounts/balance/get', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'PLAID-CLIENT-ID': env.PLAID_CLIENT_ID,
-        'PLAID-SECRET': env.PLAID_SECRET,
-        'Plaid-Version': '2020-09-14',
-      },
-      body: JSON.stringify({
-        access_token: selection.accessToken,
-        options: { account_ids: [selection.accountId] },
-      }),
-    });
-
-    const data = await readJsonLimited(response, MAX_UPSTREAM_JSON_BYTES);
-    if (!response.ok) throw new Error(`Balance request failed (${response.status})`);
-
-    const account = Array.isArray(data.accounts)
-      ? data.accounts.find(item => item.account_id === selection.accountId)
-      : null;
-    if (!account) throw new Error(`Configured ${descriptor.label} account was not returned`);
+    const account = await fetchPlaidAccountBalance(env, selection);
 
     const current = Number(account.balances?.current);
     const available = Number(account.balances?.available);
