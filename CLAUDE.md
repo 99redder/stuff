@@ -756,6 +756,12 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ## Recent Updates
 
+### 2026-07-22 — Reconnect banner surfaced beyond Net Worth
+
+- **The bank "needs reconnecting" prompt now appears in Savings and Cash Flow too**, not just Net Worth — anywhere a Robinhood balance is shown. Previously an expired login (`ITEM_LOGIN_REQUIRED`) only surfaced on the Net Worth tab, so the Savings balances would silently show stale values with a generic "Unable to refresh" error and no way to fix it.
+- **Worker:** `fetchPlaidAccountBalance` now attaches the Plaid `error_code` to the thrown error, and `handleGetRobinhoodBalance` calls `buildBalanceReconnectInfo()` on failure — reusing `resolveLinkedAccountInfo` (`/item/get`, which still responds during re-auth) + `bankSyncWarning` to attach `{ needsReconnect, itemId, reconnectLabel, reconnectMessage }` to the balance response (both the 502 and the cached-fallback 200). No new action/KV — the reconnect signal rides on the existing balance endpoints.
+- **Frontend:** `callApi` now preserves the response body on the thrown error (`err.data`). `refreshRobinhoodBalanceFor` reads reconnect info from the response/error into `state.robinhoodReconnect` / `state.robinhoodBrokerageReconnect` (cleared on a clean live pull). New shared `bankSyncBannerHtml()` + `bankReconnect(itemId, btn)` (generalized from `nwReconnectBank`, opens Plaid update mode then re-pulls every balance and re-renders) are injected at the top of the Savings and Cash Flow views. Net Worth keeps its own richer `nwSyncWarningHtml()` (covers all institutions, not just Robinhood).
+
 ### 2026-07-22 — Savings: Robinhood Brokerage pulled live
 
 - **Robinhood Brokerage is now auto-synced from the linked bank connection**, same as Robinhood Checking — it was previously a manual dollar entry. It maps to the Net Worth "Chris's Robinhood Individual Account" (Plaid `subtype: brokerage` under the Robinhood `ins_54` Item).

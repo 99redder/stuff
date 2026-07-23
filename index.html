@@ -2096,9 +2096,11 @@ const state = {
   robinhoodBalance: null,
   robinhoodBalanceLoading: false,
   robinhoodBalanceError: '',
+  robinhoodReconnect: null,             // { needsReconnect, itemId, label, message } when the checking login expired
   robinhoodBrokerageBalance: null,
   robinhoodBrokerageBalanceLoading: false,
-  robinhoodBrokerageBalanceError: ''
+  robinhoodBrokerageBalanceError: '',
+  robinhoodBrokerageReconnect: null     // same shape, for the brokerage login
 };
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -2119,7 +2121,9 @@ async function callApi(body) {
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `HTTP ${res.status}`);
+    const e = new Error(err.error || `HTTP ${res.status}`);
+    e.data = err;   // preserve the response body (e.g. reconnect info) for callers
+    throw e;
   }
   return res.json();
 }
@@ -8488,6 +8492,7 @@ function _renderCashFlowHtml() {
         <div style="font-size:.8rem;color:var(--text-muted)">Track expected income and expense events, then see what is left over.</div>
       </div>
     </div>
+    ${bankSyncBannerHtml()}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.85rem;margin-bottom:1rem">
       ${stat('Income Events', totals.income, 'var(--success)', `1 pinned + ${autoIncome.length} auto + ${cf.income.length} manual`)}
       ${stat('Expense Events', totals.expenses, 'var(--danger)', `${cf.expenses.length} item${cf.expenses.length === 1 ? '' : 's'}`)}
@@ -9190,6 +9195,82 @@ async function nwReconnectBank(itemId,btn){
   }
 }
 
+// ── Shared bank-reconnect banner (used by Savings, Cash Flow, and any other
+// Plaid-consuming view). Warnings come from the live balance pulls, which flag
+// an expired login with the itemId the reconnect flow needs.
+function bankReconnectWarnings(){
+  const list=[]; const seen=new Set();
+  for(const w of [state.robinhoodReconnect, state.robinhoodBrokerageReconnect]){
+    if(w && w.needsReconnect && w.itemId && !seen.has(w.itemId)){ seen.add(w.itemId); list.push(w); }
+  }
+  return list;
+}
+
+function bankSyncBannerHtml(warnings){
+  const list = warnings || bankReconnectWarnings();
+  if(!list.length) return '';
+  return `<div class="card" style="border-left:3px solid var(--warning);margin-bottom:1rem">
+    <div class="card-body" style="padding:.75rem 1rem">
+      <div style="font-weight:700;font-size:.85rem;margin-bottom:.4rem">⚠️ A linked account needs reconnecting</div>
+      <div style="display:flex;flex-direction:column;gap:.4rem">
+        ${list.map(w=>`
+          <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+            <span style="flex:1;min-width:220px;font-size:.82rem;color:var(--text-muted);line-height:1.5">${escHtml(w.message || ((w.label||'A linked account')+' needs to be reconnected — the saved sign-in has expired.'))}</span>
+            <button class="btn btn-primary btn-sm" onclick="bankReconnect('${escAttr(w.itemId)}',this)">Reconnect</button>
+          </div>`).join('')}
+      </div>
+      <div style="font-size:.8rem;color:var(--text-muted);margin-top:.55rem">Reconnecting opens your bank's secure sign-in. Until then these show their last known balance.</div>
+    </div>
+  </div>`;
+}
+
+// Opens the in-app reconnect (Plaid update mode) from any view, then re-pulls
+// every balance so the numbers refresh wherever they're shown.
+async function bankReconnect(itemId,btn){
+  const original=btn.textContent;
+  btn.disabled=true; btn.textContent='Opening…';
+  try{
+    const Plaid=await loadPlaidLink();
+    const {linkToken}=await callApi({action:'create_plaid_link_token',itemId});
+    if(!linkToken) throw new Error('Reconnect could not start. Please try again.');
+    const handler=Plaid.create({
+      token:linkToken,
+      onSuccess:async()=>{
+        try{
+          // Update mode repaired the token in place; re-pull balances everywhere.
+          try{ const r=await callApi({action:'refresh_net_worth_plaid'}); if(state.netWorth!==null) state.netWorth=r.data; }catch(_){}
+          await Promise.all([
+            startRobinhoodBalanceRefreshFor(ROBINHOOD_BALANCE_KINDS.checking,true),
+            startRobinhoodBalanceRefreshFor(ROBINHOOD_BALANCE_KINDS.brokerage,true),
+          ]);
+          renderView();
+          const remaining=bankReconnectWarnings();
+          showBrandedNotice({
+            title:remaining.length?'Reconnected':'All accounts reconnected',
+            message:remaining.length
+              ? 'That account is reconnected.\n\nStill needing attention:\n\n'+remaining.map(w=>w.message).join('\n\n')
+              : 'Balances are up to date.',
+            confirmLabel:'OK'
+          });
+        }catch(e){
+          showBrandedNotice({title:"Couldn't refresh accounts",message:e.message,confirmLabel:'OK'});
+        }
+      },
+      onExit:(err)=>{
+        btn.disabled=false; btn.textContent=original;
+        if(err) showBrandedNotice({title:'Reconnect not completed',message:err.display_message||err.error_message||'The bank sign-in was closed before it finished.',confirmLabel:'OK'});
+      },
+    });
+    handler.open();
+    btn.textContent=original;
+  }catch(e){
+    showBrandedNotice({title:"Couldn't start reconnect",message:e.message,confirmLabel:'OK'});
+  }finally{
+    btn.disabled=false;
+    if(btn.textContent==='Opening…') btn.textContent=original;
+  }
+}
+
 async function nwRefreshPlaid(btn){
   btn.disabled=true;
   btn.textContent='Refreshing…';
@@ -9306,6 +9387,7 @@ const ROBINHOOD_BALANCE_KINDS = {
     balanceKey: 'robinhoodBalance',
     loadingKey: 'robinhoodBalanceLoading',
     errorKey: 'robinhoodBalanceError',
+    reconnectKey: 'robinhoodReconnect',
     rerenderCashFlow: true,
   },
   brokerage: {
@@ -9314,9 +9396,17 @@ const ROBINHOOD_BALANCE_KINDS = {
     balanceKey: 'robinhoodBrokerageBalance',
     loadingKey: 'robinhoodBrokerageBalanceLoading',
     errorKey: 'robinhoodBrokerageBalanceError',
+    reconnectKey: 'robinhoodBrokerageReconnect',
     rerenderCashFlow: false,
   },
 };
+
+// Pulls a reconnect payload out of a balance response/error, or null.
+function _reconnectFrom(payload) {
+  return (payload && payload.needsReconnect && payload.itemId)
+    ? { needsReconnect: true, itemId: payload.itemId, label: payload.reconnectLabel || '', message: payload.reconnectMessage || '' }
+    : null;
+}
 
 async function refreshRobinhoodBalanceFor(cfg, forceRefresh = false) {
   try {
@@ -9326,10 +9416,13 @@ async function refreshRobinhoodBalanceFor(cfg, forceRefresh = false) {
       state[cfg.balanceKey] = result;
       state.savings.accounts[cfg.savingsField] = Number(result.balance);
     }
+    // A cached response can still carry a reconnect flag; a clean live pull clears it.
+    state[cfg.reconnectKey] = _reconnectFrom(result);
     return result;
   } catch (error) {
     state[cfg.balanceKey] = null;
     state[cfg.errorKey] = error instanceof Error ? error.message : 'Live balance refresh failed';
+    state[cfg.reconnectKey] = _reconnectFrom(error && error.data);
     return null;
   }
 }
@@ -9652,6 +9745,7 @@ function _renderSavingsHtml() {
         <div style="font-size:.8rem;color:var(--text-muted)">Track account balances and progress against ${year} obligations. Resets automatically each Jan 1.</div>
       </div>
     </div>
+    ${bankSyncBannerHtml()}
     ${statsBar}
     ${statusSummary}
     <div style="display:grid;grid-template-columns:minmax(260px,340px) 1fr;gap:1rem;align-items:start">

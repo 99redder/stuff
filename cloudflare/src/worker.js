@@ -2577,12 +2577,14 @@ async function fetchPlaidAccountBalance(env, selection) {
     { url: 'https://production.plaid.com/accounts/get', body: { access_token: selection.accessToken } },
   ];
   let lastError = 'unknown';
+  let lastCode = '';
   for (const attempt of attempts) {
     try {
       const response = await fetch(attempt.url, { method: 'POST', headers, body: JSON.stringify(attempt.body) });
       const data = await readJsonLimited(response, MAX_UPSTREAM_JSON_BYTES);
       if (!response.ok) {
-        lastError = String(data.error_code || data.error_type || response.status).slice(0, 80);
+        lastCode = String(data.error_code || '').slice(0, 80);
+        lastError = lastCode || String(data.error_type || response.status).slice(0, 80);
         continue;
       }
       const account = Array.isArray(data.accounts)
@@ -2594,7 +2596,25 @@ async function fetchPlaidAccountBalance(env, selection) {
       lastError = error instanceof Error ? error.message : String(error);
     }
   }
-  throw new Error(`Balance request failed (${lastError})`);
+  const err = new Error(`Balance request failed (${lastError})`);
+  err.plaidCode = lastCode;
+  throw err;
+}
+
+// When a balance pull fails because the bank login expired, build the same
+// reconnect payload the Net Worth banner uses so any Plaid-consuming view can
+// prompt the user (and open the in-app reconnect flow) with a working itemId.
+async function buildBalanceReconnectInfo(env, code, selection) {
+  if (!BANK_SYNC_RECONNECT_CODES.has(code) || !selection?.accessToken) return {};
+  const info = await resolveLinkedAccountInfo(env, selection.accessToken, '');
+  const warning = bankSyncWarning({ code }, info);
+  if (!warning.needsReconnect || !warning.itemId) return {};
+  return {
+    needsReconnect: true,
+    itemId: warning.itemId,
+    reconnectLabel: warning.label,
+    reconnectMessage: warning.message,
+  };
 }
 
 async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client', descriptor = ROBINHOOD_ACCOUNTS.checking) {
@@ -2629,8 +2649,9 @@ async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client', d
     return jsonResponse({ error: 'Live Robinhood balance is not configured' }, 503);
   }
 
+  let selection = null;
   try {
-    const selection = await resolvePlaidTokenForAccount(env, descriptor);
+    selection = await resolvePlaidTokenForAccount(env, descriptor);
     const account = await fetchPlaidAccountBalance(env, selection);
 
     const current = Number(account.balances?.current);
@@ -2653,16 +2674,19 @@ async function handleGetRobinhoodBalance(env, forceRefresh, source = 'client', d
     ]);
     return jsonResponse(result);
   } catch (error) {
-    console.error(JSON.stringify({ event: 'plaid_balance_error', kind: descriptor.kind, message: error instanceof Error ? error.message : String(error) }));
+    const code = error && error.plaidCode ? String(error.plaidCode) : '';
+    console.error(JSON.stringify({ event: 'plaid_balance_error', kind: descriptor.kind, code, message: error instanceof Error ? error.message : String(error) }));
+    const reconnect = await buildBalanceReconnectInfo(env, code, selection);
     if (cached) {
       return jsonResponse({
         ...cached,
         source: 'cache',
         stale: true,
         warning: 'Plaid could not refresh the balance. Showing the last successful value.',
+        ...reconnect,
       });
     }
-    return jsonResponse({ error: `Unable to refresh ${descriptor.label} balance` }, 502);
+    return jsonResponse({ error: `Unable to refresh ${descriptor.label} balance`, ...reconnect }, 502);
   }
 }
 
