@@ -1647,6 +1647,21 @@ async function handleSaveInvestment(env, property, config) {
       ? config.purchaseDate : (existing.purchaseDate || null),
   };
 
+  // New-build settings (deposit paid, mortgage at settlement, settled flag).
+  // Cash to close is not stored here — it is read from the cash flow record.
+  if (config.construction && typeof config.construction === 'object') {
+    const c = config.construction;
+    const money = value => (Number.isFinite(Number(value)) && Number(value) >= 0) ? Number(value) : 0;
+    saved.construction = {
+      deposit: money(c.deposit),
+      loanAmount: money(c.loanAmount),
+      settlementNote: String(c.settlementNote || '').slice(0, 200),
+      settled: c.settled === true,
+    };
+  } else if (existing.construction) {
+    saved.construction = existing.construction;
+  }
+
   await env.RENTALS.put(`investment:${property}`, JSON.stringify(saved));
   return jsonResponse({ success: true, config: saved });
 }
@@ -1959,6 +1974,11 @@ function normalizeNetWorth(raw) {
     federalTax: Number.isFinite(Number(item.federalTax)) ? Number(item.federalTax) : 0,
     stateTax: Number.isFinite(Number(item.stateTax)) ? Number(item.stateTax) : 0,
     depreciationRecaptureTax: Number.isFinite(Number(item.depreciationRecaptureTax)) ? Number(item.depreciationRecaptureTax) : 0,
+    // New builds still under construction are carried at the deposit paid.
+    preconstruction: item.preconstruction === true,
+    deposit: Number.isFinite(Number(item.deposit)) ? Number(item.deposit) : 0,
+    cashToClose: Number.isFinite(Number(item.cashToClose)) ? Number(item.cashToClose) : 0,
+    loanAmount: Number.isFinite(Number(item.loanAmount)) ? Number(item.loanAmount) : 0,
     source: String(item.source || '').slice(0, 100),
   })).filter(item => item.id && item.name) : [];
   const history = Array.isArray(data.history) ? data.history.slice(-730) : [];

@@ -1801,6 +1801,19 @@ const GLOBAL_HEADER_VIEWS = new Set(['tax-planning', 'net-worth', 'budget', 'cas
 const CASH_FLOW_YEAR = 2026;
 const CASH_FLOW_AUTO_PROCEEDS_PROPS = ['6AL', '95EB', '731WO'];
 const PROPERTY_MORTGAGE_PAYOFF_FALLBACKS = { '731WO': 135000 };
+// New-build properties still under construction: not delivered/settled yet, so the
+// only capital actually in the deal today is the deposit already paid. The balance
+// is funded at settlement by the cash-to-close payment (tracked as a Cash Flow
+// expense line) plus the mortgage. Defaults below are overridden per-property by
+// `investment.construction` once edited in the Investment Return config card.
+const PRECONSTRUCTION_DEFAULTS = {
+  '4781MC': {
+    deposit: 60000,
+    loanAmount: 298000,
+    cashToCloseLabel: '4781MC Cash to Close',
+    settlementNote: 'Delivery/settlement expected later in 2026',
+  },
+};
 const PROPERTY_TAB_RETURN_VIEWS = new Set(['portfolio', ...GLOBAL_HEADER_VIEWS]);
 const APP_TIME_ZONE = 'America/New_York';
 function appTodayParts(date = new Date()) {
@@ -4047,6 +4060,8 @@ async function renderInvestmentReturn() {
   await Promise.all(loadKeys.map(k => ensureLoaded(prop, k)));
   await ensureSaleCloseoutDraftLoaded(prop);
   if (prop === '731WO') await ensureNetWorthLoaded(true);
+  // Cash to close lives on the Cash Flow tab; pull it in for new builds.
+  if (PRECONSTRUCTION_DEFAULTS[prop]) await loadCashFlow().catch(() => {});
 
   const inv    = state.data[prop].investment || {};
   const saleCloseout = inv.saleCloseout || null;
@@ -4104,7 +4119,9 @@ async function renderInvestmentReturn() {
   const mortgagePayoff = isSold && typeof savedMortgagePayoff === 'number'
     ? savedMortgagePayoff
     : liveMortgage.amount;
-  const mortgagePayoffLabel = !isSold && liveMortgage.live ? '− Mortgage Payoff (linked)' : '− Mortgage Payoff';
+  const mortgagePayoffLabel = !isSold && liveMortgage.live
+    ? '− Mortgage Payoff (linked)'
+    : (!isSold && liveMortgage.planned ? '− Mortgage Payoff (planned loan at settlement)' : '− Mortgage Payoff');
 
   let netSaleProceeds     = null;
   let saleClosingAmt      = null;
@@ -4249,17 +4266,46 @@ async function renderInvestmentReturn() {
       </div>
     </div>`;
 
+  // ── Construction funding card (new builds, pre-settlement) ────────────────
+  const funding = isPreconstruction(prop) ? constructionFunding(prop) : null;
+  const constructionCard = !funding ? '' : `
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-header"><div class="card-title">Purchase Funding — Under Construction</div></div>
+      <div class="card-body" style="padding:0">
+        <table style="width:100%;border-collapse:collapse">
+          ${row('Deposit Paid to Date', funding.deposit, 'var(--success)')}
+          ${row(`+ Cash to Close (due at settlement)${funding.cashToCloseLive ? '' : ' — not found in Cash Flow'}`, funding.cashToClose, 'var(--text)')}
+          ${row('Total Cash Out of Pocket', funding.totalCashAtSettlement, 'var(--text)', true, true)}
+          ${row('+ Mortgage at Settlement', funding.loanAmount, 'var(--text-muted)')}
+          ${row('Total Purchase Funding', funding.totalFunding, 'var(--text)', true, true)}
+          ${funding.contractPrice ? row('Contract Purchase Price', funding.contractPrice, 'var(--text)') : ''}
+          ${funding.contractPrice ? row('Funding vs. Contract Price', -funding.fundingGap, Math.abs(funding.fundingGap) < 1 ? 'var(--success)' : 'var(--danger)', false, true) : ''}
+        </table>
+        <div style="padding:.6rem .75rem;border-top:2px solid var(--border);color:var(--text-muted);font-size:.82rem">
+          ${escHtml(funding.settlementNote)}. Cash to close is read live from the ${CASH_FLOW_YEAR} Cash Flow expense line
+          “${escHtml(funding.cashToCloseLabel)}”${funding.cashToCloseLive ? '' : ' — add that line on the Cash Flow tab to populate it here'}.
+          Until settlement, Net Worth counts only the ${fmt(funding.deposit)} deposit for this property; the cash to close is
+          still sitting in the bank (already counted there) and the mortgage has not been drawn.
+        </div>
+      </div>
+    </div>`;
+
   // ── Capital Invested card ─────────────────────────────────────────────────
   const capitalCard = `
     <div class="card" style="margin-bottom:1rem">
       <div class="card-header"><div class="card-title">Capital Invested</div></div>
       <div class="card-body" style="padding:0">
         <table style="width:100%;border-collapse:collapse">
-          ${row('Purchase Price', purchasePrice, 'var(--text)')}
+          ${row(funding ? 'Contract Purchase Price (at settlement)' : 'Purchase Price', purchasePrice, 'var(--text)')}
           ${row('+ Purchase Closing Costs', purchaseClosing, 'var(--text)')}
           ${row('+ Capital Improvements / Marked Improvements', cumulativeImprovements, 'var(--text)')}
           ${row('Total Capital Invested', totalCapitalInvested, 'var(--text)', false, true)}
         </table>
+        ${funding ? `<div style="padding:.6rem .75rem;border-top:2px solid var(--border);color:var(--text-muted);font-size:.82rem">
+          Not all of this is paid yet — only ${fmt(funding.deposit)} of cash has actually gone in. The remaining
+          ${fmt(funding.cashToClose)} of cash and the ${fmt(funding.loanAmount)} mortgage fund at settlement.
+          ROI figures below therefore reflect the completed purchase, not today's position.
+        </div>` : ''}
       </div>
     </div>`;
 
@@ -4433,6 +4479,38 @@ async function renderInvestmentReturn() {
               <div style="font-size:0.78rem;color:var(--text-muted);margin-top:.2rem">Default: 8.95% = MD state 5.75% + Wicomico local 3.20%</div>
             </div>
           </div>
+          ${PRECONSTRUCTION_DEFAULTS[prop] ? (() => {
+            const cc = constructionConfig(prop);
+            return `
+          <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border);max-width:520px">
+            <div style="font-weight:700;margin-bottom:.15rem">New Construction</div>
+            <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:.75rem">
+              Cash to close is not entered here — it is read from the ${CASH_FLOW_YEAR} Cash Flow expense line
+              “${escHtml(cc.cashToCloseLabel)}”.
+            </div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Deposit Paid to Date ($)</label>
+                <input type="text" inputmode="decimal" id="inv-construction-deposit" value="${escAttr(moneyInputValue(cc.deposit))}" onblur="formatMoneyInput(this)">
+              </div>
+              <div class="form-group">
+                <label>Mortgage at Settlement ($)</label>
+                <input type="text" inputmode="decimal" id="inv-construction-loan" value="${escAttr(moneyInputValue(cc.loanAmount))}" onblur="formatMoneyInput(this)">
+              </div>
+              <div class="form-group">
+                <label>Settlement Note</label>
+                <input type="text" id="inv-construction-note" value="${escAttr(cc.settlementNote)}" placeholder="Delivery/settlement expected later in 2026">
+              </div>
+            </div>
+            <label style="display:flex;align-items:center;gap:.5rem;margin-top:.5rem;font-weight:600">
+              <input type="checkbox" id="inv-construction-settled" ${cc.settled ? 'checked' : ''} style="width:auto;margin:0">
+              Settled / delivered — treat as an owned property
+            </label>
+            <div style="font-size:.78rem;color:var(--text-muted);margin-top:.2rem">
+              While unchecked, Net Worth values this property at the deposit paid instead of estimated net sale proceeds.
+            </div>
+          </div>`;
+          })() : ''}
           <div class="form-actions mt-2" style="display:flex;gap:.5rem;align-items:center">
             <button class="btn btn-primary" type="button" onclick="saveInvestmentConfig()">Save Configuration</button>
           </div>
@@ -4455,7 +4533,15 @@ async function renderInvestmentReturn() {
           <div style="background:var(--warning-bg,#fef9c3);border:1px solid var(--warning-border,#fde68a);border-radius:6px;padding:.75rem 1rem;margin-bottom:1rem;font-size:0.9rem;color:#92400e">
             Enter the purchase price and closing costs below to calculate your all-time investment return.
           </div>` : '')}
+        ${funding ? `
+          <div style="background:var(--warning-bg,#fef9c3);border:1px solid var(--warning-border,#fde68a);border-radius:6px;padding:.75rem 1rem;margin-bottom:1rem;font-size:0.9rem;color:#92400e">
+            <strong>Under construction — not yet delivered.</strong> ${escHtml(funding.settlementNote)}.
+            ${fmt(funding.deposit)} deposit is paid; ${fmt(funding.cashToClose)} cash to close and a
+            ${fmt(funding.loanAmount)} mortgage are due at settlement. Return figures below are projections for the
+            completed purchase. Mark it settled in Configuration once you take delivery.
+          </div>` : ''}
         ${statCards}
+        <div style="max-width:65%">${constructionCard}</div>
         <div style="max-width:65%">${isConfigured ? totalReturnCard : ''}</div>
         <div style="max-width:65%">${capitalCard}</div>
         <div style="max-width:65%">${currentValueCard}</div>
@@ -4491,6 +4577,22 @@ async function saveInvestmentConfig() {
   }
 
   const configToSave = { purchasePrice, purchaseClosingCosts: purchaseClosing, saleClosingCostPct, stateCapGainsPct, purchaseDate };
+
+  if (PRECONSTRUCTION_DEFAULTS[prop]) {
+    const deposit = parseMoney(document.getElementById('inv-construction-deposit')?.value);
+    const loanAmount = parseMoney(document.getElementById('inv-construction-loan')?.value);
+    if (!isFinite(deposit) || deposit < 0 || !isFinite(loanAmount) || loanAmount < 0) {
+      errEl.textContent = 'Construction deposit and mortgage amount must be non-negative numbers.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    configToSave.construction = {
+      deposit,
+      loanAmount,
+      settlementNote: (document.getElementById('inv-construction-note')?.value || '').trim(),
+      settled: !!document.getElementById('inv-construction-settled')?.checked,
+    };
+  }
 
   try {
     const res = await callApi({ action: 'save_investment', property: prop, config: configToSave });
@@ -8378,6 +8480,8 @@ async function hydrateCashFlowDetails() {
 
 async function loadCashFlowDetails() {
   await ensureNetWorthLoaded(true);
+  // Needed so the cash-to-close badge knows whether a build has settled.
+  await Promise.all(Object.keys(PRECONSTRUCTION_DEFAULTS).map(prop => ensureLoaded(prop, 'investment')));
   await Promise.all(CASH_FLOW_AUTO_PROCEEDS_PROPS.map(prop => ensureSaleCloseoutDraftLoaded(prop)));
   await Promise.all(CASH_FLOW_AUTO_PROCEEDS_PROPS.flatMap(prop => {
     const keys = ['transactions', 'summaries', 'depreciation', 'investment'];
@@ -8615,6 +8719,15 @@ function cfAutoRow(item, color) {
   </td></tr>` : ''}`;
 }
 
+// Which in-progress build (if any) reads this expense line as its cash to close.
+function cfConstructionPropertyFor(name) {
+  const label = String(name || '').trim().toLowerCase();
+  if (!label) return null;
+  return Object.keys(PRECONSTRUCTION_DEFAULTS).find(prop =>
+    isPreconstruction(prop) && PRECONSTRUCTION_DEFAULTS[prop].cashToCloseLabel.trim().toLowerCase() === label
+  ) || null;
+}
+
 function cfDisplayRow(type, item, color) {
   if (type === 'income') {
     const expanded = cfIncomeExpanded(item.id);
@@ -8637,9 +8750,11 @@ function cfDisplayRow(type, item, color) {
       </div>
     </td></tr>` : ''}`;
   }
+  const linkedBuild = cfConstructionPropertyFor(item.name);
   return `<tr>
     <td style="padding:.55rem .6rem;border-bottom:1px solid var(--border)">
-      <div style="font-weight:650">${escHtml(item.name || 'Untitled')}</div>
+      <div style="font-weight:650">${escHtml(item.name || 'Untitled')}${linkedBuild ? ` <span style="display:inline-block;padding:.08rem .38rem;border-radius:999px;background:rgba(37,99,235,.10);color:var(--primary);font-size:.66rem;font-weight:750;text-transform:uppercase">Linked</span>` : ''}</div>
+      ${linkedBuild ? `<div style="font-size:.72rem;color:var(--text-muted);margin-top:.1rem">Feeds the ${escHtml(linkedBuild)} Investment Return purchase-funding card — cash still due at settlement.</div>` : ''}
       ${item.note ? `<div style="font-size:.72rem;color:var(--text-muted);margin-top:.1rem">${escHtml(item.note)}</div>` : ''}
     </td>
     <td style="padding:.55rem .6rem;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text-muted)">${item.date ? fmtDate(item.date) : 'Unscheduled'}</td>
@@ -8750,6 +8865,61 @@ async function ensureNetWorthLoaded(refreshIfStale = false) {
   }
 }
 
+// ── New construction (pre-settlement) ────────────────────────────────────────
+
+// Merged construction settings for a new-build property: constant defaults plus
+// anything saved in the investment record. Returns null for ordinary properties.
+function constructionConfig(prop) {
+  const defaults = PRECONSTRUCTION_DEFAULTS[prop];
+  if (!defaults) return null;
+  const saved = state.data[prop]?.investment?.construction || {};
+  return {
+    deposit: Number.isFinite(Number(saved.deposit)) ? Number(saved.deposit) : defaults.deposit,
+    loanAmount: Number.isFinite(Number(saved.loanAmount)) ? Number(saved.loanAmount) : defaults.loanAmount,
+    cashToCloseLabel: defaults.cashToCloseLabel,
+    settlementNote: String(saved.settlementNote || defaults.settlementNote),
+    settled: saved.settled === true,
+  };
+}
+
+// True while the build has not been delivered/settled — the point where the
+// deposit + cash to close + loan turn into an actual owned property.
+function isPreconstruction(prop) {
+  const cfg = constructionConfig(prop);
+  return !!cfg && !cfg.settled;
+}
+
+// The remaining cash due at settlement, read live from the matching Cash Flow
+// expense line so there is a single place to update it.
+function constructionCashToClose(prop) {
+  const cfg = constructionConfig(prop);
+  if (!cfg) return { amount: 0, live: false, label: '' };
+  const label = cfg.cashToCloseLabel.trim().toLowerCase();
+  const item = (state.cashFlow?.expenses || []).find(e => String(e.name || '').trim().toLowerCase() === label);
+  return { amount: item ? tpN(item.amount) : 0, live: !!item, label: cfg.cashToCloseLabel };
+}
+
+// Full funding picture for a build: what is already in, what is still owed in
+// cash, and what the mortgage covers at settlement.
+function constructionFunding(prop) {
+  const cfg = constructionConfig(prop);
+  if (!cfg) return null;
+  const cashToClose = constructionCashToClose(prop);
+  const contractPrice = state.data[prop]?.investment?.purchasePrice || 0;
+  const totalFunding = cfg.deposit + cashToClose.amount + cfg.loanAmount;
+  return {
+    ...cfg,
+    cashToClose: cashToClose.amount,
+    cashToCloseLive: cashToClose.live,
+    cashInvested: cfg.deposit,
+    cashRemaining: cashToClose.amount,
+    totalCashAtSettlement: cfg.deposit + cashToClose.amount,
+    contractPrice,
+    totalFunding,
+    fundingGap: contractPrice ? contractPrice - totalFunding : 0,
+  };
+}
+
 function propertyMortgagePayoff(prop) {
   if (prop === '731WO') {
     const account = (state.netWorth?.plaidAccounts || []).find(item =>
@@ -8757,6 +8927,10 @@ function propertyMortgagePayoff(prop) {
     );
     if (account) return { amount: Number(account.value), live: true };
   }
+  // A build that has not settled has no drawn mortgage yet, but any sale
+  // estimate would still have to pay off the loan taken at settlement.
+  const construction = constructionConfig(prop);
+  if (construction) return { amount: construction.loanAmount, live: false, planned: !construction.settled };
   return { amount: PROPERTY_MORTGAGE_PAYOFF_FALLBACKS[prop] || 0, live: false };
 }
 
@@ -8852,6 +9026,11 @@ function nwLabeledPlaidAccount(item) {
 }
 
 function nwPropertyLine(item) {
+  if (item.preconstruction) {
+    const valueLabel = nwFmt(Number(item.value) || 0);
+    const detail = `${item.source} · Deposit paid ${nwFmt(item.deposit)} · Cash to close still due ${nwFmt(item.cashToClose)} · Mortgage at settlement ${nwFmt(item.loanAmount)}`;
+    return `<details class="nw-line"><summary><span>${escHtml(item.name)}</span><span>${valueLabel}</span></summary><div class="nw-line-body">${escHtml(detail)}<div style="margin-top:.5rem;font-weight:700;color:var(--success)">Net Worth uses the deposit paid: ${valueLabel}</div><div class="nw-source" style="margin-top:.4rem">Cash to close is still in the bank and already counted there; the mortgage has not been drawn, so neither is added here. Mark the build settled on its Investment Return tab to switch to net-proceeds valuation.</div></div></details>`;
+  }
   const detail = `${item.source} · Sale amount ${nwFmt(item.salePrice)} · Closing costs ${nwFmt(item.saleClosingCosts)} · Mortgage payoff ${nwFmt(item.mortgagePayoff)} · Federal tax ${nwFmt(item.federalTax)} · State/local tax ${nwFmt(item.stateTax)} · Depreciation recapture tax ${nwFmt(item.depreciationRecaptureTax)}`;
   const valueLabel = `${!_nwPrivacy&&item.value < 0 ? '−' : ''}${nwFmt(Math.abs(item.value))}`;
   return `<details class="nw-line"><summary><span>${escHtml(item.name)}</span><span>${valueLabel}</span></summary><div class="nw-line-body">${escHtml(detail)}<div style="margin-top:.5rem;font-weight:700;color:${item.value < 0 ? 'var(--danger)' : 'var(--success)'}">Net Worth uses net proceeds: ${valueLabel}</div></div></details>`;
@@ -8902,6 +9081,28 @@ function nwSetAssetSort(sort) {
 
 function nwBuildPropertyAssets() {
   return PROPERTIES.map(prop => {
+    // A build that has not settled is worth the cash actually put in — the
+    // deposit. Its cash to close is still in the bank (counted there) and its
+    // mortgage has not been drawn, so neither belongs in net worth yet.
+    if (isPreconstruction(prop)) {
+      const funding = constructionFunding(prop);
+      return {
+        id: `property-${prop}`,
+        name: `${prop} Property (under construction)`,
+        value: funding.deposit,
+        preconstruction: true,
+        deposit: funding.deposit,
+        cashToClose: funding.cashToClose,
+        loanAmount: funding.loanAmount,
+        salePrice: 0,
+        saleClosingCosts: 0,
+        mortgagePayoff: 0,
+        federalTax: 0,
+        stateTax: 0,
+        depreciationRecaptureTax: 0,
+        source: 'Under construction — deposit paid, not yet settled',
+      };
+    }
     const details = calcPropertySaleTaxDetails(prop) || nwTaxPlanningPropertyDetails(prop);
     if (!details) return {
       id: `property-${prop}`,
@@ -9039,6 +9240,8 @@ async function renderNetWorth() {
     return keys.map(key => ensureLoaded(prop, key));
   }));
   await Promise.all(PROPERTIES.map(prop => ensureSaleCloseoutDraftLoaded(prop)));
+  // Cash to close for in-progress builds is annotated from the Cash Flow record.
+  if (PROPERTIES.some(prop => isPreconstruction(prop))) await loadCashFlow().catch(() => {});
   const propertyAssets = nwBuildPropertyAssets();
   if (JSON.stringify(propertyAssets) !== JSON.stringify(state.netWorth.propertyAssets || [])) {
     state.netWorth.propertyAssets = propertyAssets;
