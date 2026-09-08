@@ -1,6 +1,7 @@
 name = "rentals-api"
 main = "src/worker.js"
 compatibility_date = "2024-01-01"
+compatibility_flags = ["rpc"]
 
 [vars]
 STOCK_STICKIES_FIREBASE_PROJECT_ID = "red-s-stickies"
@@ -10,6 +11,15 @@ STOCK_STICKIES_OWNER_UID = "tQ4KeGwCjsb5CSbrFwmWYWX3BvI2"
 [[kv_namespaces]]
 binding = "RENTALS"
 id = "75372b2a892343c8b45e3d8abafcbce3"
+
+# Immediately consistent Mom Budget reads for the editor and phone app.
+[[durable_objects.bindings]]
+name = "MOM_BUDGET_STORE"
+class_name = "MomBudgetStore"
+
+[[migrations]]
+tag = "mom-budget-v1"
+new_sqlite_classes = ["MomBudgetStore"]
 
 # Direct Worker-to-Worker path for the Eastern Shore AI aggregate tax summary.
 [[services]]

@@ -179,7 +179,7 @@ const NORMAL_MONTH_CONFIG = {
 
 ### Mom Budget
 
-Global view (not per-property) for tracking Red's mother's monthly assistance budget. Frontend state is `state.momBudget`; Worker actions are `get_mom_budget` / `save_mom_budget`; KV key is `mom_budget`.
+Global view (not per-property) for tracking Red's mother's monthly assistance budget. Frontend state is `state.momBudget`; Worker actions are `get_mom_budget` / `save_mom_budget`. The authoritative record is the SQLite-backed `MomBudgetStore` Durable Object (`MOM_BUDGET_STORE`, instance name `mom_budget`, storage key `budget`). It imports the existing `mom_budget` KV record once and maintains that KV key as an asynchronous backup. Always use the Durable Object for current reads/writes; editing the KV backup directly will not change the live budget.
 
 **Primary anchors in `index.html`:**
 - Section starts at `// ── View: Mom Budget`
@@ -322,6 +322,8 @@ This page has no password gate and no editing controls. It is meant to be instal
 The page fetches only `get_mom_budget_public_summary`, a public Worker action that returns precomputed read-only numbers. It must never call `get_mom_budget`, `save_mom_budget`, or any authenticated/editing action.
 
 The service worker is intentionally network-first and calls `registration.update()` on launch so the installed PWA gets the newest page/assets when opened. If changing the phone PWA files, bump `CACHE_NAME` in `mom-budget-sw.js` if cached asset behavior matters.
+
+The phone polls every five seconds while visible and refreshes on foreground/wake events. Requests time out after ten seconds so a stalled connection cannot block later refreshes. The public API reads Mom Budget from the same Durable Object as the editor and sends `Cache-Control: no-store`; do not restore the old edge cache or read balances from KV. The per-IP rate limit remains in place. The Fair Share household calculation still uses the separate family `budget` KV record. Service worker v13 also reloads only this read-only phone page on activation so an installed app adopts updated polling code.
 
 ### Savings View
 
@@ -478,8 +480,8 @@ All calls: `POST /api/data` with JSON body `{ action, property, ...payload }`.
 | Action | Extra payload | Returns |
 |---|---|---|
 | `get_mom_budget` | — | `{ data: { template, months } }` |
-| `save_mom_budget` | `data: { template, months }` | `{ success: true }` — full overwrite of the `mom_budget` KV record |
-| `get_mom_budget_public_summary` | optional `month: "YYYY-MM"` | `{ monthKey, monthLabel, updatedAt, month: {...}, year: {...} }` — public unauthenticated read-only summary for `mom-budget-phone.html`; returns calculated numbers only, never raw editable records. Guarded by a per-IP rate limit (`env.PUBLIC_RATELIMIT`, 60 req/60s → `429`, fails open) and a ~45s edge cache (synthetic GET cache key keyed by month, `Cache-Control: public, s-maxage=45`). Both are invisible to the phone and cap bot/flood abuse. |
+| `save_mom_budget` | `data: { template, months }` | `{ success: true }` — full overwrite of the authoritative Durable Object record; schedules an automatic KV backup |
+| `get_mom_budget_public_summary` | optional `month: "YYYY-MM"` | `{ monthKey, monthLabel, updatedAt, month: {...}, year: {...} }` — public unauthenticated read-only summary for `mom-budget-phone.html`; returns calculated balances and a curated transaction list, never raw editable records. Reads the authoritative Durable Object with no edge/browser caching. Guarded by a per-IP rate limit (`env.PUBLIC_RATELIMIT`, 60 req/60s → `429`, fails open). |
 
 #### Deductions (global — not per-property)
 | Action | Extra payload | Returns |
@@ -526,7 +528,7 @@ depreciation:{property}    →  { costBasis, placedInService, purchaseDate }
 maintenance:{property}     →  Array of maintenance entry objects
 investment:{property}      →  Investment config object
 budget                     →  { income: [...], expenses: {...}, worksheets: {...} }
-mom_budget                 →  { template: { income, fixed, variable, variableLocks }, months: { [YYYY-MM]: {...} } }
+mom_budget                 →  asynchronous backup of the authoritative MomBudgetStore Durable Object record
 solar:config               →  Solar system config object
 solar:entries              →  Array of solar entry objects
 solar:summaries            →  { [year]: { ... } }
@@ -596,6 +598,14 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-09-08 — Mom Money Left freshness
+
+- Replaced one-minute phone polling with five-second polling while visible, keeping foreground refresh and adding a ten-second request timeout.
+- Removed the public summary's 45-second edge cache. Editor and phone now share a SQLite-backed `MomBudgetStore` Durable Object, eliminating Workers KV propagation delays for spending entries. Existing KV data imports once; an alarm backs up subsequent saves to KV with automatic retries.
+- Added the `rpc` compatibility flag, `MOM_BUDGET_STORE` binding, and `mom-budget-v1` migration. Deploy the Worker before publishing the phone update. The phone still uses only the public read-only summary action.
+- Bumped the phone service worker to v13; activation reloads only the phone page to adopt the latest code.
+- Regression checks: `node --test cloudflare/src/mom-budget-freshness.test.mjs tests/mom-budget-phone.test.mjs`.
 
 ### 2026-06-14 — Mom Budget phone PWA: freshness + abuse guards
 

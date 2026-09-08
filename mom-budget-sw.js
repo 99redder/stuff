@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'mom-budget-phone-';
-const CACHE_NAME = `${CACHE_PREFIX}v12`;
+const CACHE_NAME = `${CACHE_PREFIX}v13`;
 const APP_SCOPE = new URL('./mom-budget-phone.html', self.location.href).href;
 const STATIC_ASSETS = [
   './mom-budget-phone.html',
@@ -29,6 +29,17 @@ self.addEventListener('activate', event => {
       .filter(key => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
       .map(key => caches.delete(key)));
     await self.clients.claim();
+    // Installed PWAs often keep the old page alive in memory. Adopt the new
+    // refresh code immediately when this worker activates, even on older pages
+    // that did not listen for controllerchange. Only navigate our read-only app.
+    const clients = await self.clients.matchAll({ type: 'window' });
+    await Promise.all(clients.map(client => {
+      const url = new URL(client.url);
+      const app = new URL(APP_SCOPE);
+      if (url.origin === app.origin && url.pathname === app.pathname) {
+        return client.navigate(client.url).catch(() => {});
+      }
+    }));
   })());
 });
 

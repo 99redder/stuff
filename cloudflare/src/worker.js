@@ -2,6 +2,8 @@
 // All amounts stored and returned in DOLLARS (never cents).
 // KV keys: transactions:{property}, summaries:{property}, defaults:{property}, depreciation:{property}
 
+export { MomBudgetStore } from './mom-budget-store.js';
+
 import {
   STOCK_STICKIES_ACCOUNT_IDS,
   aggregateModifiedDietzReturn,
@@ -1646,25 +1648,20 @@ const MOM_BUDGET_DEFAULT = {
 const MB_VARIABLE_FIXED_BILL_IDS = new Set(['electric', 'water', 'gas-heat']);
 
 async function handleGetMomBudget(env) {
-  const data = await env.RENTALS.get('mom_budget', 'json') || {};
+  const data = await env.MOM_BUDGET_STORE.getByName('mom_budget').getBudget();
   return jsonResponse({ data });
 }
 
 async function handleSaveMomBudget(env, data) {
-  if (!data || typeof data !== 'object') {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return jsonResponse({ error: 'Missing data object' }, 400);
   }
-  await env.RENTALS.put('mom_budget', JSON.stringify(data));
+  await env.MOM_BUDGET_STORE.getByName('mom_budget').saveBudget(data);
   return jsonResponse({ success: true });
 }
 
-// Public, unauthenticated endpoint for mom-budget-phone.html. Two cheap guards keep
-// it from being hammered by bots without adding any friction for the phone:
-//   1. Per-IP rate limit (native binding) — caps bursts from a single source.
-//   2. ~45s edge cache — a flood is served from Cloudflare's cache instead of
-//      re-reading KV and recomputing on every hit. Well within the data's existing
-//      eventual-consistency window, and the phone re-fetches on every foreground.
-const PUBLIC_SUMMARY_CACHE_SECONDS = 45;
+// Public, read-only endpoint for mom-budget-phone.html. Keep the per-IP burst
+// guard, but never cache spending balances: every poll must see completed saves.
 
 async function handleGetMomBudgetPublicSummary(request, env, requestedMonth) {
   // 1. Per-IP rate limit. Fail-open: if the binding is missing or errors, never take
@@ -1681,23 +1678,14 @@ async function handleGetMomBudgetPublicSummary(request, env, requestedMonth) {
 
   const monthKey = validMonthKey(requestedMonth) ? requestedMonth : currentEasternMonthKey();
 
-  // 2. Edge cache, keyed by month. The real request is a POST (not cacheable), so use
-  //    a synthetic GET URL as the cache key.
-  const cacheUrl = new URL(request.url);
-  cacheUrl.pathname = '/__mom_public_summary';
-  cacheUrl.search = `?m=${monthKey}`;
-  const cacheKey = new Request(cacheUrl.toString(), { method: 'GET' });
-  const cache = caches.default;
-
-  const cached = await cache.match(cacheKey);
-  if (cached) return cached;
-
   const year = monthKey.slice(0, 4);
   // Compute the Fair Share transfer live from the family budget, the same source
   // the main app uses, rather than relying on a possibly-stale copy in mom_budget.
-  const budgetRaw = await env.RENTALS.get('budget', 'json') || {};
-  const fairShare = calcFairShareFromBudget(budgetRaw);
-  const raw = await env.RENTALS.get('mom_budget', 'json') || {};
+  const [budgetRaw, raw] = await Promise.all([
+    env.RENTALS.get('budget', 'json'),
+    env.MOM_BUDGET_STORE.getByName('mom_budget').getBudget(),
+  ]);
+  const fairShare = calcFairShareFromBudget(budgetRaw || {});
   const data = normalizeMomBudget(raw);
   syncMomHouseholdTransfers(data, fairShare);
   const month = calcMomBudgetMonth(data, monthKey);
@@ -1724,13 +1712,9 @@ async function handleGetMomBudgetPublicSummary(request, env, requestedMonth) {
       ...CORS_HEADERS,
       ...SECURITY_HEADERS,
       'Content-Type': 'application/json',
-      // Shared-cache (edge) only; the phone fetches with cache:'no-store' so it never
-      // serves this from the browser cache. s-maxage drives the 45s edge TTL.
-      'Cache-Control': `public, s-maxage=${PUBLIC_SUMMARY_CACHE_SECONDS}, max-age=0, must-revalidate`,
     },
   });
 
-  await cache.put(cacheKey, response.clone());
   return response;
 }
 

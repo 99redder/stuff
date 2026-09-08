@@ -482,15 +482,18 @@
       if (card) card.remove();
     }
 
-    async function loadSummary() {
+    async function loadSummary({ silent = false } = {}) {
       if (isLoading) return;
       isLoading = true;
       els.refresh.disabled = true;
-      els.status.textContent = 'Updating...';
+      if (!silent || !hasData) els.status.textContent = 'Updating...';
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
       try {
         const response = await fetch(API, {
           method: 'POST',
           cache: 'no-store',
+          signal: controller.signal,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'get_mom_budget_public_summary' })
         });
@@ -511,6 +514,7 @@
           showError('Could not load right now. Check the connection and tap ↻ to try again.');
         }
       } finally {
+        clearTimeout(timeout);
         isLoading = false;
         els.refresh.disabled = false;
       }
@@ -594,18 +598,18 @@
       const now = Date.now();
       if (now - lastAutoFetch < 4000) return; // collapse duplicate wake events (focus + visibilitychange)
       lastAutoFetch = now;
-      loadSummary();
+      loadSummary({ silent: true });
     }
-    // Also poll once a minute while the app is actually on screen, so the figures stay
+    // Also poll every five seconds while the app is actually on screen, so the figures stay
     // current even if she leaves it open without ever backgrounding or locking the phone.
     // The timer only runs while visible — it is cleared when hidden, so it never uses
     // battery or data in the background.
-    const POLL_MS = 60000;
+    const POLL_MS = 5000;
     let pollTimer = null;
     function startPolling() {
-      if (pollTimer === null) {
+      if (pollTimer === null && document.visibilityState === 'visible') {
         pollTimer = setInterval(() => {
-          if (document.visibilityState === 'visible') loadSummary();
+          if (document.visibilityState === 'visible') loadSummary({ silent: true });
         }, POLL_MS);
       }
     }
