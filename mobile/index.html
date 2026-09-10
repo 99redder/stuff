@@ -231,7 +231,11 @@
       }
       if(state.view==='savings' && (force||!state.data.robinhood)){state.robinhoodLoading=true;pullRobinhood=true;}
       if(state.view==='mom' && (force||!state.data.mom)) state.data.mom=(await api({action:'get_mom_budget'})).data||{};
-      if(state.view==='health' && (force||!state.data.health)) state.data.health=(await api({action:'get_health'})).data||{};
+      if(state.view==='health' && (force||!state.data.health)) {
+        const health=(await api({action:'get_health'})).data||{};
+        if(healthApplySept14Restart(health) || healthApplyEquipmentV1(health)) await api({action:'save_health',data:health});
+        state.data.health=health;
+      }
       if((state.view==='cashflow'||state.view==='properties') && (force||!state.data.transactions)){
         const results=await Promise.all(PROPERTIES.map(property=>api({action:'get_transactions',property})));
         state.data.transactions=Object.fromEntries(PROPERTIES.map((p,i)=>[p,results[i].transactions||[]]));
@@ -492,6 +496,109 @@
   // setup/normalization; this reads the `health` record, lets you check off the
   // workout, add/edit/delete food, view weight, and mark rewards/habits, then
   // saves the whole record back via save_health.
+// ── Health gradual restart (keep this block identical in desktop + mobile) ──
+const HEALTH_RESTART_DATE = '2026-09-14';
+const HEALTH_RAMP_STAGES = [
+  { week: 1, title: 'Start easy', walkMinutes: 10, note: 'One easy strength exercise on Mon, Tue, Thu and Fri. Wednesday is just a walk.' },
+  { week: 3, title: 'Build the habit', walkMinutes: 15, note: 'Add a short plank, curls or bench press. Each new movement starts with one set.' },
+  { week: 5, title: 'Add a little variety', walkMinutes: 20, note: 'Add one more movement on strength days and a gentle dead bug on Wednesday.' },
+  { week: 7, title: 'Build steadily', walkMinutes: 25, note: 'Add Monday pull-downs, Thursday twists and Friday planks.' },
+  { week: 9, title: 'Round out the routine', walkMinutes: 30, note: 'Introduce short-range ab wheel work on Monday and Wednesday leg raises.' },
+  { week: 11, title: 'Keep it consistent', walkMinutes: 30, note: 'Bring in the remaining movements. Sets grow gradually to a maximum of three; walks stay at 30 minutes.' },
+];
+const HEALTH_RAMP_EXERCISES = {
+  'mo-pu': [1, 'push'], 'mo-plank': [3, 'plank'], 'mo-cp': [5, 'bench'], 'mo-lpd': [7, 'lat'], 'mo-roll': [9, 'abwheel'], 'mo-bike': [11, 'bicycle'], 'mo-walk': [1, 'walk'],
+  'tu-lpd': [1, 'lat'], 'tu-curl': [3, 'curl'], 'tu-bike': [5, 'bicycle'], 'tu-walk': [1, 'walk'],
+  'we-walk': [1, 'walk'], 'we-db': [5, 'deadbug'], 'we-lr': [9, 'leg'], 'we-roll': [11, 'abwheel'],
+  'th-pu': [1, 'push'], 'th-cp': [3, 'bench'], 'th-roll': [5, 'abwheel'], 'th-twist': [7, 'twist'], 'th-walk': [1, 'walk'],
+  'fr-lpd': [1, 'lat'], 'fr-curl': [3, 'curl'], 'fr-lr': [5, 'leg'], 'fr-plank': [7, 'plank'], 'fr-pu': [11, 'push'], 'fr-walk': [1, 'walk'],
+};
+function healthApplySept14Restart(h) {
+  if (!h.profile || h.profile.sept142026ResetV1) return false;
+  h.profile.startDate = HEALTH_RESTART_DATE;
+  h.profile.sept2026ResetV1 = true; // supersedes the earlier Sep 7 reset
+  h.profile.sept142026ResetV1 = true;
+  h.days = {};
+  h.weighIns = [];
+  for (const [wd, exercises] of Object.entries(h.workoutPlan || {})) {
+    if (!Array.isArray(exercises)) continue;
+    h.workoutPlan[wd] = exercises.filter(e => e && (!/band/i.test(e.name || '') || /biceps curl/i.test(e.name || ''))).map((e, i) => {
+      const rule = HEALTH_RAMP_EXERCISES[e.id];
+      // Keep custom movements and their instructions, introducing them later.
+      return rule ? { ...e, ramp: { startWeek: rule[0], kind: rule[1] } }
+        : { ...e, startWeek: Math.min(11, 3 + i * 2) };
+    });
+  }
+  return true;
+}
+function healthApplyEquipmentV1(h) {
+  if (!h.profile || h.profile.healthEquipmentV1) return false;
+  const byId = HEALTH_RAMP_EXERCISES;
+  for (const [wd, exercises] of Object.entries(h.workoutPlan || {})) {
+    if (!Array.isArray(exercises)) continue;
+    h.workoutPlan[wd] = exercises
+      .filter(e => e && (!/band/i.test(e.name || '') || /biceps\s*curl/i.test(e.name || '')))
+      .map(e => {
+        const rule = byId[e.id];
+        if (!rule) return e;
+        const next = { ...e, ramp: { startWeek: rule[0], kind: rule[1] } };
+        if (rule[1] === 'push') { next.name = 'Push-Ups'; next.detail = next.detail || 'Regular push-ups'; }
+        if (rule[1] === 'bench') next.name = 'Bench Press';
+        if (rule[1] === 'abwheel') next.name = 'Ab Wheel';
+        if (rule[1] === 'curl') next.name = 'Band Biceps Curl';
+        return next;
+      });
+  }
+  h.profile.healthEquipmentV1 = true;
+  return true;
+}
+function healthProgramWeek(iso, h) {
+  const start = h.profile.startDate || HEALTH_RESTART_DATE;
+  return Math.max(0, Math.floor((Date.parse(iso + 'T12:00:00Z') - Date.parse(start + 'T12:00:00Z')) / 604800000) + 1);
+}
+function healthRampStage(week) {
+  return [...HEALTH_RAMP_STAGES].reverse().find(s => week >= s.week) || HEALTH_RAMP_STAGES[0];
+}
+function healthExerciseForWeek(e, week) {
+  const startWeek = Number(e.ramp ? e.ramp.startWeek : e.startWeek) || 1;
+  if (week < startWeek) return null;
+  if (!e.ramp) return { ...e };
+  const age = Math.floor((week - startWeek) / 2);
+  const inferredKind = !e.ramp && /push[- ]?ups?/i.test(e.name || '') ? 'push'
+    : (!e.ramp && /bench\s*press/i.test(e.name || '') ? 'bench'
+      : (!e.ramp && /ab\s*(roller|wheel)/i.test(e.name || '') ? 'abwheel' : null));
+  const kind = e.ramp ? e.ramp.kind : inferredKind;
+  if (kind === 'walk') {
+    const minutes = healthRampStage(week).walkMinutes;
+    return { ...e, name: week < 5 ? 'Easy Walk' : 'Steady Walk', sets: 1, detail: `${minutes} min at a comfortable pace — splitting it into shorter walks counts` };
+  }
+  const sets = Math.min(3, 1 + Math.floor(age / 2));
+  const reps = age === 0 ? '5' : (age === 1 ? '6–8' : '8–10');
+  const details = {
+    push: `${sets} × ${reps} — regular push-ups; stop with a few comfortable reps left`,
+    bench: `${sets} × ${age < 2 ? '8' : '8–10'} — light bench press weight, controlled movement`,
+    lat: `${sets} × ${age < 2 ? '8' : '8–10'} — light lat pull-down weight, controlled movement`,
+    curl: `${sets} × ${age < 2 ? '8' : '10–12'} — light band, controlled movement`,
+    plank: `${sets} × ${age === 0 ? '10' : (age < 3 ? '15–20' : '20–30')} sec — front plank; knees down is fine`,
+    abwheel: `${sets} × ${age < 2 ? '3–5' : '5–8'} — kneeling, short comfortable range`,
+    bicycle: `${sets} × ${age < 2 ? '8' : '12'} total — slow and controlled`,
+    deadbug: `${sets} × ${age < 2 ? '5' : '8'} / side — slow and controlled`,
+    leg: `${sets} × ${age < 2 ? '5' : '8–10'} — bend knees if needed`,
+    twist: `${sets} × ${age < 2 ? '8' : '12'} total — feet on floor, no added weight`,
+  };
+  const displayName = kind === 'push' ? 'Push-Ups' : (kind === 'bench' ? 'Bench Press' : (kind === 'abwheel' ? 'Ab Wheel' : (kind === 'plank' ? 'Front Plank' : (kind === 'curl' ? 'Band Biceps Curl' : e.name))));
+  return { ...e, name: displayName, sets, detail: details[kind] || e.detail };
+}
+function healthWorkoutsForDate(iso, h) {
+  const snapshot = h.days && h.days[iso] && h.days[iso].workoutSnapshot;
+  if (Array.isArray(snapshot)) return snapshot.map(e => ({ ...e }));
+  const week = healthProgramWeek(iso, h);
+  const wd = new Date(iso + 'T12:00:00Z').getUTCDay();
+  if (!week || wd === 0 || wd === 6) return [];
+  return ((h.workoutPlan && h.workoutPlan[wd]) || []).map(e => healthExerciseForWeek(e, week)).filter(Boolean);
+}
+// ── End Health gradual restart ──────────────────────────────────────────────
+
   const H_WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const H_WD_LONG=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   const M_ABBR=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -499,7 +606,7 @@
   const hid=()=>crypto.randomUUID?crypto.randomUUID():'h_'+Math.random().toString(36).slice(2);
   const healthTodayISO=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'}).format(new Date());
   // Mirror desktop: before the program starts, land on the start date (a Monday); once underway, use today.
-  const HEALTH_DEFAULT_START='2026-08-17';
+  const HEALTH_DEFAULT_START=HEALTH_RESTART_DATE;
   function healthActiveISO(h){const t=healthTodayISO(),s=(h&&h.profile&&h.profile.startDate)||HEALTH_DEFAULT_START;return t>=s?t:s;}
   function healthWeekday(iso){const [y,m,d]=String(iso).split('-').map(Number);return new Date(Date.UTC(y,m-1,d)).getUTCDay();}
   function fmtDay(iso){const [,m,d]=String(iso).split('-');return `${M_ABBR[+m-1]||''} ${+d}`;}
@@ -520,12 +627,10 @@
     return {calories:cals,protein,weight:wLb};
   }
   function healthHabitGoal(h,hb,wd){const f=h.profile&&h.profile.fasting;if(f&&f.weekday===wd&&hb.id==='water'&&n(f.waterGoal)>0)return n(f.waterGoal);return n(hb.goal)||1;}
-  // The day's exercises, minus dropped moves (Resistance Band Chest Fly). Mobile
-  // reads the shared record directly, so filter here too in case the desktop
-  // removal migration hasn't saved yet.
-  function hPlanFor(h,wd){return ((h.workoutPlan&&h.workoutPlan[wd])||[]).filter(e=>e&&e.id!=='mo-fly'&&!/resistance band chest fly/i.test(e.name||''));}
+  // Use the same dated requirements for display, checkboxes, rewards and history.
+  function hPlanFor(h,iso){return healthWorkoutsForDate(iso,h);}
   function hUnlocked(h,iso){
-    const wd=healthWeekday(iso),d=healthDay(h,iso),exs=hPlanFor(h,wd),isRest=wd===0||wd===6;
+    const wd=healthWeekday(iso),d=healthDay(h,iso),exs=hPlanFor(h,iso),isRest=wd===0||wd===6;
     const wDone=exs.filter(e=>healthExDone(d,e)).length,workoutOk=isRest?true:(exs.length>0&&wDone===exs.length);
     const consumed=sum(d.foodLog,x=>n(x.calories));return workoutOk&&consumed>0&&consumed<=healthTargets(h).calories;
   }
@@ -554,29 +659,29 @@
     const frames=reduce?[{opacity:0},{opacity:1,offset:.15},{opacity:1,offset:.75},{opacity:0}]:[{opacity:0,transform:'translate(-50%,-50%) scale(.7)'},{opacity:1,transform:'translate(-50%,-50%) scale(1.06)',offset:.2},{opacity:1,transform:'translate(-50%,-50%) scale(1)',offset:.7},{opacity:0,transform:'translate(-50%,-50%) scale(.95) translateY(-16px)'}];
     t.animate(frames,{duration:big?1600:1150,easing:'ease-out'}).onfinish=function(){t.remove();};
   }
-  function hToggleWorkout(exId,ev){healthMutate(h=>{const iso=healthActiveISO(h),d=healthDay(h,iso),nowDone=!d.workoutsDone[exId];d.workoutsDone[exId]=nowDone;
-    if(nowDone){const exs=(h.workoutPlan&&h.workoutPlan[healthWeekday(iso)])||[],all=exs.length>0&&exs.every(e=>d.workoutsDone[e.id]);hCelebrate(ev,all?'🎉 Workout complete!':hCheer(),all);}});}
+  function hToggleWorkout(exId,ev){healthMutate(h=>{const iso=healthActiveISO(h),d=healthDay(h,iso),exs=hPlanFor(h,iso),e=exs.find(x=>x.id===exId);if(!e)return;const nowDone=!healthExDone(d,e);d.workoutsDone[exId]=nowDone;
+    if(nowDone){const all=exs.every(e=>healthExDone(d,e));hCelebrate(ev,all?'🎉 Workout complete!':hCheer(),all);}});}
   // ── Per-set workout tracking (mirrors desktop) ──
   function healthExerciseSets(e){if(e&&n(e.sets)>0)return Math.min(12,Math.round(n(e.sets)));const d=String((e&&e.detail)||'');const m=d.match(/(\d+)\s*sets?\b/i)||d.match(/(\d+)\s*[×x]/i);return Math.min(12,Math.max(1,m?parseInt(m[1],10):1));}
   function healthSetStates(day,e){const total=healthExerciseSets(e),arr=new Array(total).fill(false),v=day&&day.workoutsDone?day.workoutsDone[e.id]:undefined;if(v===true)arr.fill(true);else if(Array.isArray(v))for(let i=0;i<total;i++)arr[i]=!!v[i];else if(n(v)>0){const k=Math.min(total,Math.round(n(v)));for(let i=0;i<k;i++)arr[i]=true;}return arr;}
   function healthExDone(day,e){const s=healthSetStates(day,e);return s.length>0&&s.every(Boolean);}
   function healthExAny(day,e){return healthSetStates(day,e).some(Boolean);}
-  function hToggleSet(exId,idx,ev){healthMutate(h=>{const iso=healthActiveISO(h),d=healthDay(h,iso),exs=(h.workoutPlan&&h.workoutPlan[healthWeekday(iso)])||[],e=exs.find(x=>x.id===exId);if(!e)return;const arr=healthSetStates(d,e);if(idx<0||idx>=arr.length)return;const becoming=!arr[idx];arr[idx]=becoming;const all=arr.every(Boolean),any=arr.some(Boolean);d.workoutsDone[exId]=all?true:(any?arr:false);if(becoming){const wDone=exs.length>0&&exs.every(x=>healthExDone(d,x));if(wDone)hCelebrate(ev,'🎉 Workout complete!',true);else if(all)hCelebrate(ev,hCheer(),false);}});}
-  function hMarkAllSets(exId,ev){healthMutate(h=>{const iso=healthActiveISO(h),d=healthDay(h,iso),exs=(h.workoutPlan&&h.workoutPlan[healthWeekday(iso)])||[],e=exs.find(x=>x.id===exId);if(!e)return;const was=healthExDone(d,e);d.workoutsDone[exId]=was?false:true;if(!was){const wDone=exs.length>0&&exs.every(x=>healthExDone(d,x));hCelebrate(ev,wDone?'🎉 Workout complete!':hCheer(),wDone);}});}
-  function hMarkWorkout(ev){healthMutate(h=>{const iso=healthActiveISO(h),d=healthDay(h,iso),exs=(h.workoutPlan&&h.workoutPlan[healthWeekday(iso)])||[];if(!exs.length)return;const all=exs.every(e=>healthExDone(d,e));exs.forEach(e=>d.workoutsDone[e.id]=all?false:true);if(!all)hCelebrate(ev,'🎉 Workout complete!',true);});}
+  function hToggleSet(exId,idx,ev){healthMutate(h=>{const iso=healthActiveISO(h),d=healthDay(h,iso),exs=hPlanFor(h,iso),e=exs.find(x=>x.id===exId);if(!e)return;const arr=healthSetStates(d,e);if(idx<0||idx>=arr.length)return;const becoming=!arr[idx];arr[idx]=becoming;const all=arr.every(Boolean),any=arr.some(Boolean);d.workoutsDone[exId]=all?true:(any?arr:false);if(becoming){const wDone=exs.length>0&&exs.every(x=>healthExDone(d,x));if(wDone)hCelebrate(ev,'🎉 Workout complete!',true);else if(all)hCelebrate(ev,hCheer(),false);}});}
+  function hMarkAllSets(exId,ev){healthMutate(h=>{const iso=healthActiveISO(h),d=healthDay(h,iso),exs=hPlanFor(h,iso),e=exs.find(x=>x.id===exId);if(!e)return;const was=healthExDone(d,e);d.workoutsDone[exId]=was?false:true;if(!was){const wDone=exs.length>0&&exs.every(x=>healthExDone(d,x));hCelebrate(ev,wDone?'🎉 Workout complete!':hCheer(),wDone);}});}
+  function hMarkWorkout(ev){healthMutate(h=>{const iso=healthActiveISO(h),d=healthDay(h,iso),exs=hPlanFor(h,iso);if(!exs.length)return;const all=exs.every(e=>healthExDone(d,e));exs.forEach(e=>d.workoutsDone[e.id]=all?false:true);if(!all)hCelebrate(ev,'🎉 Workout complete!',true);});}
   // ── Close Day: achievement summary (mirrors desktop) ──
   function hAddDays(iso,delta){const [y,m,dd]=String(iso).split('-').map(Number);return new Date(Date.UTC(y,m-1,dd+delta)).toISOString().slice(0,10);}
   function hDayTotals(day){return (day.foodLog||[]).reduce((t,f)=>{const q=Math.max(1,n(f.qty)||1);t.calories+=n(f.calories)*q;t.protein+=n(f.protein)*q;t.carbs+=n(f.carbs)*q;t.fat+=n(f.fat)*q;return t;},{calories:0,protein:0,carbs:0,fat:0});}
-  function hDayAdherence(h,iso){const wd=healthWeekday(iso),isRest=wd===0||wd===6,d=(h.days&&h.days[iso])||null,t=healthTargets(h);const totals=d?hDayTotals(d):{calories:0,protein:0};const exs=isRest?[]:hPlanFor(h,wd);const wDone=d?exs.filter(e=>healthExDone(d,e)).length:0;const anyW=!!d&&exs.some(e=>healthExAny(d,e));const workoutOk=isRest?true:(exs.length>0&&wDone===exs.length);const hasFood=totals.calories>0,calOk=hasFood&&totals.calories<=t.calories;const list=(h.profile&&h.profile.habits)||[],dh=(d&&d.habits)||{};const habitsMet=list.filter(hb=>hb.type==='counter'?n(dh[hb.id])>=healthHabitGoal(h,hb,wd):n(dh[hb.id])>=1).length;const habitsOk=list.length>0&&habitsMet===list.length;const proteinMet=t.protein>0&&totals.protein>=t.protein;const hasData=!!d&&(hasFood||anyW||Object.values(dh).some(v=>v)||d.rewardAm||d.rewardPm);return{wd,isRest,workoutOk,calOk,habitsOk,habitsMet,habitsTotal:list.length,proteinMet,hasData,wDone,wTotal:exs.length,totals,goal:t.calories,t};}
+  function hDayAdherence(h,iso){const wd=healthWeekday(iso),isRest=wd===0||wd===6,d=(h.days&&h.days[iso])||null,t=healthTargets(h);const totals=d?hDayTotals(d):{calories:0,protein:0};const exs=isRest?[]:hPlanFor(h,iso);const wDone=d?exs.filter(e=>healthExDone(d,e)).length:0;const anyW=!!d&&exs.some(e=>healthExAny(d,e));const workoutOk=isRest?true:(exs.length>0&&wDone===exs.length);const hasFood=totals.calories>0,calOk=hasFood&&totals.calories<=t.calories;const list=(h.profile&&h.profile.habits)||[],dh=(d&&d.habits)||{};const habitsMet=list.filter(hb=>hb.type==='counter'?n(dh[hb.id])>=healthHabitGoal(h,hb,wd):n(dh[hb.id])>=1).length;const habitsOk=list.length>0&&habitsMet===list.length;const proteinMet=t.protein>0&&totals.protein>=t.protein;const hasData=!!d&&(hasFood||anyW||Object.values(dh).some(v=>v)||d.rewardAm||d.rewardPm);return{wd,isRest,workoutOk,calOk,habitsOk,habitsMet,habitsTotal:list.length,proteinMet,hasData,wDone,wTotal:exs.length,totals,goal:t.calories,t};}
   function hStreak(h){let d=healthActiveISO(h),streak=0,first=true;const start=(h.profile&&h.profile.startDate)||HEALTH_DEFAULT_START;for(let i=0;i<400;i++){if(start&&d<start)break;const a=hDayAdherence(h,d);if(a.workoutOk&&a.calOk)streak++;else if(first&&!a.hasData){}else break;first=false;d=hAddDays(d,-1);}return streak;}
   function hWeightProjection(h){const start=(h.profile&&h.profile.startDate)||HEALTH_DEFAULT_START,goal=n(h.profile&&h.profile.goalWeight)||155;const w=(h.weighIns||[]).slice().sort((a,b)=>String(b.date).localeCompare(String(a.date)));const cur=w.length?n(w[0].weight):(n(h.profile&&h.profile.startWeight)||185);const lbToGo=+(cur-goal).toFixed(1);const ins=(h.weighIns||[]).filter(x=>!start||x.date>=start).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));if(lbToGo<=0)return{status:'reached',goal,lbToGo:0};if(ins.length<2)return{status:'need-data',goal,lbToGo,have:ins.length};const f=ins[0],l=ins[ins.length-1];const weeks=(Date.parse(l.date+'T12:00:00Z')-Date.parse(f.date+'T12:00:00Z'))/(7*86400000);const rate=weeks>0?(n(f.weight)-n(l.weight))/weeks:0;const target=n(h.profile&&h.profile.ratePerWeek)||1;if(rate<=0.05)return{status:'stalled',goal,lbToGo,rate};const weeksToGoal=lbToGo/rate;return{status:'ok',goal,lbToGo,rate,proj:hAddDays(healthTodayISO(),Math.ceil(weeksToGoal*7)),weeksToGoal,target};}
-  function hStrengthOutlook(week){const w=Math.max(1,week);if(w<2)return `You're in week ${w}. Early gains are <b>neural</b> — you'll feel stronger before you see it. Physical changes usually start around <b>weeks 4–6</b>.`;if(w<4)return `Week ${w}. Strength is climbing fast. Firmness and better pumps show first; visible <b>definition tends to appear around weeks 4–8</b>.`;if(w<8)return `Week ${w}. This is when <b>definition starts to show</b>, especially as body-fat drops — you'll notice it in the mirror before others do.`;if(w<12)return `Week ${w}. Noticeable definition should be emerging — changes often become <b>visible to others around weeks 10–12</b>.`;return `Week ${w}. Keep adding reps/resistance (progressive overload) to keep building.`;}
+  function hStrengthOutlook(week){const w=Math.max(1,week),stage=healthRampStage(w);return `Week ${w} · <b>${esc(stage.title)}</b>. Completing today’s smaller checklist counts as a full workout. Build consistency and comfortable movement as the plan gradually grows.`;}
   const H_TIERS={perfect:{emoji:'🏆',head:'Perfect Day!',grad:'linear-gradient(135deg,#e9b85f,#c68a2e)',conf:60,sub:'You hit every goal today. Elite discipline. 🔥'},gold:{emoji:'🥇',head:'Great day!',grad:'linear-gradient(135deg,#43b9a1,#176b5b)',conf:40,sub:'Almost everything checked off — you are crushing this.'},silver:{emoji:'🥈',head:'Solid effort!',grad:'linear-gradient(135deg,#4a8fe0,#2563eb)',conf:24,sub:'Real progress today. Grab one more goal tomorrow.'},bronze:{emoji:'🥉',head:'On the board',grad:'linear-gradient(135deg,#a855f7,#7c3aed)',conf:12,sub:'You showed up and logged it. That is how it starts.'},seed:{emoji:'🌱',head:'Tomorrow’s a fresh start',grad:'linear-gradient(135deg,#5b6b82,#3a4759)',conf:0,sub:'No perfect days required. Reset and go again.'}};
   function hDaySummary(h,iso){const a=hDayAdherence(h,iso),d=healthDay(h,iso),wd=a.wd,totals=a.totals;const ach=[];ach.push(a.isRest?{icon:'😌',label:'Rested & recovered',earned:true}:{icon:'🏋️',label:`Workout complete (${a.wDone}/${a.wTotal})`,earned:a.workoutOk});ach.push({icon:'🍽️',label:a.calOk?'Ate on-target':(totals.calories>0?(totals.calories>a.goal?'Over calories':'Logged your food'):'No food logged'),earned:a.calOk});ach.push({icon:'💪',label:'Protein goal',earned:a.proteinMet});ach.push({icon:'✅',label:`Habits (${a.habitsMet}/${a.habitsTotal})`,earned:a.habitsTotal>0&&a.habitsOk});if(wd>=1&&wd<=5)ach.push({icon:'🎁',label:'Reward earned',earned:!!(d.rewardAm||d.rewardPm)});const possible=ach.length,earned=ach.filter(x=>x.earned).length;let tier;if(earned>=possible)tier='perfect';else if(earned>=possible-1)tier='gold';else if(earned>=Math.ceil(possible/2))tier='silver';else if(earned>=1)tier='bronze';else tier='seed';return{a,ach,possible,earned,tier,streak:hStreak(h)};}
   function hCloseDay(){const h=state.data.health;if(h)hShowDaySummary(healthActiveISO(h));}
   function hReopenDay(){healthMutate(h=>{healthDay(h,healthActiveISO(h)).closed=false;});}
   function hCloseSummary(){document.getElementById('h-summary')?.remove();}
-  function hConfirmClose(){document.getElementById('h-summary')?.remove();healthMutate(h=>{const d=healthDay(h,healthActiveISO(h));d.closed=true;d.totals=hDayTotals(d);});}
+  function hConfirmClose(){document.getElementById('h-summary')?.remove();healthMutate(h=>{const iso=healthActiveISO(h),d=healthDay(h,iso);d.workoutSnapshot=hPlanFor(h,iso);d.closed=true;d.totals=hDayTotals(d);});}
   function hShowDaySummary(iso){document.getElementById('h-summary')?.remove();const h=state.data.health;if(!h)return;const s=hDaySummary(h,iso),tier=H_TIERS[s.tier],a=s.a,t=a.t,totals=a.totals;
     const stat=(icon,label,val,sub,color)=>`<div style="flex:1;min-width:70px;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:8px 6px;text-align:center"><div style="font-size:1rem">${icon}</div><div style="font-size:1.05rem;font-weight:800;color:${color||'var(--ink)'};line-height:1.2">${val}</div><div style="font-size:.58rem;color:var(--muted);text-transform:uppercase;font-weight:800;letter-spacing:.03em">${label}</div>${sub?`<div style="font-size:.58rem;color:var(--muted)">${sub}</div>`:''}</div>`;
     const stats=`<div style="display:flex;gap:7px;flex-wrap:wrap;margin:12px 0 4px">${stat('🔥','Cal',Math.round(totals.calories),'of '+Math.round(a.goal),a.calOk?'var(--good)':(totals.calories>a.goal?'var(--bad)':'var(--ink)'))}${stat('💪','Protein',Math.round(totals.protein)+'g','of '+Math.round(t.protein),a.proteinMet?'var(--good)':'var(--ink)')}${a.isRest?stat('😌','Train','Rest','recovery'):stat('🏋️','Workout',a.wDone+'/'+a.wTotal,'exercises',a.workoutOk?'var(--good)':'var(--ink)')}${stat('✅','Habits',a.habitsMet+'/'+a.habitsTotal,'',(a.habitsTotal>0&&a.habitsOk)?'var(--good)':'var(--ink)')}</div>`;
@@ -656,7 +761,7 @@
     const fQty=f=>Math.max(1,n(f.qty)||1);
     const consumed=sum(day.foodLog,f=>n(f.calories)*fQty(f)),proteinC=sum(day.foodLog,f=>n(f.protein)*fQty(f)),remaining=t.calories-consumed,over=consumed>t.calories;
 
-    const isRest=wd===0||wd===6,exs=hPlanFor(h,wd),wDone=exs.filter(e=>healthExDone(day,e)).length;
+    const isRest=wd===0||wd===6,exs=hPlanFor(h,iso),wDone=exs.filter(e=>healthExDone(day,e)).length;
     const totalSets=exs.reduce((s,e)=>s+healthExerciseSets(e),0),doneSets=exs.reduce((s,e)=>s+healthSetStates(day,e).filter(Boolean).length,0);
     const setPip=(exId,on,i,tot)=>`<label style="display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border-radius:999px;border:1px solid ${on?'var(--green2)':'var(--line)'};background:${on?'var(--mint)':'transparent'};color:${on?'var(--good)':'var(--muted)'};font-size:.8rem;font-weight:700"><input type="checkbox" ${on?'checked':''} onchange="hToggleSet('${exId}',${i},event)" style="width:19px;height:19px;accent-color:var(--green2);margin:0">${tot>1?'Set '+(i+1):'Done'}</label>`;
     const workoutRows=isRest?`<div class="empty">😌 Rest & recovery day. An easy walk is fine.</div>`
@@ -666,6 +771,8 @@
         return `<div class="h-row" style="${rowStyle}"><div style="width:100%"><div class="h-name" style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><span style="${exDone?'color:var(--good);font-weight:700':''}">${esc(e.name)}${exDone?' ✓':''}</span><span class="${exDone?'good':''}" style="font-weight:800;white-space:nowrap;font-size:.85rem">${sd}/${tot}${exDone?' ✓':''}</span></div>${e.detail?`<div class="h-sub">${esc(e.detail)}</div>`:''}<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">${pips}</div></div></div>`;
       }).join(''):'<div class="empty">No workout set for today.</div>');
     const allExDone=exs.length>0&&wDone===exs.length;
+    const week=healthProgramWeek(iso,h),stage=healthRampStage(week),next=HEALTH_RAMP_STAGES.find(s=>s.week>week);
+    const progression=isRest?'':`<div class="h-banner"><strong>🌱 Week ${Math.max(1,week)} · ${esc(stage.title)}</strong><div>Only the items shown are required. New movements start at one set and gain a set every four weeks, up to three.</div>${next?`<div style="margin-top:5px">Next step: ${fmtDay(hAddDays(h.profile.startDate,(next.week-1)*7))} · ${esc(next.title)}</div>`:''}</div>`;
     const workoutCard=`<section class="card"><div class="card-head"><div class="card-title">🏋️ Workout · ${H_WD[wd]}</div>${isRest?'':`<span class="pill">${wDone}/${exs.length} · ${doneSets}/${totalSets} sets</span>`}</div>${isRest||!exs.length?'':`<div style="padding:0 12px 6px"><button onclick="hMarkWorkout(event)" style="width:100%;padding:10px;border-radius:12px;border:1px solid var(--line);background:transparent;color:var(--ink);font-weight:800;font-size:.9rem">${allExDone?'Clear all':'✓ Mark all done'}</button></div>`}<div class="rows">${workoutRows}</div></section>`;
 
     const topFoods=(h.foods||[]).slice().sort((a,b)=>n(b.uses)-n(a.uses)||String(a.name).localeCompare(String(b.name))).slice(0,6);
@@ -732,7 +839,7 @@
       ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><span style="font-weight:800;color:var(--good)">✓ Day closed</span><button onclick="hReopenDay()" style="padding:9px 14px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--muted);font-weight:700">Reopen</button></div>`
       : `<button onclick="hCloseDay()" style="width:100%;padding:13px;border-radius:12px;border:none;background:var(--green);color:#fff;font-weight:800;font-size:1rem">Close Day →</button>`}</div></section>`;
     return `<div class="hero"><div class="hero-label">${H_WD_LONG[wd]} · ${over?'Over by':'Calories left'}</div><div class="hero-value">${over?'−':''}${Math.abs(Math.round(remaining))}</div><div class="hero-note">${Math.round(consumed)} eaten of ${t.calories} kcal · ${Math.round(proteinC)}/${t.protein}g protein</div></div>
-      ${startBanner}${fastBanner}${workoutCard}${foodCard}${weightCard}${rewardCard}${habitsCard}${closeCard}`;
+      ${startBanner}${fastBanner}${progression}${workoutCard}${foodCard}${weightCard}${rewardCard}${habitsCard}${closeCard}`;
   }
 
   function render(){

@@ -15,6 +15,7 @@ import {
   modifiedDietzPerformance,
   stockStickiesAccountValues,
 } from './performance-calculations.js';
+import { requestRobinhoodInvestmentsRefresh } from './stock-stickies-plaid-refresh.js';
 
 const VALID_PROPERTIES = ['6AL', '95EB', '446BB', '731WO', '4781MC'];
 const MOVE_IN_PURCHASE_PROPERTY = '4781MC';
@@ -3736,26 +3737,9 @@ async function handleStockStickiesPlaidRefresh(env, corsHeaders) {
 
   try {
     const { accessToken, item } = await findRobinhoodPlaidItem(env);
-    const { ok, status, payload } = await plaidPost(env, '/investments/refresh', {
-      access_token: accessToken,
-    });
-    if (!ok) {
-      const code = String(payload.error_code || payload.error_type || 'UNKNOWN_ERROR').slice(0, 80);
-      const requestId = String(payload.request_id || '').slice(0, 120);
-      const error = new Error(
-        code === 'PRODUCT_NOT_SUPPORTED'
-          ? 'Robinhood does not support Plaid’s on-demand Investments Refresh for this connection.'
-          : code === 'PRODUCT_NOT_ENABLED'
-            ? 'Plaid Investments Refresh is not enabled for this production connection.'
-            : code === 'ITEM_LOGIN_REQUIRED'
-              ? 'Robinhood must be reconnected before positions can be refreshed.'
-              : 'Plaid could not complete a fresh Robinhood position extraction.'
-      );
-      error.code = code;
-      error.status = status;
-      error.requestId = requestId;
-      throw error;
-    }
+    const { payload } = await requestRobinhoodInvestmentsRefresh(() =>
+      plaidPost(env, '/investments/refresh', { access_token: accessToken })
+    );
 
     const snapshot = await refreshStockStickiesHoldingsSnapshot(env);
     const performance = await buildStockStickiesPerformance(
@@ -3807,8 +3791,8 @@ async function handleStockStickiesPlaidRefresh(env, corsHeaders) {
         : 'Robinhood positions could not be refreshed.',
       code: String(error?.code || 'UNKNOWN_ERROR').slice(0, 80),
       requestId: String(error?.requestId || '').slice(0, 120),
-      needsConsent: error?.code === 'ITEM_LOGIN_REQUIRED',
-    }, error?.code === 'ITEM_LOGIN_REQUIRED'
+      needsConsent: error?.needsConsent === true || error?.code === 'ITEM_LOGIN_REQUIRED',
+    }, error?.needsConsent === true || error?.code === 'ITEM_LOGIN_REQUIRED'
       ? 409
       : error?.code === 'PLAID_UPSTREAM_TIMEOUT'
         ? 504

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "node --test src/performance-calculations.test.mjs"
+    "test": "node --test src/*.test.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.110.0"

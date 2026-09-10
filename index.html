@@ -1664,6 +1664,23 @@
   </div>
 </div>
 
+<!-- ── Treasury Bond Payout Schedule Modal ── -->
+<div class="modal-overlay hidden" id="budget-treasury-modal" onclick="handleModalOverlayClick(event,'budget-treasury-modal')">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="budget-treasury-title" style="max-width:560px">
+    <div class="modal-header">
+      <div class="modal-icon primary">📅</div>
+      <div>
+        <div class="modal-title" id="budget-treasury-title">Treasury Bond Payouts</div>
+        <div class="modal-subtitle">Semiannual coupon schedule from your Net Worth bonds</div>
+      </div>
+    </div>
+    <div class="modal-body" id="budget-treasury-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeBudgetTreasuryModal()">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Move-In Purchase Categories Modal ── -->
 <div class="modal-overlay hidden" id="mip-categories-modal" onclick="handleModalOverlayClick(event,'mip-categories-modal')">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mip-cat-title" style="max-width:560px">
@@ -2863,6 +2880,7 @@ function handleModalOverlayClick(e, modalId) {
     if (modalId === 'edit-modal') closeEditModal();
     if (modalId === 'mom-template-modal') closeMomTemplateModal();
     if (modalId === 'budget-worksheet-modal') closeBudgetWorksheetModal();
+    if (modalId === 'budget-treasury-modal') closeBudgetTreasuryModal();
     if (modalId === 'solar-calc-modal') closeSolarCalcModal();
     if (modalId === 'fs-agreement-modal') closeFsAgreementModal();
     if (modalId === 'mip-categories-modal') closeMoveInCategoriesModal();
@@ -6792,12 +6810,22 @@ async function ensureBudgetLoaded() {
 
 async function renderBudget() {
   await ensureBudgetLoaded();
+  // Net Worth carries the specific Treasury bond holdings the Treasury Bond
+  // income line derives its monthly average from. Best-effort — if it fails to
+  // load, the treasury income line falls back to a plain editable amount.
+  try { await ensureNetWorthLoaded(false); } catch { /* leave treasury line manual */ }
+  // Persist the Treasury Bond line if its auto amount drifted, so the read-only
+  // mobile PWA and other consumers see the current bond-interest average.
+  const beforeTreasury = JSON.stringify(budgetTreasuryIncomeItem(state.budget) || null);
+  treasurySyncBudgetIncome();
+  if (JSON.stringify(budgetTreasuryIncomeItem(state.budget) || null) !== beforeTreasury) _saveBudget();
   _renderBudgetHtml();
 }
 
 function _renderBudgetHtml() {
   const b = state.budget;
   fsSyncBudgetIncome();   // keep Mom's reimbursement income line in sync
+  treasurySyncBudgetIncome();  // keep the Treasury Bond line synced to Net Worth bond interest
   const totalIncome = b.income.reduce((s, i) => s + (i.amount || 0), 0);
   const catTotals = {};
   let totalExpenses = 0;
@@ -6891,9 +6919,19 @@ function _renderBudgetHtml() {
     </div>`;
 
   const incomeRows = sortedIncome.map(item => {
-    // Auto-synced Mom Fair Share line — read-only, managed from the Fair Share card.
+    // Auto-synced lines — read-only, managed elsewhere.
     if (item.auto) {
       const incomeRowPct = totalIncome > 0 ? ((item.amount / totalIncome) * 100).toFixed(1) : '0.0';
+      // Treasury Bond interest — derived from Net Worth bonds; name opens the payout schedule.
+      if (item.autoType === 'treasury') {
+        return `<div class="budget-item">
+          <span class="budget-item-pct">${incomeRowPct}%</span>
+          <span class="budget-item-name" style="cursor:pointer;text-decoration:underline dotted" title="View coupon payout schedule" onclick="openBudgetTreasuryModal()">${escHtml(item.name)} <span style="font-size:.7rem;color:var(--text-muted)">📅 from Net Worth bonds</span></span>
+          <span class="budget-item-lock"><span style="display:inline-block;width:1.5rem"></span></span>
+          <span class="budget-item-amt">${fmt(item.amount)}/mo</span>
+          <span class="budget-item-actions"></span>
+        </div>`;
+      }
       const autoNote = '⚖️ from Fair Share';
       return `<div class="budget-item">
         <span class="budget-item-pct">${incomeRowPct}%</span>
@@ -7107,7 +7145,7 @@ function budgetAdd(section) {
 }
 
 async function budgetToggleLock(section, id) {
-  if (section === 'income' && id === FS_INCOME_ID) return;  // auto Fair Share line is read-only
+  if (section === 'income' && _budgetIncomeIsAuto(id)) return;  // auto lines are read-only
   const b = state.budget;
   const list = section === 'income' ? b.income : (b.expenses[section] || []);
   const item = list.find(i => i.id === id);
@@ -7116,7 +7154,14 @@ async function budgetToggleLock(section, id) {
   await _saveBudget();
 }
 
+// True for any auto-managed income line (Mom Fair Share, Treasury Bond interest).
+function _budgetIncomeIsAuto(id) {
+  if (id === FS_INCOME_ID) return true;
+  return !!state.budget?.income?.find(i => i.id === id)?.auto;
+}
+
 function budgetEdit(section, id) {
+  if (section === 'income' && _budgetIncomeIsAuto(id)) return;  // auto lines are read-only
   const b = state.budget;
   const list = section === 'income' ? b.income : (b.expenses[section] || []);
   if (list.find(i => i.id === id)?.locked) return;
@@ -7290,7 +7335,7 @@ async function budgetSave(section, id) {
 }
 
 async function budgetDelete(section, id) {
-  if (section === 'income' && id === FS_INCOME_ID) return;
+  if (section === 'income' && _budgetIncomeIsAuto(id)) return;
   showBrandedNotice({
     title: 'Remove Item',
     message: 'Are you sure you want to remove this item?',
@@ -7309,6 +7354,129 @@ async function budgetDelete(section, id) {
 async function _saveBudget() {
   try { await callApi({ action: 'save_budget', data: state.budget }); }
   catch { /* non-critical — data is in memory */ }
+}
+
+// ── Budget: Treasury Bond interest (auto from Net Worth) ─────────────────────
+// The Monthly Budget "Treasury Bond" income line derives its monthly amount
+// from the specific bond holdings tracked on the Net Worth tab
+// (state.netWorth.treasuryPortfolio). Coupons pay twice a year, so the budget
+// line shows the level 12-month average; clicking it opens the payout calendar.
+
+const TREASURY_INCOME_RE = /treasur|bond/i;
+
+// The Net Worth treasury portfolio, only when it carries usable holdings.
+function budgetTreasuryPortfolio() {
+  const t = state.netWorth?.treasuryPortfolio;
+  if (!t || !Array.isArray(t.holdings) || !t.holdings.length) return null;
+  return t;
+}
+
+// The user's Treasury Bond income line, detected by name (like property income).
+function budgetTreasuryIncomeItem(b) {
+  if (!b || !Array.isArray(b.income)) return null;
+  return b.income.find(i => i.id !== FS_INCOME_ID && TREASURY_INCOME_RE.test(i.name || '')) || null;
+}
+
+// Build the semiannual coupon schedule from the bond holdings. Treasury bonds
+// pay on the maturity month/day and six months before, half the annual coupon
+// each time. Returns { annual, monthly, byMonth: { [1-12]: { total, payouts[] } } }.
+function budgetTreasurySchedule() {
+  const t = budgetTreasuryPortfolio();
+  if (!t) return null;
+  const byMonth = {};
+  let annual = 0;
+  for (const bond of t.holdings) {
+    if (!bond || !bond.maturity) continue;
+    const ann = Number(bond.annualInterest);
+    const coupon = Number.isFinite(ann) && ann > 0
+      ? ann
+      : (Number(bond.par) || 0) * (Number(bond.coupon) || 0) / 100;
+    if (!(coupon > 0)) continue;
+    annual += coupon;
+    const per = coupon / 2;
+    const d = new Date(`${bond.maturity}T00:00:00Z`);
+    if (isNaN(d)) continue;
+    const m = d.getUTCMonth() + 1;         // maturity month (1-12)
+    const day = d.getUTCDate();
+    const months = [m, ((m + 5) % 12) + 1]; // maturity month and six months earlier
+    for (const mo of months) {
+      if (!byMonth[mo]) byMonth[mo] = { total: 0, payouts: [] };
+      byMonth[mo].total += per;
+      byMonth[mo].payouts.push({
+        cusip: bond.cusip || '', coupon: Number(bond.coupon) || 0,
+        par: Number(bond.par) || 0, term: bond.term || '',
+        maturity: bond.maturity, day, amount: per,
+      });
+    }
+  }
+  return { annual, monthly: annual / 12, byMonth };
+}
+
+// Keep the Treasury Bond income line's amount synced to the bond interest.
+function treasurySyncBudgetIncome() {
+  const b = state.budget;
+  if (!b) return;
+  const item = budgetTreasuryIncomeItem(b);
+  if (!item) return;
+  const sched = budgetTreasurySchedule();
+  if (!sched || !(sched.annual > 0)) return;  // no bond data — leave as a plain editable line
+  item.amount = Math.round(sched.monthly * 100) / 100;
+  item.auto = true;
+  item.autoType = 'treasury';
+  item.locked = true;
+}
+
+function openBudgetTreasuryModal() {
+  _renderBudgetTreasuryModal();
+  document.getElementById('budget-treasury-modal').classList.remove('hidden');
+}
+
+function closeBudgetTreasuryModal() {
+  document.getElementById('budget-treasury-modal').classList.add('hidden');
+}
+
+function _renderBudgetTreasuryModal() {
+  const body = document.getElementById('budget-treasury-body');
+  if (!body) return;
+  const sched = budgetTreasurySchedule();
+  const t = budgetTreasuryPortfolio();
+  if (!sched || !t || !(sched.annual > 0)) {
+    body.innerHTML = `<p style="color:var(--text-muted);font-size:.9rem">Your Treasury bond holdings from the Net Worth tab aren't loaded yet. Open the Net Worth tab to refresh them, then reopen this schedule.</p>`;
+    return;
+  }
+  const MONTH_FULL = ['', 'January', 'February', 'March', 'April', 'May', 'June',
+                      'July', 'August', 'September', 'October', 'November', 'December'];
+  const months = Object.keys(sched.byMonth).map(Number).sort((a, b) => a - b);
+  const rows = months.map(mo => {
+    const m = sched.byMonth[mo];
+    const day = m.payouts[0]?.day || 15;
+    const bondList = m.payouts.slice().sort((a, b) => b.amount - a.amount).map(p => `
+      <div style="display:flex;justify-content:space-between;gap:.75rem;font-size:.76rem;color:var(--text-muted);padding:.12rem 0">
+        <span>${escHtml(p.cusip)}${p.term ? ` · ${escHtml(p.term)}` : ''} · ${p.coupon.toFixed(3)}% · par ${fmt(p.par)}</span>
+        <span style="font-variant-numeric:tabular-nums;white-space:nowrap">${fmt(p.amount)}</span>
+      </div>`).join('');
+    return `
+      <details style="border:1px solid var(--border);border-radius:var(--radius);margin-bottom:.4rem">
+        <summary style="display:flex;justify-content:space-between;gap:.75rem;padding:.5rem .7rem;cursor:pointer;font-weight:600;list-style:none">
+          <span>${MONTH_FULL[mo]} ${day} <span style="font-size:.72rem;color:var(--text-muted);font-weight:400">· ${m.payouts.length} bond${m.payouts.length === 1 ? '' : 's'}</span></span>
+          <span style="color:var(--success);font-variant-numeric:tabular-nums;white-space:nowrap">${fmt(m.total)}</span>
+        </summary>
+        <div style="padding:.35rem .7rem .55rem;border-top:1px solid var(--border)">${bondList}</div>
+      </details>`;
+  }).join('');
+  const valued = t.yieldDate ? `Bond values as of ${escHtml(t.yieldDate)}` : 'Interest is fixed by each bond\'s coupon';
+  body.innerHTML = `
+    <div style="display:flex;gap:1.25rem;flex-wrap:wrap;margin-bottom:1rem;padding:.7rem .9rem;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius)">
+      <div><div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Avg / Month</div>
+           <div style="font-size:1.3rem;font-weight:700;color:var(--success)">${fmt(sched.monthly)}</div></div>
+      <div><div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Annual Interest</div>
+           <div style="font-size:1.3rem;font-weight:700">${fmt(sched.annual)}</div></div>
+      <div><div style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Bonds</div>
+           <div style="font-size:1.3rem;font-weight:700">${t.holdings.length}</div></div>
+    </div>
+    <p style="font-size:.8rem;color:var(--text-muted);margin:0 0 .75rem">U.S. Treasury bonds pay a coupon twice a year — on the maturity date and six months earlier. The budget line uses the level 12-month average (${fmt(sched.monthly)}/mo); the actual cash lands on the dates below. Click a month for the per-bond breakdown.</p>
+    ${rows}
+    <p style="font-size:.72rem;color:var(--text-muted);margin:.6rem 0 0">${valued} · sourced from the Net Worth Treasury portfolio.</p>`;
 }
 
 // ── View: Mom Budget ─────────────────────────────────────────────────────────
@@ -7331,7 +7499,11 @@ const MOM_BUDGET_DEFAULT = {
 };
 
 const MB_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MB_TRACKING_START_MONTH = '2026-09';
 const MB_YEAR_STATS_OPEN_KEY = 'rentals_mom_budget_year_stats_open';
+// Separate spending allowance used by Mom Money Left tracking. Fair Share is
+// shown as a reference transfer and is excluded from this calculation.
+const MB_MONTHLY_TRACKING_ALLOWANCE = 800;
 const MB_VARIABLE_FIXED_BILL_IDS = new Set(['electric', 'water', 'gas-heat']);
 const IRS_CAREGIVER_GUIDANCE_URL = 'https://www.irs.gov/faqs/irs-procedures/for-caregivers';
 const IRS_PUB_501_URL = 'https://www.irs.gov/publications/p501';
@@ -7613,8 +7785,16 @@ function mbCalcMonth(monthKey) {
   const otherSpent = (m.otherExpenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const otherOverages = otherSpent + fixedOver;
   const discretionaryAdjusted = Math.max(0, base.discretionary - otherOverages);
-  const overallSpendingRemaining = base.discretionary
-    - discretionarySpent - otherOverages;
+  const trackingFixedPaid = t.fixed.reduce((s, item) => {
+    if (item.id === 'fair-share' || !m.fixedPaid?.[item.id]) return s;
+    const expected = mbFixedExpectedPayment(item, monthKey);
+    const fallback = expected || (Number(item.amount) || 0);
+    if (mbFixedBillKind(item) === 'fixed') return s + fallback;
+    const actual = Number(m.fixedActual?.[item.id]);
+    return s + (Number.isFinite(actual) && actual > 0 ? actual : fallback);
+  }, 0);
+  const trackingUsed = trackingFixedPaid + discretionarySpent + otherSpent;
+  const trackingRemaining = MB_MONTHLY_TRACKING_ALLOWANCE - trackingUsed;
   const cashSpent = fixedPaid + discretionarySpent + otherSpent;
   const budgetSpent = base.fixed + fixedOver + discretionarySpent + otherSpent;
   return {
@@ -7826,9 +8006,9 @@ function _renderMomBudgetHtml() {
       </div>
       <div class="stats-row mb-stats-row mb-stats-year${yearStatsOpen ? '' : ' hidden'}">
         ${stat(`${year} Months`, String(y.months), 'var(--text-muted)', 'tracked')}
-        ${stat(`${year} Planned`, fmt(y.planned), 'var(--text)', 'budget envelope')}
-        ${stat(`${year} Actual`, fmt(y.actual), 'var(--danger)', 'recorded spending')}
-        ${stat(`${year} Over / Under`, `${y.variance < 0 ? '−' : '+'}${fmt(Math.abs(y.variance))}`, y.variance >= 0 ? 'var(--success)' : 'var(--danger)', y.variance >= 0 ? 'under plan' : 'over plan')}
+        ${stat(`${year} Allocated`, fmt(y.planned), 'var(--text)', '$800 per month')}
+        ${stat(`${year} Used`, fmt(y.actual), 'var(--danger)', `${y.planned ? (y.actual / y.planned * 100).toFixed(1) : '0.0'}% used`)}
+        ${stat(`${year} Remaining`, `${y.variance < 0 ? '−' : ''}${fmt(Math.abs(y.variance))}`, y.variance >= 0 ? 'var(--success)' : 'var(--danger)', `${y.planned ? (y.variance / y.planned * 100).toFixed(1) : '0.0'}% left`)}
       </div>
     </div>
 
@@ -13058,6 +13238,109 @@ async function savDelete(id) {
 // overwrite), mirroring the budget / mom_budget / savings pattern.
 // state.health holds the whole record; every mutation saves then re-renders.
 
+// ── Health gradual restart (keep this block identical in desktop + mobile) ──
+const HEALTH_RESTART_DATE = '2026-09-14';
+const HEALTH_RAMP_STAGES = [
+  { week: 1, title: 'Start easy', walkMinutes: 10, note: 'One easy strength exercise on Mon, Tue, Thu and Fri. Wednesday is just a walk.' },
+  { week: 3, title: 'Build the habit', walkMinutes: 15, note: 'Add a short plank, curls or bench press. Each new movement starts with one set.' },
+  { week: 5, title: 'Add a little variety', walkMinutes: 20, note: 'Add one more movement on strength days and a gentle dead bug on Wednesday.' },
+  { week: 7, title: 'Build steadily', walkMinutes: 25, note: 'Add Monday pull-downs, Thursday twists and Friday planks.' },
+  { week: 9, title: 'Round out the routine', walkMinutes: 30, note: 'Introduce short-range ab wheel work on Monday and Wednesday leg raises.' },
+  { week: 11, title: 'Keep it consistent', walkMinutes: 30, note: 'Bring in the remaining movements. Sets grow gradually to a maximum of three; walks stay at 30 minutes.' },
+];
+const HEALTH_RAMP_EXERCISES = {
+  'mo-pu': [1, 'push'], 'mo-plank': [3, 'plank'], 'mo-cp': [5, 'bench'], 'mo-lpd': [7, 'lat'], 'mo-roll': [9, 'abwheel'], 'mo-bike': [11, 'bicycle'], 'mo-walk': [1, 'walk'],
+  'tu-lpd': [1, 'lat'], 'tu-curl': [3, 'curl'], 'tu-bike': [5, 'bicycle'], 'tu-walk': [1, 'walk'],
+  'we-walk': [1, 'walk'], 'we-db': [5, 'deadbug'], 'we-lr': [9, 'leg'], 'we-roll': [11, 'abwheel'],
+  'th-pu': [1, 'push'], 'th-cp': [3, 'bench'], 'th-roll': [5, 'abwheel'], 'th-twist': [7, 'twist'], 'th-walk': [1, 'walk'],
+  'fr-lpd': [1, 'lat'], 'fr-curl': [3, 'curl'], 'fr-lr': [5, 'leg'], 'fr-plank': [7, 'plank'], 'fr-pu': [11, 'push'], 'fr-walk': [1, 'walk'],
+};
+function healthApplySept14Restart(h) {
+  if (!h.profile || h.profile.sept142026ResetV1) return false;
+  h.profile.startDate = HEALTH_RESTART_DATE;
+  h.profile.sept2026ResetV1 = true; // supersedes the earlier Sep 7 reset
+  h.profile.sept142026ResetV1 = true;
+  h.days = {};
+  h.weighIns = [];
+  for (const [wd, exercises] of Object.entries(h.workoutPlan || {})) {
+    if (!Array.isArray(exercises)) continue;
+    h.workoutPlan[wd] = exercises.filter(e => e && (!/band/i.test(e.name || '') || /biceps curl/i.test(e.name || ''))).map((e, i) => {
+      const rule = HEALTH_RAMP_EXERCISES[e.id];
+      // Keep custom movements and their instructions, introducing them later.
+      return rule ? { ...e, ramp: { startWeek: rule[0], kind: rule[1] } }
+        : { ...e, startWeek: Math.min(11, 3 + i * 2) };
+    });
+  }
+  return true;
+}
+function healthApplyEquipmentV1(h) {
+  if (!h.profile || h.profile.healthEquipmentV1) return false;
+  const byId = HEALTH_RAMP_EXERCISES;
+  for (const [wd, exercises] of Object.entries(h.workoutPlan || {})) {
+    if (!Array.isArray(exercises)) continue;
+    h.workoutPlan[wd] = exercises
+      .filter(e => e && (!/band/i.test(e.name || '') || /biceps\s*curl/i.test(e.name || '')))
+      .map(e => {
+        const rule = byId[e.id];
+        if (!rule) return e;
+        const next = { ...e, ramp: { startWeek: rule[0], kind: rule[1] } };
+        if (rule[1] === 'push') { next.name = 'Push-Ups'; next.detail = next.detail || 'Regular push-ups'; }
+        if (rule[1] === 'bench') next.name = 'Bench Press';
+        if (rule[1] === 'abwheel') next.name = 'Ab Wheel';
+        if (rule[1] === 'curl') next.name = 'Band Biceps Curl';
+        return next;
+      });
+  }
+  h.profile.healthEquipmentV1 = true;
+  return true;
+}
+function healthProgramWeek(iso, h) {
+  const start = h.profile.startDate || HEALTH_RESTART_DATE;
+  return Math.max(0, Math.floor((Date.parse(iso + 'T12:00:00Z') - Date.parse(start + 'T12:00:00Z')) / 604800000) + 1);
+}
+function healthRampStage(week) {
+  return [...HEALTH_RAMP_STAGES].reverse().find(s => week >= s.week) || HEALTH_RAMP_STAGES[0];
+}
+function healthExerciseForWeek(e, week) {
+  const startWeek = Number(e.ramp ? e.ramp.startWeek : e.startWeek) || 1;
+  if (week < startWeek) return null;
+  if (!e.ramp) return { ...e };
+  const age = Math.floor((week - startWeek) / 2);
+  const inferredKind = !e.ramp && /push[- ]?ups?/i.test(e.name || '') ? 'push'
+    : (!e.ramp && /bench\s*press/i.test(e.name || '') ? 'bench'
+      : (!e.ramp && /ab\s*(roller|wheel)/i.test(e.name || '') ? 'abwheel' : null));
+  const kind = e.ramp ? e.ramp.kind : inferredKind;
+  if (kind === 'walk') {
+    const minutes = healthRampStage(week).walkMinutes;
+    return { ...e, name: week < 5 ? 'Easy Walk' : 'Steady Walk', sets: 1, detail: `${minutes} min at a comfortable pace — splitting it into shorter walks counts` };
+  }
+  const sets = Math.min(3, 1 + Math.floor(age / 2));
+  const reps = age === 0 ? '5' : (age === 1 ? '6–8' : '8–10');
+  const details = {
+    push: `${sets} × ${reps} — regular push-ups; stop with a few comfortable reps left`,
+    bench: `${sets} × ${age < 2 ? '8' : '8–10'} — light bench press weight, controlled movement`,
+    lat: `${sets} × ${age < 2 ? '8' : '8–10'} — light lat pull-down weight, controlled movement`,
+    curl: `${sets} × ${age < 2 ? '8' : '10–12'} — light band, controlled movement`,
+    plank: `${sets} × ${age === 0 ? '10' : (age < 3 ? '15–20' : '20–30')} sec — front plank; knees down is fine`,
+    abwheel: `${sets} × ${age < 2 ? '3–5' : '5–8'} — kneeling, short comfortable range`,
+    bicycle: `${sets} × ${age < 2 ? '8' : '12'} total — slow and controlled`,
+    deadbug: `${sets} × ${age < 2 ? '5' : '8'} / side — slow and controlled`,
+    leg: `${sets} × ${age < 2 ? '5' : '8–10'} — bend knees if needed`,
+    twist: `${sets} × ${age < 2 ? '8' : '12'} total — feet on floor, no added weight`,
+  };
+  const displayName = kind === 'push' ? 'Push-Ups' : (kind === 'bench' ? 'Bench Press' : (kind === 'abwheel' ? 'Ab Wheel' : (kind === 'plank' ? 'Front Plank' : (kind === 'curl' ? 'Band Biceps Curl' : e.name))));
+  return { ...e, name: displayName, sets, detail: details[kind] || e.detail };
+}
+function healthWorkoutsForDate(iso, h) {
+  const snapshot = h.days && h.days[iso] && h.days[iso].workoutSnapshot;
+  if (Array.isArray(snapshot)) return snapshot.map(e => ({ ...e }));
+  const week = healthProgramWeek(iso, h);
+  const wd = new Date(iso + 'T12:00:00Z').getUTCDay();
+  if (!week || wd === 0 || wd === 6) return [];
+  return ((h.workoutPlan && h.workoutPlan[wd]) || []).map(e => healthExerciseForWeek(e, week)).filter(Boolean);
+}
+// ── End Health gradual restart ──────────────────────────────────────────────
+
 const HEALTH_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const HEALTH_WEEKDAYS_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const HEALTH_REST_DAYS = new Set([0, 6]); // Sun + Sat
@@ -13123,7 +13406,7 @@ function healthDefault() {
     profile: {
       heightIn: 65, age: 43, sex: 'male',
       startWeight: 185, goalWeight: 155,
-      startDate: '2026-09-07',   // program begins Monday Sep 7, 2026 (weeks run Mon→Sun)
+      startDate: HEALTH_RESTART_DATE, // Monday Sep 14, 2026 (weeks run Mon→Sun)
       fasting: { weekday: 3, cutoffLabel: '10 AM', waterGoal: 12 },   // Wed = intermittent-fasting day (eat AM, stop by 10, fast to next morning); higher water goal
       activityFactor: 1.375, ratePerWeek: 1,   // light activity (walking); ~1 lb/week
       calorieGoal: null, macros: { protein: null, carbs: null, fat: null }, // null = auto
@@ -13149,29 +13432,29 @@ function healthDefault() {
       ...healthFastFoodSeed(),
     ],
     workoutPlan: {
-      1: [ ex('mo-pu', 'Push-Ups', '5 sets × AMRAP — hardest work first while you’re fresh. Leave ~1 in reserve; add reps weekly'),
-           ex('mo-cp', 'Chest Press Machine (flat)', '4 × 8–12'),
+      1: [ ex('mo-pu', 'Push-Ups', '5 sets × AMRAP — regular push-ups; hardest work first while you’re fresh'),
+           ex('mo-cp', 'Bench Press', '4 × 8–12'),
            ex('mo-lpd', 'Lat Pull-Down', '4 × 8–12'),
-           ex('mo-roll', 'Ab Roller (kneeling)', '4 × 8–12'),
+           ex('mo-roll', 'Ab Wheel (kneeling)', '4 × 8–12'),
            ex('mo-plank', 'Plank', '3 × 45–60 sec'),
            ex('mo-bike', 'Bicycle Crunch', '3 × 20'),
            ex('mo-walk', 'Brisk Walk', '35–40 min — burn off the weekend') ],
       2: [ ex('tu-lpd', 'Lat Pull-Down', '4 × 8–12'),
-           ex('tu-curl', 'Resistance Band Biceps Curl', '3 × 12–15'),
+           ex('tu-curl', 'Band Biceps Curl', '3 × 12–15'),
            ex('tu-bike', 'Bicycle Crunch', '3 × 20'),
            ex('tu-walk', 'Brisk Walk', '25–30 min') ],
       3: [ ex('we-walk', 'Long Steady Walk', '40–45 min — active recovery'),
-           ex('we-roll', 'Ab Roller', '3 × 8–12'),
+           ex('we-roll', 'Ab Wheel', '3 × 8–12'),
            ex('we-db', 'Dead Bug', '3 × 10 / side'),
            ex('we-lr', 'Lying Leg Raise', '3 × 12–15') ],
-      4: [ ex('th-pu', 'Push-Ups (incline or decline)', '4 × AMRAP — RIR 1–2'),
-           ex('th-cp', 'Chest Press Machine', '3 × 10–12'),
-           ex('th-roll', 'Ab Roller', '3 × 8–12'),
+      4: [ ex('th-pu', 'Push-Ups', '4 × AMRAP — regular push-ups'),
+           ex('th-cp', 'Bench Press', '3 × 10–12'),
+           ex('th-roll', 'Ab Wheel', '3 × 8–12'),
            ex('th-twist', 'Russian Twist', '3 × 20'),
            ex('th-walk', 'Brisk Walk', '25–30 min') ],
       5: [ ex('fr-lpd', 'Lat Pull-Down', '4 × 8–12'),
            ex('fr-curl', 'Band Biceps Curl', '3 × 12–15'),
-           ex('fr-pu', 'Push-Ups (finisher)', '3 × AMRAP'),
+           ex('fr-pu', 'Push-Ups', '3 × AMRAP — regular push-ups'),
            ex('fr-lr', 'Lying Leg Raise', '3 × 15'),
            ex('fr-plank', 'Plank Series (front + sides)', '3 rounds'),
            ex('fr-walk', 'Brisk Walk', '25–30 min') ],
@@ -13182,7 +13465,7 @@ function healthDefault() {
       0: healthDefaultMeals('rest'), 6: healthDefaultMeals('rest'),
     },
     rewardSchedule: {   // Mon–Fri only, two rewards per day (AM + PM)
-      1: { am: '', pm: '' },                                  // Monday: none (front-loaded reset day)
+      1: { am: '', pm: '' },                                  // Monday: no scheduled reward
       2: { am: 'Red Bull', pm: 'Dessert' },
       3: { am: 'Red Bull (sugar-free)', pm: 'Red Bull (sugar-free)' },   // fasting day → Red Bull (no sugar, doesn't break the fast)
       4: { am: 'Red Bull', pm: 'Dessert' },
@@ -13320,7 +13603,7 @@ function healthNormalize(raw) {
     const mon = workoutPlan['1'];
     const oldMonIds = ['mo-pu', 'mo-cp', 'mo-fly', 'mo-roll', 'mo-plank', 'mo-walk'];
     const isOriginal = Array.isArray(mon) && mon.length === oldMonIds.length && mon.every((e, i) => e && e.id === oldMonIds[i]);
-    if (isOriginal) workoutPlan['1'] = def.workoutPlan['1'].map(x => ({ ...x }));
+    if (isOriginal && !profile.sept142026ResetV1) workoutPlan['1'] = def.workoutPlan['1'].map(x => ({ ...x }));
     profile.mondayFrontloadedV1 = true;
   }
   // One-time: drop the Resistance Band Chest Fly from every day (no good spot for it).
@@ -13422,17 +13705,9 @@ function healthNormalize(raw) {
     }
     profile.mealTypeV1 = true;
   }
-  let days = (h.days && typeof h.days === 'object') ? h.days : {};
-  let weighIns = Array.isArray(h.weighIns) ? h.weighIns : [];
-  // One-time Sep 2026 restart: preserve the reusable Health setup and food
-  // library, but begin all date-specific planning and tracking from scratch.
-  if (!profile.sept2026ResetV1) {
-    profile.startDate = '2026-09-07';
-    days = {};
-    weighIns = [];
-    profile.sept2026ResetV1 = true;
-  }
-  return {
+  const days = (h.days && typeof h.days === 'object') ? h.days : {};
+  const weighIns = Array.isArray(h.weighIns) ? h.weighIns : [];
+  const normalized = {
     profile,
     foods,
     workoutPlan,
@@ -13441,6 +13716,9 @@ function healthNormalize(raw) {
     days,
     weighIns,
   };
+  healthApplySept14Restart(normalized);
+  healthApplyEquipmentV1(normalized);
+  return normalized;
 }
 
 // ── Load / save ───────────────────────────────────────────────────────────────
@@ -13449,11 +13727,12 @@ async function loadHealth() {
   const res = await callApi({ action: 'get_health' });
   const raw = res.data || {};
   const seeded = !raw || Object.keys(raw).length === 0;
-  // Persist one-time migrations (e.g. Monday front-load) the first time we see a
+  // Persist one-time migrations (including the Sep 14 restart) the first time we see a
   // record that predates them, so they don't re-run every load.
-  const needsMigrationSave = !seeded && !(raw.profile && raw.profile.mondayFrontloadedV1 && raw.profile.wedFastingV1 && raw.profile.stretchNoteV1 && raw.profile.mealMacrosV1 && raw.profile.factorMealsV1 && raw.profile.factorMealsV2 && raw.profile.mealTypeV1 && raw.profile.fastFoodV1 && raw.profile.fastFoodV2 && raw.profile.bandFlyRemovedV1 && raw.profile.bandExercisesPrunedV1 && raw.profile.sept2026ResetV1);
-  state.health = healthNormalize(raw);
-  if (seeded || needsMigrationSave) await saveHealth();
+  const needsMigrationSave = !seeded && !(raw.profile && raw.profile.mondayFrontloadedV1 && raw.profile.wedFastingV1 && raw.profile.stretchNoteV1 && raw.profile.mealMacrosV1 && raw.profile.factorMealsV1 && raw.profile.factorMealsV2 && raw.profile.mealTypeV1 && raw.profile.fastFoodV1 && raw.profile.fastFoodV2 && raw.profile.bandFlyRemovedV1 && raw.profile.bandExercisesPrunedV1 && raw.profile.sept142026ResetV1 && raw.profile.healthEquipmentV1);
+  const normalized = healthNormalize(raw);
+  if (seeded || needsMigrationSave) await callApi({ action: 'save_health', data: normalized });
+  state.health = normalized;
 }
 async function saveHealth() {
   await callApi({ action: 'save_health', data: state.health });
@@ -13602,7 +13881,7 @@ function healthDayAdherence(iso) {
   const day = state.health.days[iso];
   const t = healthTargets(state.health);
   const totals = day ? healthDayTotals(day) : { calories: 0 };
-  const exs = isRest ? [] : (state.health.workoutPlan[String(wd)] || []);
+  const exs = healthWorkoutsForDate(iso, state.health);
   const wDone = day ? exs.filter(e => healthExerciseDone(day, e)).length : 0;
   const anyWorkout = !!day && exs.some(e => healthExerciseAnyDone(day, e));
   const workoutOk = isRest ? true : (exs.length > 0 && wDone === exs.length);
@@ -13643,8 +13922,8 @@ async function renderHealth() {
   const start = state.health.profile.startDate || today;
   // Before the program starts, land on the start date; once it's underway, land on today.
   const landing = today >= start ? today : start;
-  if (!_healthDate) _healthDate = landing;
-  if (!_healthWeekMon) _healthWeekMon = healthMondayOf(_healthDate);
+  if (!_healthDate || _healthDate < start) _healthDate = landing;
+  if (!_healthWeekMon || _healthWeekMon < healthMondayOf(start)) _healthWeekMon = healthMondayOf(_healthDate);
   _renderHealthHtml();
 }
 
@@ -13663,7 +13942,7 @@ function _renderHealthHtml() {
       <button class="btn btn-ghost btn-sm" onclick="switchView('current-year')" style="flex-shrink:0;background:linear-gradient(135deg,#f59e0b,#d97706);color:white;border:none;box-shadow:0 2px 8px rgba(245,158,11,0.35)">← Back to Properties</button>
       <div style="flex:1;min-width:200px">
         <div style="font-size:1.2rem;font-weight:700">❤️ Health</div>
-        <div style="font-size:.8rem;color:var(--text-muted)">Workouts · diet & calories · weight loss · rewards</div>
+        <div style="font-size:.8rem;color:var(--text-muted)">Program ${appTodayIso() < state.health.profile.startDate ? 'starts' : 'started'} ${HEALTH_WEEKDAYS_LONG[healthWeekday(state.health.profile.startDate)]}, ${fmtDate(state.health.profile.startDate)}</div>
       </div>
       <div style="display:flex;gap:.4rem;flex-wrap:wrap">
         ${tab('daily', 'Daily')}${tab('weekly', 'Weekly')}${tab('weight', '⚖️ Weight')}${tab('history', 'History')}${tab('setup', 'Setup')}
@@ -13686,6 +13965,29 @@ function healthCard(title, inner, extraHeader = '') {
       <div class="card-title">${title}</div>${extraHeader}
     </div>
     <div style="padding:1rem">${inner}</div>
+  </div>`;
+}
+
+function healthWorkoutProgressionHtml(iso) {
+  const h = state.health;
+  const week = healthProgramWeek(iso, h);
+  const stage = healthRampStage(week);
+  const next = HEALTH_RAMP_STAGES.find(s => s.week > week);
+  const start = h.profile.startDate;
+  const rows = HEALTH_RAMP_STAGES.map((s, i) => {
+    const from = healthAddDays(start, (s.week - 1) * 7);
+    const to = HEALTH_RAMP_STAGES[i + 1] ? healthAddDays(start, (HEALTH_RAMP_STAGES[i + 1].week - 1) * 7 - 1) : null;
+    return `<div style="padding:.5rem 0;border-top:1px solid var(--border)">
+      <strong>Weeks ${s.week}${to ? '–' + (HEALTH_RAMP_STAGES[i + 1].week - 1) : '+'} · ${escHtml(s.title)}</strong>
+      <div style="color:var(--text-muted)">${fmtDate(from)}${to ? ' – ' + fmtDate(to) : ' onward'} · ${s.walkMinutes}-minute walks</div>
+      <div>${escHtml(s.note)}</div>
+    </div>`;
+  }).join('');
+  return `<div style="background:var(--primary-light);border:1px solid var(--border);border-radius:var(--radius);padding:.65rem .8rem;margin-bottom:.75rem;font-size:.8rem;line-height:1.45">
+    <strong>🌱 Week ${Math.max(1, week)} · ${escHtml(stage.title)}</strong>
+    <div>Complete the items shown for this date. New movements start with one set and gain a set after every four weeks, up to three. Use comfortable effort throughout.</div>
+    ${next ? `<div style="color:var(--text-muted);margin-top:.25rem">Next step: ${fmtDate(healthAddDays(start, (next.week - 1) * 7))} · ${escHtml(next.title)}</div>` : ''}
+    <details style="margin-top:.4rem"><summary style="cursor:pointer;font-weight:600">See the gradual exercise schedule</summary><div style="margin-top:.4rem">${rows}<div style="color:var(--text-muted);margin-top:.4rem">This is the default rollout; Setup lists each exercise and its starting week. Saturdays and Sundays stay rest days.</div></div></details>
   </div>`;
 }
 
@@ -13947,14 +14249,11 @@ function healthDailyHtml() {
     </div>`);
 
   // Workout card
-  const exercises = isRest ? [] : (state.health.workoutPlan[String(wd)] || []);
+  const exercises = healthWorkoutsForDate(iso, state.health);
   const doneCount = exercises.filter(e => healthExerciseDone(day, e)).length;
-  const mondayNote = (wd === 1 && !isRest)
-    ? `<div style="background:rgba(239,68,68,.13);border:1px solid #ef4444;border-radius:var(--radius);padding:.5rem .7rem;margin-bottom:.6rem;font-size:.8rem"><strong>💪 Weekend Reset — front-loaded day.</strong> You’re fresh after two rest days, so Monday is the toughest: hit the hard compounds first, then the extra core and a longer walk to offset the weekend. No reward today — earn it back through the week.</div>`
-    : '';
   const workoutInner = isRest
-    ? `<div style="text-align:center;padding:1rem;color:var(--text-muted)"><div style="font-size:1.6rem">😌</div><div style="font-weight:700;color:var(--text);margin-top:.3rem">Rest & Recovery Day</div><div style="font-size:.82rem;margin-top:.25rem">No training today. An easy 20–30 min walk is fine if you feel up to it. Recovery is where a 43-year-old body makes its gains.</div></div>`
-    : mondayNote + exercises.map(e => {
+    ? `<div style="text-align:center;padding:1rem;color:var(--text-muted)"><div style="font-size:1.6rem">😌</div><div style="font-weight:700;color:var(--text);margin-top:.3rem">Rest & Recovery Day</div><div style="font-size:.82rem;margin-top:.25rem">No required workout. An easy walk is optional.</div></div>`
+    : healthWorkoutProgressionHtml(iso) + exercises.map(e => {
         const states = healthExerciseSetStates(day, e);
         const total = states.length;
         const sd = states.filter(Boolean).length;
@@ -14169,13 +14468,14 @@ function healthShiftDay(n) {
 }
 async function healthToggleWorkout(iso, exId, ev) {
   if (!healthRequireEditableDay(iso)) return;
+  const exs = healthWorkoutsForDate(iso, state.health);
+  const exercise = exs.find(e => e.id === exId);
+  if (!exercise) return;
   const d = healthEnsureDay(iso);
-  const nowDone = !d.workoutsDone[exId];
+  const nowDone = !healthExerciseDone(d, exercise);
   d.workoutsDone[exId] = nowDone;
   if (nowDone) {
-    const wd = healthWeekday(iso);
-    const exs = state.health.workoutPlan[String(wd)] || [];
-    const allDone = exs.length > 0 && exs.every(e => d.workoutsDone[e.id]);
+    const allDone = exs.every(e => healthExerciseDone(d, e));
     healthCelebrate(ev, { message: allDone ? '🎉 Workout complete!' : healthCheer(), big: allDone });
   }
   await saveHealth(); _renderHealthHtml();
@@ -14186,7 +14486,7 @@ async function healthToggleSet(iso, exId, setIdx, ev) {
   if (!healthRequireEditableDay(iso)) return;
   const d = healthEnsureDay(iso);
   const wd = healthWeekday(iso);
-  const exs = state.health.workoutPlan[String(wd)] || [];
+  const exs = healthWorkoutsForDate(iso, state.health);
   const e = exs.find(x => x.id === exId);
   if (!e) return;
   const arr = healthExerciseSetStates(d, e);
@@ -14206,7 +14506,7 @@ async function healthToggleSet(iso, exId, setIdx, ev) {
 async function healthMarkAllSets(iso, exId, ev) {
   if (!healthRequireEditableDay(iso)) return;
   const d = healthEnsureDay(iso);
-  const exs = state.health.workoutPlan[String(healthWeekday(iso))] || [];
+  const exs = healthWorkoutsForDate(iso, state.health);
   const e = exs.find(x => x.id === exId);
   if (!e) return;
   const wasDone = healthExerciseDone(d, e);
@@ -14221,7 +14521,7 @@ async function healthMarkAllSets(iso, exId, ev) {
 async function healthMarkWholeWorkout(iso, ev) {
   if (!healthRequireEditableDay(iso)) return;
   const d = healthEnsureDay(iso);
-  const exs = state.health.workoutPlan[String(healthWeekday(iso))] || [];
+  const exs = healthWorkoutsForDate(iso, state.health);
   if (!exs.length) return;
   const allDone = exs.every(e => healthExerciseDone(d, e));
   for (const e of exs) d.workoutsDone[e.id] = allDone ? false : true;
@@ -14370,15 +14670,11 @@ const HEALTH_TIERS = {
   bronze:  { emoji: '🥉', headline: 'On the board',            grad: 'linear-gradient(135deg,#a855f7,#7c3aed)', confetti: 12, sub: 'You showed up and logged it. That is how it starts.' },
   seed:    { emoji: '🌱', headline: 'Tomorrow’s a fresh start', grad: 'linear-gradient(135deg,#64748b,#475569)', confetti: 0,  sub: 'No perfect days required. Reset and go again.' },
 };
-// Encouraging, week-aware guidance on when strength work starts showing —
-// neural gains first (feel it), then firmness, then visible definition as fat drops.
+// Encouragement follows the gradual rollout without promising a body-change deadline.
 function healthStrengthOutlook(weekNum) {
   const w = Math.max(1, weekNum);
-  if (w < 2) return `You're in week ${w}. Early gains are <strong>neural</strong> — you'll feel stronger (more reps, steadier form) before you see it. Physical changes usually start around <strong>weeks 4–6</strong>.`;
-  if (w < 4) return `Week ${w}. Strength is climbing fast right now. Firmness and better pumps show first; visible <strong>definition tends to appear around weeks 4–8</strong>.`;
-  if (w < 8) return `Week ${w}. This is when <strong>definition starts to show</strong>, especially as body-fat drops — you'll likely notice it in the mirror before anyone else does.`;
-  if (w < 12) return `Week ${w}. Noticeable muscle definition should be emerging — changes often become <strong>visible to others around weeks 10–12</strong>.`;
-  return `Week ${w}. You're past the point where consistent training shows clearly. Keep adding reps/resistance (progressive overload) to keep building.`;
+  const stage = healthRampStage(w);
+  return `Week ${w} · <strong>${escHtml(stage.title)}</strong>. Completing today's smaller checklist counts as a full workout. Build consistency and comfortable movement as the plan gradually grows.`;
 }
 function healthDaySummary(iso) {
   const a = healthDayAdherence(iso);
@@ -14499,7 +14795,9 @@ function healthShowDaySummary(iso) {
 async function healthConfirmCloseDay(iso) {
   const ov = document.getElementById('health-summary-overlay'); if (ov) ov.remove();
   if (healthDayIsLocked(iso)) return;
-  const d = healthEnsureDay(iso); d.closed = true; d.totals = healthDayTotals(d);
+  const d = healthEnsureDay(iso);
+  d.workoutSnapshot = healthWorkoutsForDate(iso, state.health);
+  d.closed = true; d.totals = healthDayTotals(d);
   _healthEditFoodId = null;
   await saveHealth(); _renderHealthHtml();
 }
@@ -14517,6 +14815,7 @@ async function healthUnlockDay(iso) {
   await saveHealth(); _renderHealthHtml();
 }
 async function healthSaveWeighIn(mondayIso) {
+  if (mondayIso < state.health.profile.startDate) return;
   const v = parseFloat(document.getElementById('h-weighin-input').value);
   if (!isFinite(v) || v <= 0) return;
   const list = state.health.weighIns;
@@ -14606,6 +14905,8 @@ function healthWeeklyHtml() {
     const day = state.health.days[iso];
     const locked = !!(day && day.closed);
     const meals = healthMealsForDate(iso);
+    const workout = healthWorkoutsForDate(iso, state.health);
+    const workoutPreview = isRest ? '' : `<details style="font-size:.72rem;border-top:1px solid var(--border);padding-top:.4rem"><summary style="cursor:pointer;font-weight:600">🏋️ ${workout.length} workout item${workout.length === 1 ? '' : 's'} · ${workout.reduce((sum, e) => sum + healthExerciseSets(e), 0)} sets</summary>${workout.map(e => `<div style="margin-top:.4rem"><strong>${escHtml(e.name)}</strong><div style="color:var(--text-muted)">${escHtml(e.detail || '')}</div></div>`).join('')}</details>`;
     const dayCal = meals.reduce((s, m) => s + (+m.calories || 0), 0);
     const dayP = meals.reduce((s, m) => s + (+m.protein || 0), 0);
     const isToday = iso === today;
@@ -14630,6 +14931,7 @@ function healthWeeklyHtml() {
           ${isFasting ? '<span style="color:var(--primary);font-weight:700">⏳ Fasting</span>' : ''}
           ${locked ? '<span style="color:var(--success);font-weight:800">🔒 Locked · open day to unlock</span>' : ''}
         </div>
+        ${workoutPreview}
         <div style="display:flex;flex-direction:column;gap:.35rem;flex:1">${mealRows}</div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:.4rem;border-top:1px solid var(--border);padding-top:.4rem">
           <span style="font-size:.64rem;color:var(--text-muted)">${dayP ? Math.round(dayP) + 'g protein' : '&nbsp;'}</span>
@@ -14638,7 +14940,7 @@ function healthWeeklyHtml() {
       </div>`;
   }).join('');
 
-  return `${nav}
+  return `${nav}${healthCard('🌱 Exercise Progression', healthWorkoutProgressionHtml(mon))}
     <div style="font-size:.82rem;color:var(--text-muted);margin-bottom:.8rem">Each day starts empty — drag meals from the library onto it to plan it. Planned meals appear on the <strong>Daily</strong> tab, where checking one logs its calories.</div>
     <div class="h-plan-wrap" style="display:flex;gap:1rem;align-items:flex-start">
       <div class="h-plan-lib" style="flex:0 0 300px">${library}</div>
@@ -14839,7 +15141,7 @@ function healthWeightHtml() {
       <td style="padding:.4rem .6rem;border-bottom:1px solid var(--border);text-align:right;color:${chg == null ? 'var(--text-muted)' : (chg <= 0 ? 'var(--success)' : 'var(--danger)')}">${chg == null ? '—' : `${chg <= 0 ? '▼' : '▲'} ${Math.abs(chg).toFixed(1)}`}</td>
     </tr>`;
   }).join('');
-  const thisMon = healthMondayOf(appTodayIso());
+  const thisMon = healthMondayOf(appTodayIso() < h.profile.startDate ? h.profile.startDate : appTodayIso());
   const thisWeighIn = healthWeighInFor(thisMon);
   // Correction/entry input lives here (the Daily card only prompts an initial entry).
   const weighInput = `<div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.75rem;padding-bottom:.75rem;border-bottom:1px solid var(--border)">
@@ -14863,7 +15165,7 @@ function healthHistoryHtml() {
   const dayRows = closedDays.slice(0, 90).map(([iso, d]) => {
     const wd = healthWeekday(iso);
     const totals = d.totals || healthDayTotals(d);
-    const exs = HEALTH_REST_DAYS.has(wd) ? [] : (h.workoutPlan[String(wd)] || []);
+    const exs = healthWorkoutsForDate(iso, h);
     const wDone = exs.filter(e => healthExerciseDone(d, e)).length;
     const over = totals.calories > t.calories;
     return `<tr>
@@ -14952,21 +15254,26 @@ function healthSetupHtml() {
   const planCards = order.map(wd => {
     const isRest = HEALTH_REST_DAYS.has(wd);
     const exs = state.health.workoutPlan[String(wd)] || [];
-    const rows = exs.map(e => `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.3rem 0;border-bottom:1px solid var(--border)">
-        <span style="flex:1"><strong style="font-size:.84rem">${escHtml(e.name)}</strong><span style="display:block;font-size:.74rem;color:var(--text-muted)">${escHtml(e.detail || '')}</span></span>
+    const rows = exs.map(e => {
+      const fromWeek = Number(e.ramp ? e.ramp.startWeek : e.startWeek) || 1;
+      const first = healthExerciseForWeek(e, fromWeek);
+      return `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.3rem 0;border-bottom:1px solid var(--border)">
+        <span style="flex:1"><strong style="font-size:.84rem">${escHtml(first.name)}</strong><span style="display:block;font-size:.72rem;color:var(--primary);font-weight:600">From week ${fromWeek} · ${fmtDate(healthAddDays(p.startDate, (fromWeek - 1) * 7))}</span><span style="display:block;font-size:.74rem;color:var(--text-muted)">${escHtml(first.detail || '')}</span></span>
         <button class="btn btn-ghost btn-sm" style="padding:.1rem .35rem" onclick="healthDeleteExercise(${wd},'${e.id}')">✕</button>
-      </div>`).join('') || `<div style="font-size:.78rem;color:var(--text-muted);padding:.3rem 0">${isRest ? 'Rest day — optional easy walk.' : 'No exercises.'}</div>`;
+      </div>`;
+    }).join('') || `<div style="font-size:.78rem;color:var(--text-muted);padding:.3rem 0">${isRest ? 'Rest day — optional easy walk.' : 'No exercises.'}</div>`;
     return `<div style="border:1px solid var(--border);border-radius:var(--radius);padding:.7rem .8rem;margin-bottom:.6rem">
       <div style="font-weight:700;margin-bottom:.3rem">${HEALTH_WEEKDAYS_LONG[wd]}${isRest ? ' <span style="font-size:.72rem;color:var(--text-muted);font-weight:600">(rest)</span>' : ''}</div>
       ${rows}
       <div style="display:flex;gap:.4rem;margin-top:.5rem;flex-wrap:wrap">
         <input type="text" id="hex-name-${wd}" class="form-input" placeholder="Exercise" style="flex:1;min-width:120px;font-size:.82rem">
         <input type="text" id="hex-detail-${wd}" class="form-input" placeholder="Sets × reps / note" style="flex:1;min-width:120px;font-size:.82rem">
+        <label style="font-size:.72rem;color:var(--text-muted)">From week<input type="number" id="hex-week-${wd}" class="form-input" min="1" max="52" value="1" style="width:72px;font-size:.82rem" aria-label="${HEALTH_WEEKDAYS_LONG[wd]} exercise starting week"></label>
         <button class="btn btn-ghost btn-sm" onclick="healthAddExercise(${wd})">+ Add</button>
       </div>
     </div>`;
   }).join('');
-  const workoutEditor = healthCard('🏋️ Workout Plan', planCards);
+  const workoutEditor = healthCard('🏋️ Workout Plan', healthWorkoutProgressionHtml(_healthDate || p.startDate) + planCards);
 
   const rewardEditor = healthCard('🎁 Reward Schedule', `
     <div style="font-size:.74rem;color:var(--text-muted);margin-bottom:.5rem">Two rewards per weekday — an ☀️ AM and a 🌙 PM. Weekends have no rewards. Leave a slot blank for none.</div>
@@ -15040,6 +15347,8 @@ async function healthSaveProfile() {
   const num = (id, def) => { const v = parseFloat(document.getElementById(id).value); return isFinite(v) ? v : def; };
   const opt = id => { const v = document.getElementById(id).value.trim(); const n = parseFloat(v); return v === '' || !isFinite(n) || n <= 0 ? null : n; };
   p.startDate = (document.getElementById('hp-startdate').value || p.startDate);
+  if (_healthDate && _healthDate < p.startDate) _healthDate = p.startDate;
+  if (_healthWeekMon && _healthWeekMon < healthMondayOf(p.startDate)) _healthWeekMon = healthMondayOf(p.startDate);
   p.startWeight = num('hp-start', p.startWeight);
   p.goalWeight = num('hp-goal', p.goalWeight);
   p.heightIn = num('hp-height', p.heightIn);
@@ -15087,7 +15396,8 @@ async function healthAddExercise(wd) {
   if (!name) return;
   const detail = (document.getElementById('hex-detail-' + wd).value || '').trim();
   if (!Array.isArray(state.health.workoutPlan[key])) state.health.workoutPlan[key] = [];
-  state.health.workoutPlan[key].push({ id: hid(), name, detail });
+  const startWeek = Math.max(1, Math.min(52, Math.round(Number(document.getElementById('hex-week-' + wd).value) || 1)));
+  state.health.workoutPlan[key].push({ id: hid(), name, detail, startWeek });
   await saveHealth(); _renderHealthHtml();
 }
 async function healthDeleteExercise(wd, id) {
@@ -17732,6 +18042,7 @@ document.addEventListener('keydown', e => {
     closeFsAgreementModal();
     closeMoveInCategoriesModal();
     closeLaterListCategoriesModal();
+    closeBudgetTreasuryModal();
   }
 });
 
