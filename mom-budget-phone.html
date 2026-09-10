@@ -361,17 +361,6 @@
       <div class="category-amount" id="fair-share">$0</div>
     </section>
 
-    <section class="grid" aria-label="Category balances">
-      <div class="card category">
-        <div>
-          <div class="category-name">Used This Month</div>
-          <div class="category-sub" id="discretionary-sub">$0 of $800 allowance</div>
-        </div>
-        <div class="category-amount" id="discretionary">$0</div>
-        <div class="category-note">Fair Share is excluded. This includes paid bills, discretionary spending, and other overages.</div>
-      </div>
-    </section>
-
     <button class="year-toggle" type="button" id="year-toggle" aria-expanded="false">Show Year Status</button>
 
     <section class="card year" id="year-card">
@@ -410,8 +399,6 @@
       overallUsedPercent: document.getElementById('overall-used-percent'),
       overallRemainingPercent: document.getElementById('overall-remaining-percent'),
       fairShare: document.getElementById('fair-share'),
-      discretionary: document.getElementById('discretionary'),
-      discretionarySub: document.getElementById('discretionary-sub'),
       updated: document.getElementById('updated'),
       refresh: document.getElementById('refresh-button'),
       yearToggle: document.getElementById('year-toggle'),
@@ -535,9 +522,6 @@
       els.overallUsedPercent.textContent = `${(Number(month.trackingUsedPercent) || 0).toFixed(1)}%`;
       els.overallRemainingPercent.textContent = `${(Number(month.trackingRemainingPercent ?? (100 - (Number(month.trackingUsedPercent) || 0))) || 0).toFixed(1)}%`;
       els.fairShare.textContent = money(month.fairShare);
-      setAmount(els.discretionary, month.trackingUsed);
-      els.discretionary.classList.toggle('is-negative', Number(month.trackingUsed) > Number(month.trackingAllowance || 800));
-      els.discretionarySub.textContent = `${money(month.trackingUsed)} of ${money(month.trackingAllowance || 800)} allowance`;
       els.yearTitle.textContent = `${year.year || new Date().getFullYear()} Year Status`;
       els.yearMonths.textContent = String(year.months || 0);
       els.yearPlanned.textContent = money(year.planned);

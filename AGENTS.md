@@ -312,7 +312,6 @@ This page has no password gate and no editing controls. It is meant to be instal
 
 - Current month `Overall Spending Left` prominently, with used and remaining percentages
 - Fair Share as a reference card only (excluded from tracking)
-- Current-month spending used
 - Optional collapsed year status showing the $800/month allowance, used, remaining, and percentages
 
 The page fetches only `get_mom_budget_public_summary`, a public Worker action that returns precomputed read-only numbers. It must never call `get_mom_budget`, `save_mom_budget`, or any authenticated/editing action.
