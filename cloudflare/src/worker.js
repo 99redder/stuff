@@ -2484,6 +2484,7 @@ async function handleSaveHealth(env, data) {
 const NET_WORTH_KEY = 'net_worth';
 const TREASURY_BONDS = [
   { cusip:'912810UA4', coupon:4.625, par:39600, annualInterest:1831.50, maturity:'2054-05-15', term:'30-Year' },
+  { cusip:'912810UW6', coupon:5.125, par:35000, annualInterest:1793.75, maturity:'2056-08-15', term:'30-Year' },
   { cusip:'912810UG1', coupon:4.625, par:14000, annualInterest:647.50, maturity:'2055-02-15', term:'30-Year' },
   { cusip:'912810UK2', coupon:4.750, par:10000, annualInterest:475.00, maturity:'2055-05-15', term:'30-Year' },
   { cusip:'912810TX6', coupon:4.250, par:11000, annualInterest:467.50, maturity:'2054-02-15', term:'30-Year' },
@@ -2503,8 +2504,8 @@ function defaultTreasuryPortfolio(saved = {}) {
   });
   return {
     name:'U.S. Treasury Bonds (20 & 30 Year)',
-    par:115000,
-    annualInterest:5316.75,
+    par:150000,
+    annualInterest:7110.50,
     value:holdings.reduce((sum,bond)=>sum+bond.marketValue,0),
     yieldDate:String(saved.yieldDate || ''),
     valuedAt:String(saved.valuedAt || ''),
@@ -2749,7 +2750,7 @@ async function refreshTreasuryPortfolio(env) {
   const holdings = TREASURY_BONDS.map(bond => ({ ...bond, ...estimateTreasuryBondValue(bond,asOf,{y20,y30}) }));
   const data = normalizeNetWorth(await env.RENTALS.get(NET_WORTH_KEY, 'json'));
   data.treasuryPortfolio = {
-    name:'U.S. Treasury Bonds (20 & 30 Year)', par:115000, annualInterest:5316.75,
+    name:'U.S. Treasury Bonds (20 & 30 Year)', par:150000, annualInterest:7110.50,
     value:Math.round(holdings.reduce((sum,bond)=>sum+bond.marketValue,0)*100)/100,
     yieldDate, valuedAt:new Date().toISOString(), source:'U.S. Treasury daily par yield curve estimate', holdings,
   };
