@@ -27,7 +27,16 @@ test('Mom Budget saves are immediately visible to the phone and survive restart'
   let kv = await mf.getKVNamespace('RENTALS');
   const legacy = {
     template: { income: [], fixed: [], variable: { discretionary: 500 } },
-    months: { '2026-09': { discretionary: [] }, '2025-12': { discretionary: [{ id: 'past', amount: 12 }] } },
+    months: {
+      '2025-12': { discretionary: [{ id: 'past', amount: 12 }] },
+      '2026-08': { fixedPaid: { 'fair-share': true }, discretionary: [{ id: 'august', amount: 100 }] },
+      '2026-09': {
+        discretionary: [{ id: 'before-start', date: '2026-08-31', amount: 75 }],
+        otherExpenses: [{ id: 'old-overage', date: '2026-08-31', amount: 25 }],
+      },
+      '2026-10': { discretionary: [{ id: 'october', date: '2026-10-01', amount: 45 }] },
+      '2026-13': { discretionary: [{ id: 'invalid-month', amount: 999 }] },
+    },
   };
   await kv.put('mom_budget', JSON.stringify(legacy));
   await kv.put('budget', JSON.stringify({}));
@@ -41,8 +50,13 @@ test('Mom Budget saves are immediately visible to the phone and survive restart'
   const first = await api({ action: 'get_mom_budget' }, sessionToken);
   assert.deepEqual((await first.json()).data, legacy, 'imports every existing record unchanged');
   const before = await (await api({ action: 'get_mom_budget_public_summary', month: '2026-09' })).json();
+  assert.equal(before.trackingStartedAt, '2026-09-01');
+  assert.equal(before.month.overallSpendingRemaining, 500);
+  assert.deepEqual(before.month.transactions, []);
+  assert.deepEqual(before.year, { year: '2026', months: 1, planned: 500, actual: 0, variance: 500 },
+    'September is month one even before its first tracked expense; older and future activity is excluded');
   const updated = structuredClone(legacy);
-  updated.months['2026-09'].discretionary.push({ id: 'new', date: '2026-09-08', amount: 37.84, name: 'Amazon' });
+  updated.months['2026-09'].discretionary.push({ id: 'new', date: '2026-09-01', amount: 37.84, name: 'Amazon' });
   const saved = await api({ action: 'save_mom_budget', data: updated }, sessionToken);
   assert.deepEqual(await saved.json(), { success: true });
   // Immediately read again, before the delayed KV backup can run.
@@ -52,10 +66,32 @@ test('Mom Budget saves are immediately visible to the phone and survive restart'
   assert.ok(Math.abs(before.month.overallSpendingRemaining - after.month.overallSpendingRemaining - 37.84) < 1e-9);
   assert.equal(after.month.discretionarySpent, 37.84);
   assert.equal(after.month.transactions.find(row => row.id === 'new').amount, 37.84);
+  assert.equal(after.month.transactions.length, 1);
+  assert.equal(after.year.months, 1);
+  assert.equal(after.year.planned, 500);
+  assert.equal(after.year.actual, 37.84);
+  assert.ok(Math.abs(after.year.variance - 462.16) < 1e-9);
   assert.equal(after.data, undefined);
   assert.equal(after.template, undefined);
   assert.equal(after.months, undefined);
   assert.deepEqual((await (await api({ action: 'get_mom_budget' }, sessionToken)).json()).data, updated);
+  await t.test('tracking begins in September and remains bounded at year rollover', async () => {
+    for (const month of ['2025-12', '2026-01', '2026-08']) {
+      const response = await api({ action: 'get_mom_budget_public_summary', month });
+      assert.equal(response.status, 400);
+      const body = await response.json();
+      assert.match(body.error, /September 1, 2026/);
+      assert.equal(body.month, undefined);
+      assert.equal(body.year, undefined);
+    }
+    const october = await (await api({ action: 'get_mom_budget_public_summary', month: '2026-10' })).json();
+    assert.equal(october.year.months, 2);
+    assert.equal(october.year.planned, 1000);
+    assert.equal(october.year.actual, 82.84);
+    const january = await (await api({ action: 'get_mom_budget_public_summary', month: '2027-01' })).json();
+    assert.deepEqual(january.year, { year: '2027', months: 1, planned: 500, actual: 0, variance: 500 });
+    assert.deepEqual(january.month.transactions, []);
+  });
   assert.equal((await api({ action: 'get_mom_budget' })).status, 401);
   assert.equal((await api({ action: 'save_mom_budget', data: legacy })).status, 401);
   assert.equal((await api({ action: 'get_mom_budget_public_summary' }, '', 'https://untrusted.example')).status, 403);

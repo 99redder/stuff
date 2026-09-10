@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'mom-budget-phone-';
-const CACHE_NAME = `${CACHE_PREFIX}v13`;
+const CACHE_NAME = `${CACHE_PREFIX}v14`;
 const APP_SCOPE = new URL('./mom-budget-phone.html', self.location.href).href;
 const STATIC_ASSETS = [
   './mom-budget-phone.html',

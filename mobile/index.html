@@ -451,18 +451,25 @@
   }
 
   function momExpected(item,key){const month=Number(key.slice(5,7)),frequency=item.frequency||'monthly';if(frequency==='monthly')return n(item.amount);if(frequency==='yearly')return month===n(item.dueMonth)?n(item.paymentAmount):0;if(frequency==='semiannual')return month===n(item.dueMonth)||month===((n(item.dueMonth)+5)%12)+1?n(item.paymentAmount):0;return 0}
+  const MOM_TRACKING_START_MONTH='2026-09';
+  function momTrackedMonth(raw,key){
+    const month=key>=MOM_TRACKING_START_MONTH?(raw.months?.[key]||{}):{};
+    const tracked=rows=>(rows||[]).filter(entry=>!/^\d{4}-\d{2}-\d{2}$/.test(String(entry.date||''))||entry.date>=`${MOM_TRACKING_START_MONTH}-01`);
+    return{...month,discretionary:tracked(month.discretionary),otherExpenses:tracked(month.otherExpenses)};
+  }
   function momMonth(raw,key){
-    const t=raw.template||{},m=raw.months?.[key]||{},fixed=t.fixed||[],discretionary=n(t.variable?.discretionary),spent=sum(m.discretionary||[]),other=sum(m.otherExpenses||[]);
+    const t=raw.template||{},m=momTrackedMonth(raw,key),fixed=t.fixed||[],discretionary=n(t.variable?.discretionary),spent=sum(m.discretionary||[]),other=sum(m.otherExpenses||[]);
     let fixedDue=0,fixedPaid=0,fixedOver=0;for(const item of fixed){const expected=momExpected(item,key);fixedDue+=expected;if(!m.fixedPaid?.[item.id])continue;const actual=n(m.fixedActual?.[item.id])||expected||n(item.amount);fixedPaid+=actual;if(['electric','water','gas-heat'].includes(item.id))fixedOver+=Math.max(0,actual-(expected||n(item.amount)))}
     const overages=other+fixedOver;return{income:sum(t.income||[]),fixedDue,fixedPaid,discretionary,spent,other,fixedOver,overages,left:discretionary-spent-overages};
   }
   function renderMom(){
-    const raw=state.data.mom||{},now=new Date(),current=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`,keys=[...new Set([...Object.keys(raw.months||{}),current])].sort();
-    if(!state.momMonth||!keys.includes(state.momMonth))state.momMonth=keys.includes(current)?current:keys.at(-1);const key=state.momMonth,index=keys.indexOf(key),x=momMonth(raw,key),date=new Date(`${key}-01T12:00:00`),label=new Intl.DateTimeFormat('en-US',{month:'long',year:'numeric'}).format(date),month=raw.months?.[key]||{},fixed=raw.template?.fixed||[];
+    const raw=state.data.mom||{},now=new Date(),todayMonth=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`,current=todayMonth<MOM_TRACKING_START_MONTH?MOM_TRACKING_START_MONTH:todayMonth,keys=[...new Set([...Object.keys(raw.months||{}),MOM_TRACKING_START_MONTH,current])].filter(key=>/^\d{4}-(0[1-9]|1[0-2])$/.test(key)&&key>=MOM_TRACKING_START_MONTH&&key<=current).sort();
+    if(!state.momMonth||!keys.includes(state.momMonth))state.momMonth=current;const key=state.momMonth,index=keys.indexOf(key),x=momMonth(raw,key),date=new Date(`${key}-01T12:00:00`),label=new Intl.DateTimeFormat('en-US',{month:'long',year:'numeric'}).format(date),month=momTrackedMonth(raw,key),fixed=raw.template?.fixed||[];
     const fixedRows=fixed.map(item=>{const expected=momExpected(item,key),paid=!!month.fixedPaid?.[item.id],actual=paid?(n(month.fixedActual?.[item.id])||expected||n(item.amount)):0;return row(item.name,paid?fullMoney(actual):(expected?fullMoney(expected):'—'),paid?'Paid':expected?'Due / budgeted':'Not due',paid?'good':'')}).join('');
     const discretionaryRows=(month.discretionary||[]).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))).map(item=>row(item.name||'Discretionary',fullMoney(item.amount),item.date||'')).join('');
     const otherRows=(month.otherExpenses||[]).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))).map(item=>row(item.name||'Other expense',fullMoney(item.amount),`${item.date||''} · Overage`,'bad')).join('');
     return `<div class="month-switch"><button data-mom-month="${esc(keys[index-1]||'')}" ${index===0?'disabled':''} aria-label="Previous month">‹</button><div class="month-label">${esc(label)}</div><button data-mom-month="${esc(keys[index+1]||'')}" ${index===keys.length-1?'disabled':''} aria-label="Next month">›</button></div>
+      <div class="banner">Tracking started September 1, 2026.</div>
       <div class="hero"><div class="hero-label">Left to spend this month</div><div class="hero-value">${money(x.left)}</div><div class="hero-note">${money(x.discretionary)} budget minus ${money(x.spent)} spending and ${money(x.overages)} overages</div></div>
       <div class="grid">${stat('Spending budget',money(x.discretionary),'this month')}${stat('Spent',money(x.spent),`${(month.discretionary||[]).length} purchases`,'bad')}${stat('Overages',money(x.overages),'fixed and other',x.overages?'bad':'good')}</div>
       ${card('Fixed monthly spending',fixedRows,label)}

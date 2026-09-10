@@ -599,6 +599,13 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ## Recent Updates
 
+### 2026-09-10 — Mom mobile tracking start date
+
+- Phone tracking starts September 1, 2026. Public summaries exclude earlier month records and earlier dated ledger entries without changing stored data; requests for earlier months are rejected.
+- Year Status counts only eligible months through the requested month, always including that month even before its first transaction. September 2026 is the first tracking month.
+- Added the start-date note to Year Status and bumped the phone service worker to v14.
+- The main mobile app's Mom month browser also starts at September 2026, with earlier transactions excluded from its display and totals; mobile service worker v34.
+
 ### 2026-09-08 — Mom Money Left freshness
 
 - Replaced one-minute phone polling with five-second polling while visible, keeping foreground refresh and adding a ten-second request timeout.

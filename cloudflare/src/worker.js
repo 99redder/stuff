@@ -1646,6 +1646,8 @@ const MOM_BUDGET_DEFAULT = {
 };
 
 const MB_VARIABLE_FIXED_BILL_IDS = new Set(['electric', 'water', 'gas-heat']);
+const MB_TRACKING_START_MONTH = '2026-09';
+const MB_TRACKING_START_DATE = `${MB_TRACKING_START_MONTH}-01`;
 
 async function handleGetMomBudget(env) {
   const data = await env.MOM_BUDGET_STORE.getByName('mom_budget').getBudget();
@@ -1677,8 +1679,10 @@ async function handleGetMomBudgetPublicSummary(request, env, requestedMonth) {
   }
 
   const monthKey = validMonthKey(requestedMonth) ? requestedMonth : currentEasternMonthKey();
+  if (monthKey < MB_TRACKING_START_MONTH) {
+    return jsonResponse({ error: 'Mom Budget tracking started September 1, 2026.' }, 400);
+  }
 
-  const year = monthKey.slice(0, 4);
   // Compute the Fair Share transfer live from the family budget, the same source
   // the main app uses, rather than relying on a possibly-stale copy in mom_budget.
   const [budgetRaw, raw] = await Promise.all([
@@ -1690,11 +1694,12 @@ async function handleGetMomBudgetPublicSummary(request, env, requestedMonth) {
   syncMomHouseholdTransfers(data, fairShare);
   const month = calcMomBudgetMonth(data, monthKey);
   const transactions = momBudgetMonthTransactions(data, monthKey);
-  const yearSummary = calcMomBudgetYear(data, year);
+  const yearSummary = calcMomBudgetYear(data, monthKey);
 
   const response = new Response(JSON.stringify({
     monthKey,
     monthLabel: monthLabel(monthKey),
+    trackingStartedAt: MB_TRACKING_START_DATE,
     updatedAt: new Date().toISOString(),
     month: {
       overallSpendingRemaining: month.overallSpendingRemaining,
@@ -1723,7 +1728,7 @@ function cloneJson(obj) {
 }
 
 function validMonthKey(value) {
-  return typeof value === 'string' && /^\d{4}-\d{2}$/.test(value);
+  return typeof value === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
 }
 
 function currentEasternMonthKey(date = new Date()) {
@@ -1807,6 +1812,10 @@ function normalizeMomBudget(raw) {
   data.template.variable.discretionary = Number(data.template.variable.discretionary ?? defaults.template.variable.discretionary) || 0;
 
   data.months = data.months && typeof data.months === 'object' ? data.months : {};
+  // This is a cloned, read-only view for the phone. Preserve saved records, but
+  // exclude all activity before tracking began from public balances and history.
+  data.months = Object.fromEntries(Object.entries(data.months)
+    .filter(([key]) => validMonthKey(key) && key >= MB_TRACKING_START_MONTH));
   Object.entries(data.months).forEach(([monthKey, month]) => {
     month.fixedPaid = month.fixedPaid || {};
     month.fixedActual = month.fixedActual || {};
@@ -1818,6 +1827,9 @@ function normalizeMomBudget(raw) {
     delete month.fixedActual['family-gift'];
     month.discretionary = Array.isArray(month.discretionary) ? month.discretionary : [];
     month.otherExpenses = Array.isArray(month.otherExpenses) ? month.otherExpenses : [];
+    for (const ledger of ['discretionary', 'otherExpenses']) {
+      month[ledger] = month[ledger].filter(entry => !validDateString(entry.date) || entry.date >= MB_TRACKING_START_DATE);
+    }
   });
   return data;
 }
@@ -1948,9 +1960,11 @@ function momMonthHasActivity(month) {
     || (month.otherExpenses || []).length > 0;
 }
 
-function calcMomBudgetYear(data, year) {
-  const months = Object.keys(data.months)
-    .filter(k => k.startsWith(`${year}-`) && momMonthHasActivity(data.months[k] || blankMomBudgetMonth()))
+function calcMomBudgetYear(data, throughMonth) {
+  const year = throughMonth.slice(0, 4);
+  const months = [...new Set([...Object.keys(data.months), throughMonth])]
+    .filter(k => validMonthKey(k) && k >= MB_TRACKING_START_MONTH && k <= throughMonth && k.startsWith(`${year}-`)
+      && (k === throughMonth || momMonthHasActivity(data.months[k] || blankMomBudgetMonth())))
     .sort();
   return months.reduce((s, key) => {
     const c = calcMomBudgetMonth(data, key);

@@ -75,3 +75,55 @@ test('stalled refresh times out, preserves marked-stale balances, and allows the
   assert.equal(p.elements.get('overall').textContent, '$462.16');
   assert.equal(p.elements.has('error-card'), false);
 });
+
+const mobileHtml = readFileSync(new URL('../mobile/index.html', import.meta.url), 'utf8');
+const momMobileScript = mobileHtml.slice(mobileHtml.indexOf('  function momExpected('), mobileHtml.indexOf('  function renderProperties('));
+function mobileMom(today, raw, selected = '') {
+  const context = vm.createContext({
+    Date: class extends Date { constructor(...args) { super(...(args.length ? args : [today])); } },
+    state: { data: { mom: raw }, momMonth: selected },
+    n: value => Number(value) || 0,
+    sum: rows => rows.reduce((total, row) => total + (Number(row.amount) || 0), 0),
+    money: String, fullMoney: String, esc: String,
+    row: (...values) => values.join(' '), card: (...values) => values.join(' '), stat: (...values) => values.join(' '),
+  });
+  vm.runInContext(momMobileScript, context);
+  return context;
+}
+
+test('mobile Mom history stops at September and excludes earlier spending without changing saved records', () => {
+  const raw = {
+    template: { variable: { discretionary: 500 } },
+    months: {
+      '2026-08': { discretionary: [{ name: 'August purchase', date: '2026-08-31', amount: 100 }] },
+      '2026-09': {
+        discretionary: [{ name: 'Old purchase', date: '2026-08-31', amount: 75 }, { name: 'First purchase', date: '2026-09-01', amount: 25 }],
+        otherExpenses: [{ name: 'Old overage', date: '2026-08-31', amount: 50 }],
+      },
+      '2026-10': { discretionary: [{ name: 'Future purchase', date: '2026-10-01', amount: 10 }] },
+    },
+  };
+  const original = structuredClone(raw);
+  const c = mobileMom('2026-09-10T12:00:00', raw, '2026-08');
+  const rendered = c.renderMom();
+  assert.equal(c.state.momMonth, '2026-09');
+  assert.match(rendered, /September 2026/);
+  assert.match(rendered, /Tracking started September 1, 2026/);
+  assert.match(rendered, /disabled[^>]*aria-label="Previous month"/);
+  assert.match(rendered, /disabled[^>]*aria-label="Next month"/);
+  assert.doesNotMatch(rendered, /August purchase|Old purchase|Old overage|Future purchase|2026-08/);
+  assert.match(rendered, /First purchase/);
+  assert.equal(c.momMonth(raw, '2026-09').left, 475);
+  assert.deepEqual(raw, original);
+  const october = mobileMom('2026-10-10T12:00:00', raw);
+  assert.match(october.renderMom(), /data-mom-month="2026-09"[^>]*aria-label="Previous month"/);
+  october.state.momMonth = '2026-09';
+  assert.match(october.renderMom(), /disabled[^>]*aria-label="Previous month"/);
+});
+
+test('mobile Mom starts with September even when no month records exist', () => {
+  const c = mobileMom('2026-09-10T12:00:00', {});
+  assert.match(c.renderMom(), /September 2026/);
+  assert.equal(c.state.momMonth, '2026-09');
+  for (const match of mobileHtml.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)) new vm.Script(match[1]);
+});
