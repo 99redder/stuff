@@ -6926,7 +6926,10 @@ function _renderBudgetHtml() {
       if (item.autoType === 'treasury') {
         return `<div class="budget-item">
           <span class="budget-item-pct">${incomeRowPct}%</span>
-          <span class="budget-item-name" style="cursor:pointer;text-decoration:underline dotted" title="View coupon payout schedule" onclick="openBudgetTreasuryModal()">${escHtml(item.name)} <span style="font-size:.7rem;color:var(--text-muted)">📅 from Net Worth bonds</span></span>
+          <span class="budget-item-name" style="white-space:normal;line-height:1.25;cursor:pointer" title="View coupon payout schedule" onclick="openBudgetTreasuryModal()">
+            <span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline dotted">${escHtml(item.name)}</span>
+            <span style="display:block;font-size:.7rem;color:var(--text-muted);font-weight:400">📅 from Net Worth bonds</span>
+          </span>
           <span class="budget-item-lock"><span style="display:inline-block;width:1.5rem"></span></span>
           <span class="budget-item-amt">${fmt(item.amount)}/mo</span>
           <span class="budget-item-actions"></span>
@@ -6935,7 +6938,10 @@ function _renderBudgetHtml() {
       const autoNote = '⚖️ from Fair Share';
       return `<div class="budget-item">
         <span class="budget-item-pct">${incomeRowPct}%</span>
-        <span class="budget-item-name">${escHtml(item.name)} <span style="font-size:.7rem;color:var(--text-muted)">${autoNote}</span></span>
+        <span class="budget-item-name" style="white-space:normal;line-height:1.25">
+          <span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(item.name)}</span>
+          <span style="display:block;font-size:.7rem;color:var(--text-muted);font-weight:400">${autoNote}</span>
+        </span>
         <span class="budget-item-lock"><span style="display:inline-block;width:1.5rem"></span></span>
         <span class="budget-item-amt">${fmt(item.amount)}/mo</span>
         <span class="budget-item-actions"></span>
