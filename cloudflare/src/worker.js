@@ -1648,6 +1648,10 @@ const MOM_BUDGET_DEFAULT = {
 const MB_VARIABLE_FIXED_BILL_IDS = new Set(['electric', 'water', 'gas-heat']);
 const MB_TRACKING_START_MONTH = '2026-09';
 const MB_TRACKING_START_DATE = `${MB_TRACKING_START_MONTH}-01`;
+// Mom's spending allowance is intentionally independent from Fair Share.
+// Fair Share remains a reference value in the public summary, but never
+// increases the amount available for (or used by) spending tracking.
+const MB_MONTHLY_TRACKING_ALLOWANCE = 800;
 
 async function handleGetMomBudget(env) {
   const data = await env.MOM_BUDGET_STORE.getByName('mom_budget').getBudget();
@@ -1703,6 +1707,11 @@ async function handleGetMomBudgetPublicSummary(request, env, requestedMonth) {
     updatedAt: new Date().toISOString(),
     month: {
       overallSpendingRemaining: month.overallSpendingRemaining,
+      trackingAllowance: month.trackingAllowance,
+      trackingUsed: month.trackingUsed,
+      trackingRemaining: month.trackingRemaining,
+      trackingUsedPercent: month.trackingUsedPercent,
+      trackingRemainingPercent: month.trackingRemainingPercent,
       discretionaryRemaining: month.discretionaryRemaining,
       otherOverages: month.otherOverages,
       discretionarySpent: month.discretionarySpent,
@@ -1878,6 +1887,18 @@ function calcMomBudgetMonth(data, monthKey) {
   const otherOverages = otherSpent + fixedOver;
   const discretionaryAdjusted = Math.max(0, base.discretionary - otherOverages);
   const budgetSpent = base.fixed + fixedOver + discretionarySpent + otherSpent;
+  // Spending tracking is a separate $800 allowance. Count paid bills and
+  // ledgers, but explicitly exclude the auto-synced Fair Share transfer.
+  const trackingFixedPaid = t.fixed.reduce((s, item) => {
+    if (item.id === 'fair-share' || !m.fixedPaid?.[item.id]) return s;
+    const expected = momFixedExpectedPayment(item, monthKey);
+    const fallback = expected || (Number(item.amount) || 0);
+    if (momFixedBillKind(item) === 'fixed') return s + fallback;
+    const actual = Number(m.fixedActual?.[item.id]);
+    return s + (Number.isFinite(actual) && actual > 0 ? actual : fallback);
+  }, 0);
+  const trackingUsed = trackingFixedPaid + discretionarySpent + otherSpent;
+  const trackingRemaining = MB_MONTHLY_TRACKING_ALLOWANCE - trackingUsed;
   return {
     ...base,
     fixedPaid,
@@ -1886,8 +1907,13 @@ function calcMomBudgetMonth(data, monthKey) {
     otherOverages,
     discretionaryAdjusted,
     discretionaryRemaining: discretionaryAdjusted - discretionarySpent,
-    overallSpendingRemaining: base.discretionary
-      - discretionarySpent - otherOverages,
+    overallSpendingRemaining: trackingRemaining,
+    trackingAllowance: MB_MONTHLY_TRACKING_ALLOWANCE,
+    trackingFixedPaid,
+    trackingUsed,
+    trackingRemaining,
+    trackingUsedPercent: (trackingUsed / MB_MONTHLY_TRACKING_ALLOWANCE) * 100,
+    trackingRemainingPercent: (trackingRemaining / MB_MONTHLY_TRACKING_ALLOWANCE) * 100,
     budgetSpent,
     variance: base.planned - budgetSpent
   };
@@ -1900,7 +1926,9 @@ function momBudgetMonthTransactions(data, monthKey) {
   const entries = [];
 
   for (const item of t.fixed || []) {
-    if (!m.fixedPaid?.[item.id]) continue;
+    // Fair Share is a reference transfer only; it never belongs in tracked
+    // spending or the phone's transaction list.
+    if (item.id === 'fair-share' || !m.fixedPaid?.[item.id]) continue;
     const expected = momFixedExpectedPayment(item, monthKey);
     const fallback = expected || (Number(item.amount) || 0);
     const actual = Number(m.fixedActual?.[item.id]);
@@ -1962,18 +1990,25 @@ function momMonthHasActivity(month) {
 
 function calcMomBudgetYear(data, throughMonth) {
   const year = throughMonth.slice(0, 4);
-  const months = [...new Set([...Object.keys(data.months), throughMonth])]
-    .filter(k => validMonthKey(k) && k >= MB_TRACKING_START_MONTH && k <= throughMonth && k.startsWith(`${year}-`)
-      && (k === throughMonth || momMonthHasActivity(data.months[k] || blankMomBudgetMonth())))
-    .sort();
-  return months.reduce((s, key) => {
+  const throughNumber = Number(throughMonth.slice(5, 7));
+  const startNumber = year === MB_TRACKING_START_MONTH.slice(0, 4)
+    ? Number(MB_TRACKING_START_MONTH.slice(5, 7))
+    : 1;
+  const months = [];
+  for (let month = startNumber; month <= throughNumber; month += 1) {
+    months.push(`${year}-${String(month).padStart(2, '0')}`);
+  }
+  const summary = months.reduce((s, key) => {
     const c = calcMomBudgetMonth(data, key);
     s.months += 1;
-    s.planned += c.planned;
-    s.actual += c.budgetSpent;
-    s.variance += c.variance;
+    s.planned += c.trackingAllowance;
+    s.actual += c.trackingUsed;
+    s.variance += c.trackingRemaining;
     return s;
   }, { year, months: 0, planned: 0, actual: 0, variance: 0 });
+  summary.usedPercent = summary.planned ? (summary.actual / summary.planned) * 100 : 0;
+  summary.remainingPercent = summary.planned ? (summary.variance / summary.planned) * 100 : 0;
+  return summary;
 }
 
 // ── Investment Return ─────────────────────────────────────────────────────────

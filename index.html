@@ -7627,7 +7627,13 @@ function mbCalcMonth(monthKey) {
     otherOverages,
     discretionaryAdjusted,
     discretionaryRemaining: discretionaryAdjusted - discretionarySpent,
-    overallSpendingRemaining,
+    overallSpendingRemaining: trackingRemaining,
+    trackingAllowance: MB_MONTHLY_TRACKING_ALLOWANCE,
+    trackingFixedPaid,
+    trackingUsed,
+    trackingRemaining,
+    trackingUsedPercent: (trackingUsed / MB_MONTHLY_TRACKING_ALLOWANCE) * 100,
+    trackingRemainingPercent: (trackingRemaining / MB_MONTHLY_TRACKING_ALLOWANCE) * 100,
     unallocated: base.income - base.planned,
     cashLeft: base.income - cashSpent,
     reserveDelta: base.fixed - fixedPaid,
@@ -7669,18 +7675,27 @@ function mbMonthHasActivity(month) {
 }
 
 function mbYearSummary(year) {
-  const months = Object.keys(state.momBudget.months)
-    .filter(k => k.startsWith(`${year}-`) && mbMonthHasActivity(state.momBudget.months[k] || mbBlankMonth()))
-    .sort();
-  return months.reduce((s, key) => {
+  const currentMonth = _mbMonth;
+  const throughYear = currentMonth.slice(0, 4) === String(year) ? Number(currentMonth.slice(5, 7)) : 12;
+  const startMonth = String(year) === MB_TRACKING_START_MONTH.slice(0, 4)
+    ? Number(MB_TRACKING_START_MONTH.slice(5, 7))
+    : 1;
+  const months = [];
+  for (let month = startMonth; month <= throughYear; month += 1) {
+    months.push(`${year}-${String(month).padStart(2, '0')}`);
+  }
+  const summary = months.reduce((s, key) => {
     const c = mbCalcMonth(key);
     s.months += 1;
     s.income += c.income;
-    s.planned += c.planned;
-    s.actual += c.budgetSpent;
-    s.variance += c.variance;
+    s.planned += c.trackingAllowance;
+    s.actual += c.trackingUsed;
+    s.variance += c.trackingRemaining;
     return s;
   }, { months: 0, income: 0, planned: 0, actual: 0, variance: 0 });
+  summary.usedPercent = summary.planned ? (summary.actual / summary.planned) * 100 : 0;
+  summary.remainingPercent = summary.planned ? (summary.variance / summary.planned) * 100 : 0;
+  return summary;
 }
 
 function mbBillIcon(item) {
@@ -7797,11 +7812,11 @@ function _renderMomBudgetHtml() {
 
     <div class="stats-row mb-stats-row mb-stats-primary">
       ${stat('Monthly Income', fmt(c.income), 'var(--success)', `${fmt(c.unallocated)} unallocated`)}
-      ${stat('Overall Spending Left', `${spendingRemaining < 0 ? '−' : ''}${fmt(Math.abs(spendingRemaining))}`, spendingRemaining >= 0 ? 'var(--success)' : 'var(--danger)', 'Discretionary, including other overage amounts', 'is-prominent', spendingMonthLabel)}
+      ${stat('Overall Spending Left', `${spendingRemaining < 0 ? '−' : ''}${fmt(Math.abs(spendingRemaining))}`, spendingRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.trackingUsed)} used of ${fmt(c.trackingAllowance)} (${c.trackingUsedPercent.toFixed(1)}%) · ${c.trackingRemainingPercent.toFixed(1)}% left`, 'is-prominent', spendingMonthLabel)}
     </div>
 
     <div class="stats-row mb-stats-row mb-stats-categories">
-      ${stat('Discretionary Left', `${c.discretionaryRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.discretionaryRemaining))}`, c.discretionaryRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.discretionaryAdjusted)} adjusted budget`)}
+      ${stat('Spending Used', fmt(c.trackingUsed), 'var(--text)', `${c.trackingUsedPercent.toFixed(1)}% of $800 allowance`)}
     </div>
 
     <div class="mb-year-summary">

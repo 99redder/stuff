@@ -269,17 +269,14 @@ Global view (not per-property) for tracking Red's mother's monthly assistance bu
 
 **Top card formulas:**
 ```javascript
-overallSpendingRemaining =
-  base.groceries + base.gas + base.discretionary
-  - groceriesSpent - gasSpent - discretionarySpent - otherOverages;
+trackingAllowance = 800; // per eligible month
+trackingUsed = paidFixedBillsExcludingFairShare + discretionarySpent + otherSpent;
+overallSpendingRemaining = trackingAllowance - trackingUsed;
 
 otherOverages = manualOtherExpenses + fixedBillOverages;
-
-discretionaryAdjusted =
-  Math.max(0, base.discretionary - groceryOver - gasOver - otherOverages);
 ```
 
-`Overall Spending Left` shows the selected month in italic text and the note: `Groceries + gas + discretionary, including other overage amounts`.
+`Overall Spending Left` is based only on the $800 monthly allowance. Fair Share is displayed as a reference value and is excluded from tracking, balances, and phone transactions. Monthly and annual summaries expose used, remaining, and percentage values.
 
 **Ledger cards:**
 - Groceries: date + amount rows, ordered with `orderNumber`
@@ -313,17 +310,16 @@ Separate public read-only page for an Android/Samsung Galaxy phone:
 
 This page has no password gate and no editing controls. It is meant to be installed to Red's mother's phone as a simple PWA that shows:
 
-- Current month `Overall Spending Left` prominently
-- `Groceries Left`
-- `Gas Left`
-- `Discretionary Left`
-- Optional collapsed year status showing allocated, used, and under/over allocated
+- Current month `Overall Spending Left` prominently, with used and remaining percentages
+- Fair Share as a reference card only (excluded from tracking)
+- Current-month spending used
+- Optional collapsed year status showing the $800/month allowance, used, remaining, and percentages
 
 The page fetches only `get_mom_budget_public_summary`, a public Worker action that returns precomputed read-only numbers. It must never call `get_mom_budget`, `save_mom_budget`, or any authenticated/editing action.
 
 The service worker is intentionally network-first and calls `registration.update()` on launch so the installed PWA gets the newest page/assets when opened. If changing the phone PWA files, bump `CACHE_NAME` in `mom-budget-sw.js` if cached asset behavior matters.
 
-The phone polls every five seconds while visible and refreshes on foreground/wake events. Requests time out after ten seconds so a stalled connection cannot block later refreshes. The public API reads Mom Budget from the same Durable Object as the editor and sends `Cache-Control: no-store`; do not restore the old edge cache or read balances from KV. The per-IP rate limit remains in place. The Fair Share household calculation still uses the separate family `budget` KV record. Service worker v13 also reloads only this read-only phone page on activation so an installed app adopts updated polling code.
+The phone polls every five seconds while visible and refreshes on foreground/wake events. Requests time out after ten seconds so a stalled connection cannot block later refreshes. The public API reads Mom Budget from the same Durable Object as the editor and sends `Cache-Control: no-store`; do not restore the old edge cache or read balances from KV. The per-IP rate limit remains in place. The Fair Share household calculation still uses the separate family `budget` KV record, but it is reference-only for spending tracking. Service worker v14 also reloads only this read-only phone page on activation so an installed app adopts updated polling code.
 
 ### Savings View
 

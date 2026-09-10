@@ -31,6 +31,7 @@ test('Mom Budget saves are immediately visible to the phone and survive restart'
       '2025-12': { discretionary: [{ id: 'past', amount: 12 }] },
       '2026-08': { fixedPaid: { 'fair-share': true }, discretionary: [{ id: 'august', amount: 100 }] },
       '2026-09': {
+        fixedPaid: { 'fair-share': true },
         discretionary: [{ id: 'before-start', date: '2026-08-31', amount: 75 }],
         otherExpenses: [{ id: 'old-overage', date: '2026-08-31', amount: 25 }],
       },
@@ -51,9 +52,12 @@ test('Mom Budget saves are immediately visible to the phone and survive restart'
   assert.deepEqual((await first.json()).data, legacy, 'imports every existing record unchanged');
   const before = await (await api({ action: 'get_mom_budget_public_summary', month: '2026-09' })).json();
   assert.equal(before.trackingStartedAt, '2026-09-01');
-  assert.equal(before.month.overallSpendingRemaining, 500);
+  assert.equal(before.month.overallSpendingRemaining, 800);
+  assert.equal(before.month.trackingAllowance, 800);
+  assert.equal(before.month.trackingUsed, 0);
+  assert.equal(before.month.trackingRemaining, 800);
   assert.deepEqual(before.month.transactions, []);
-  assert.deepEqual(before.year, { year: '2026', months: 1, planned: 500, actual: 0, variance: 500 },
+  assert.deepEqual(before.year, { year: '2026', months: 1, planned: 800, actual: 0, variance: 800, usedPercent: 0, remainingPercent: 100 },
     'September is month one even before its first tracked expense; older and future activity is excluded');
   const updated = structuredClone(legacy);
   updated.months['2026-09'].discretionary.push({ id: 'new', date: '2026-09-01', amount: 37.84, name: 'Amazon' });
@@ -68,9 +72,10 @@ test('Mom Budget saves are immediately visible to the phone and survive restart'
   assert.equal(after.month.transactions.find(row => row.id === 'new').amount, 37.84);
   assert.equal(after.month.transactions.length, 1);
   assert.equal(after.year.months, 1);
-  assert.equal(after.year.planned, 500);
+  assert.equal(after.year.planned, 800);
   assert.equal(after.year.actual, 37.84);
-  assert.ok(Math.abs(after.year.variance - 462.16) < 1e-9);
+  assert.ok(Math.abs(after.year.variance - 762.16) < 1e-9);
+  assert.ok(Math.abs(after.year.usedPercent - 4.73) < 0.01);
   assert.equal(after.data, undefined);
   assert.equal(after.template, undefined);
   assert.equal(after.months, undefined);
@@ -86,10 +91,10 @@ test('Mom Budget saves are immediately visible to the phone and survive restart'
     }
     const october = await (await api({ action: 'get_mom_budget_public_summary', month: '2026-10' })).json();
     assert.equal(october.year.months, 2);
-    assert.equal(october.year.planned, 1000);
+    assert.equal(october.year.planned, 1600);
     assert.equal(october.year.actual, 82.84);
     const january = await (await api({ action: 'get_mom_budget_public_summary', month: '2027-01' })).json();
-    assert.deepEqual(january.year, { year: '2027', months: 1, planned: 500, actual: 0, variance: 500 });
+    assert.deepEqual(january.year, { year: '2027', months: 1, planned: 800, actual: 0, variance: 800, usedPercent: 0, remainingPercent: 100 });
     assert.deepEqual(january.month.transactions, []);
   });
   assert.equal((await api({ action: 'get_mom_budget' })).status, 401);
