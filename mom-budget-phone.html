@@ -355,6 +355,39 @@
     .birthday-date { display: block; color: var(--muted); }
     .birthday-note { display: block; color: var(--muted); font-size: 0.94rem; }
 
+    .important-info { margin: 24px 0 12px; }
+
+    .important-info summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 60px;
+      padding: 16px;
+      border-radius: 18px;
+      font-size: 1.18rem;
+      font-weight: 850;
+      list-style: none;
+      cursor: pointer;
+    }
+
+    .important-info summary::-webkit-details-marker { display: none; }
+    .important-info summary::after { content: '▾'; color: var(--good); }
+    .important-info[open] summary::after { content: '▴'; }
+    .important-info summary:focus-visible { outline: 3px solid var(--good); outline-offset: 3px; }
+
+    .important-info-list { padding: 0 16px 8px; }
+
+    .important-info-row {
+      padding: 13px 0;
+      border-top: 1px solid var(--border);
+      font-size: 1.08rem;
+      line-height: 1.4;
+    }
+
+    .important-info-label { display: block; color: var(--muted); font-weight: 800; }
+    .important-info-value { display: block; margin-top: 3px; font-weight: 850; overflow-wrap: anywhere; }
+
     .footer {
       padding: 8px 2px 0;
       color: var(--muted);
@@ -480,6 +513,20 @@
           <li><span class="birthday-name">Betty</span><span class="birthday-date">November 18</span><span class="birthday-note">Died in 2025 at 89</span></li>
           <li><span class="birthday-name">Becca Libby</span><span class="birthday-date">November 20</span></li>
         </ul>
+      </div>
+    </details>
+
+    <details class="card important-info" id="important-info">
+      <summary>Important Info</summary>
+      <div class="important-info-list">
+        <div class="important-info-row">
+          <span class="important-info-label">Door PIN</span>
+          <span class="important-info-value">1280</span>
+        </div>
+        <div class="important-info-row">
+          <span class="important-info-label">Address</span>
+          <span class="important-info-value">731 Wye Oak Dr Fruitland MD 21826</span>
+        </div>
       </div>
     </details>
 
