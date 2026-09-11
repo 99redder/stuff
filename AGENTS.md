@@ -594,6 +594,11 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ## Recent Updates
 
+### 2026-09-11 — Mom phone birthdays
+
+- Added a collapsed `Birthdays` section below the phone app's budget sections, with 21 entries grouped by month in calendar order. Supplied birth years and Betty's memorial note are preserved; missing birth years are not inferred.
+- The list is static page content, available independently of budget refreshes and in the offline page cache. Bumped the phone service worker to v15.
+
 ### 2026-09-10 — Mom mobile tracking start date
 
 - Phone tracking starts September 1, 2026. Public summaries exclude earlier month records and earlier dated ledger entries without changing stored data; requests for earlier months are rejected.

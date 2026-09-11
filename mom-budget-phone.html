@@ -310,6 +310,51 @@
       border-top: 1px solid var(--border);
     }
 
+    .birthdays { margin: 24px 0 12px; }
+
+    .birthdays summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 60px;
+      padding: 16px;
+      border-radius: 18px;
+      font-size: 1.18rem;
+      font-weight: 850;
+      list-style: none;
+      cursor: pointer;
+    }
+
+    .birthdays summary::-webkit-details-marker { display: none; }
+    .birthdays summary::after { content: '▾'; color: var(--good); }
+    .birthdays[open] summary::after { content: '▴'; }
+    .birthdays summary:focus-visible { outline: 3px solid var(--good); outline-offset: 3px; }
+
+    .birthdays-list { padding: 0 16px 8px; }
+
+    .birthday-month {
+      margin: 0;
+      padding: 12px 0 6px;
+      border-top: 1px solid var(--border);
+      color: var(--good);
+      font-size: 1.08rem;
+      font-weight: 850;
+    }
+
+    .birthday-entries { margin: 0 0 12px; padding: 0; list-style: none; }
+
+    .birthday-entries li {
+      padding: 9px 0;
+      font-size: 1.04rem;
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+    }
+
+    .birthday-name { display: block; font-weight: 800; }
+    .birthday-date { display: block; color: var(--muted); }
+    .birthday-note { display: block; color: var(--muted); font-size: 0.94rem; }
+
     .footer {
       padding: 8px 2px 0;
       color: var(--muted);
@@ -383,6 +428,60 @@
         <div class="transactions-empty">No transactions recorded for this month.</div>
       </div>
     </section>
+
+    <details class="card birthdays" id="birthdays">
+      <summary>Birthdays</summary>
+      <div class="birthdays-list">
+        <h2 class="birthday-month">January</h2>
+        <ul class="birthday-entries">
+          <li><span class="birthday-name">Karen Sprague</span><span class="birthday-date">January 6</span></li>
+          <li><span class="birthday-name">Dennis</span><span class="birthday-date">January 20</span></li>
+          <li><span class="birthday-name">Chris</span><span class="birthday-date">January 28, 1983</span></li>
+        </ul>
+        <h2 class="birthday-month">February</h2>
+        <ul class="birthday-entries">
+          <li><span class="birthday-name">Ellie</span><span class="birthday-date">February 12, 2018</span></li>
+        </ul>
+        <h2 class="birthday-month">April</h2>
+        <ul class="birthday-entries">
+          <li><span class="birthday-name">Denis Couture</span><span class="birthday-date">April 14</span></li>
+        </ul>
+        <h2 class="birthday-month">May</h2>
+        <ul class="birthday-entries">
+          <li><span class="birthday-name">John Chasse</span><span class="birthday-date">May 23, 1943</span></li>
+          <li><span class="birthday-name">Jim Chasse</span><span class="birthday-date">May 24, 1945</span></li>
+          <li><span class="birthday-name">Gordie</span><span class="birthday-date">May 30, 2022</span></li>
+          <li><span class="birthday-name">Frances</span><span class="birthday-date">May 30</span></li>
+          <li><span class="birthday-name">Mike</span><span class="birthday-date">May 31, 1985</span></li>
+        </ul>
+        <h2 class="birthday-month">June</h2>
+        <ul class="birthday-entries">
+          <li><span class="birthday-name">Georgia</span><span class="birthday-date">June 6</span></li>
+          <li><span class="birthday-name">Stacey Leary</span><span class="birthday-date">June 22</span></li>
+        </ul>
+        <h2 class="birthday-month">July</h2>
+        <ul class="birthday-entries">
+          <li><span class="birthday-name">Sheila Tapscott</span><span class="birthday-date">July 17</span></li>
+        </ul>
+        <h2 class="birthday-month">August</h2>
+        <ul class="birthday-entries">
+          <li><span class="birthday-name">Megan</span><span class="birthday-date">August 13, 1990</span></li>
+          <li><span class="birthday-name">Florence</span><span class="birthday-date">August 13, 1922</span></li>
+          <li><span class="birthday-name">Omar</span><span class="birthday-date">August 16, 1918</span></li>
+          <li><span class="birthday-name">Bob Chasse</span><span class="birthday-date">August 28, 1946</span></li>
+        </ul>
+        <h2 class="birthday-month">October</h2>
+        <ul class="birthday-entries">
+          <li><span class="birthday-name">Aurelie</span><span class="birthday-date">October 2, 1946</span></li>
+          <li><span class="birthday-name">Kathy Couture</span><span class="birthday-date">October 8, 1954</span></li>
+        </ul>
+        <h2 class="birthday-month">November</h2>
+        <ul class="birthday-entries">
+          <li><span class="birthday-name">Betty</span><span class="birthday-date">November 18</span><span class="birthday-note">Died in 2025 at 89</span></li>
+          <li><span class="birthday-name">Becca Libby</span><span class="birthday-date">November 20</span></li>
+        </ul>
+      </div>
+    </details>
 
     <div class="footer" id="updated">Read-only. Updates automatically.</div>
   </main>
