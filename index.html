@@ -7766,14 +7766,14 @@ async function mbOpenPhoneAccess() {
     _mbPhoneInfo = info.data;
     const date = timestamp => new Date(timestamp).toLocaleString();
     body.innerHTML = `
-      <p style="line-height:1.5;margin-top:0">Create a setup link, open it in <strong>Chrome on Mom’s phone</strong>, and tap <strong>Set Up This Phone</strong>. The link works once and expires in 30 minutes. Then use Chrome’s menu to add the app to her home screen.</p>
+      <p style="line-height:1.5;margin-top:0">Create a setup link, open it in Chrome on the approved phone, laptop, or desktop, and tap <strong>Set Up This Device</strong>. The link works once and expires in 30 minutes. Create a separate link for each device you want to approve, then add the app to that device’s home screen or bookmarks.</p>
       <div class="form-grid">
         <div class="form-group"><label for="mom-phone-name">Name for this access</label><input id="mom-phone-name" maxlength="80" value="Mom’s Galaxy"></div>
-        <div class="form-group"><label for="mom-phone-mode">Sign-in method</label><select id="mom-phone-mode"><option value="passkey">Fingerprint / phone PIN (recommended)</option><option value="device">Remember phone only</option></select></div>
+        <div class="form-group"><label for="mom-phone-mode">Sign-in method</label><select id="mom-phone-mode"><option value="passkey">Fingerprint / device PIN (recommended)</option><option value="device">Remember device only</option></select></div>
       </div>
-      <p style="font-size:.8rem;color:var(--text-muted)">Both stay signed in for 30 days. Fingerprint / phone PIN allows easy sign-in afterward. Remember phone only needs another setup link after 30 days. Anyone using an unlocked, signed-in phone can view the app.</p>
+      <p style="font-size:.8rem;color:var(--text-muted)">Both stay signed in for 30 days. Fingerprint / device PIN allows easy sign-in afterward on phones and desktops. Remember device only needs another setup link after 30 days. Anyone using an unlocked, signed-in device can view the app.</p>
       <button class="btn btn-primary" id="mom-phone-create" onclick="mbCreatePhoneInvite()">Create Setup Link</button>
-      <div id="mom-phone-link-box" class="hidden" style="margin-top:.75rem"><label for="mom-phone-link">Open this link on her phone</label><input id="mom-phone-link" readonly style="width:100%;margin:.4rem 0" onclick="this.select()"><button class="btn btn-ghost btn-sm" onclick="mbCopyPhoneLink()">Copy Link</button><p style="font-size:.8rem;color:var(--text-muted)">This link grants access. Share it only with the person you are approving.</p></div>
+      <div id="mom-phone-link-box" class="hidden" style="margin-top:.75rem"><label for="mom-phone-link">Open this link on the approved device</label><input id="mom-phone-link" readonly style="width:100%;margin:.4rem 0" onclick="this.select()"><button class="btn btn-ghost btn-sm" onclick="mbCopyPhoneLink()">Copy Link</button><p style="font-size:.8rem;color:var(--text-muted)">This link grants access. Share it only with the person you are approving.</p></div>
       <p id="mom-phone-status" role="status" style="font-size:.85rem;white-space:pre-line"></p>
       <h3 style="font-size:1rem;margin-top:1.5rem">Approved access</h3>
       <p style="font-size:.8rem;color:var(--text-muted)">For a lost phone, remove its access below, then create a new setup link. Removing a passkey also removes access on devices where that passkey was synced.</p>

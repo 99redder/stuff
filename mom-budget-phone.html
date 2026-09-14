@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-dLeF1u/5m7cV+J8Cs+NzUrHId6X5wM9fCRr+gWRlMLQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://rentals-api.99redder.workers.dev; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-NJUli/KegXY+2hwIPAMLIk0jmY/oseynbP0hFuJoejM='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://rentals-api.99redder.workers.dev; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
   <meta name="referrer" content="no-referrer">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0f766e">
@@ -431,8 +431,8 @@
       <p id="auth-description">Your budget and family information are private.</p>
       <button class="auth-button" id="auth-button" type="button">Unlock My Budget</button>
       <p id="auth-status" role="status" aria-live="polite">Checking your access…</p>
-      <p class="auth-help">Use your fingerprint or the PIN you use to unlock your phone.</p>
-      <details class="auth-help"><summary>Need help?</summary><p>For a new phone or first-time setup, ask Chris for a setup link. Open it in Chrome on this phone. You do not need a new password.</p></details>
+      <p class="auth-help">Use this device’s fingerprint, PIN, Windows Hello, or Touch ID.</p>
+      <details class="auth-help"><summary>Need help?</summary><p>For a new device or first-time setup, ask Chris for a setup link. Open it in Chrome on the device being approved. You do not need a new password.</p></details>
     </section>
     <div id="private-content" hidden>
     <div class="topbar">
@@ -637,7 +637,7 @@
       document.getElementById('important-info').open = false;
       clearError();
       authStatus.textContent = message;
-      authButton.textContent = logoutPending() ? 'Finish Signing Out' : (setupToken ? 'Set Up This Phone' : 'Unlock My Budget');
+      authButton.textContent = logoutPending() ? 'Finish Signing Out' : (setupToken ? 'Set Up This Device' : 'Unlock My Budget');
     }
 
     async function loadSummary({ silent = false } = {}) {
@@ -665,7 +665,7 @@
         if (attempt !== generation) return;
         if (error.status === 401) {
           sessionMayExist = false;
-          clearPrivate('Tap below to use your fingerprint or phone PIN.');
+          clearPrivate('Tap below to use this device’s screen lock.');
         } else if (hasData && (!sessionExpiresAt || sessionExpiresAt > Date.now())) {
           els.status.textContent = `⚠ Couldn't update — figures below are from ${shortTime(lastUpdatedIso)} and may be out of date.`;
           showError('Could not refresh just now. Reopen the app or tap ↻ once you have a connection.');
@@ -705,7 +705,7 @@
       if (logoutPending()) return signOut();
       authBusy = true;
       authButton.disabled = true;
-      authStatus.textContent = setupToken ? 'Setting up this phone…' : 'Use your fingerprint or phone PIN…';
+      authStatus.textContent = setupToken ? 'Setting up this device…' : 'Use this device’s screen lock…';
       try {
         const enrolling = Boolean(setupToken);
         const result = await phoneApi(enrolling ? 'enroll/options' : 'login/options', enrolling ? { token: setupToken } : {});
@@ -905,7 +905,7 @@
       }
       if (logoutPending()) return signOut();
       if (setupToken) {
-        clearPrivate('Tap Set Up This Phone. Your phone will guide you.');
+        clearPrivate('Tap Set Up This Device. Your device will guide you.');
       } else {
         lastAutoFetch = Date.now();
         await loadSummary();
