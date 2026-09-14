@@ -1178,6 +1178,11 @@
       font-size: 0.82rem;
       line-height: 1.4;
     }
+    .mb-month-control {
+      width: 180px;
+      max-width: 100%;
+      min-width: 0;
+    }
     .mb-fixed-sort {
       width: 215px;
       flex: 0 0 215px;
@@ -8047,8 +8052,8 @@ function _renderMomBudgetHtml() {
       <div style="font-size:1.2rem;font-weight:700">Mom Budget</div>
       <button class="btn btn-ghost btn-sm" onclick="mbOpenPhoneAccess()">🔒 Phone Access</button>
       <div style="margin-left:auto;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
-        <input type="month" class="form-input" style="width:145px" value="${escAttr(_mbMonth)}" onchange="mbSetMonth(this.value)">
-        <select class="form-input" style="width:145px" onchange="mbSetMonth(this.value)">
+        <input type="month" class="form-input mb-month-control" value="${escAttr(_mbMonth)}" onchange="mbSetMonth(this.value)">
+        <select class="form-input mb-month-control" onchange="mbSetMonth(this.value)">
           ${monthOptions || `<option value="${escAttr(_mbMonth)}">${escHtml(_mbMonth)}</option>`}
         </select>
       </div>
