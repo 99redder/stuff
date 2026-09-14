@@ -300,10 +300,10 @@ otherOverages = manualOtherExpenses + fixedBillOverages;
 
 ### Mom Budget Phone PWA
 
-Separate public read-only page for an Android/Samsung Galaxy phone:
+Separate read-only page for approved Android/Samsung Galaxy phones and desktop devices:
 
 - File: `mom-budget-phone.html`
-- Live URL after GitHub Pages deploy: `https://99redder.github.io/rentals/mom-budget-phone.html`
+- Live URL after GitHub Pages deploy: `https://99redder.github.io/stuff/mom-budget-phone.html`
 - Manifest: `mom-budget-manifest.webmanifest`
 - Service worker: `mom-budget-sw.js`
 - Icons: `mom-budget-icon-192.png`, `mom-budget-icon-512.png`, plus source SVG
@@ -316,11 +316,11 @@ This page is a read-only PWA with its own private phone session. It is meant to 
 
 The page fetches only the passkey-protected `/mom/api/summary` Worker route, which returns precomputed read-only numbers plus private birthdays and important information. It must never call `get_mom_budget`, `save_mom_budget`, or any authenticated/editing action. The legacy `get_mom_budget_public_summary` action is closed and returns 401.
 
-Phone access is owner-managed from the Mom Budget view's **Phone Access** button. Setup links expire after 30 minutes and work once. The recommended sign-in method is a platform passkey (fingerprint or phone PIN) on the Galaxy; sessions last 30 days and can be revoked individually. The Worker stores only passkey public keys and hashed bearer tokens in the `MomPhoneAccess` Durable Object. The phone's service worker caches only the empty app shell and never API responses or private content.
+Phone access is owner-managed from the Mom Budget view's **Phone Access** button. Enrollment is currently locked after the approved devices were set up; reopening it requires an explicit code change and deployment. The recommended sign-in method is a platform passkey (fingerprint, device PIN, Windows Hello, or Touch ID); sessions last 30 days and can be revoked individually. The Worker stores only passkey public keys and hashed bearer tokens in the `MomPhoneAccess` Durable Object. The phone's service worker caches only the empty app shell and never API responses or private content.
 
 The service worker is intentionally network-first and calls `registration.update()` on launch so the installed PWA gets the newest page/assets when opened. It is scoped to the phone page and caches only static shell assets. If changing the phone PWA files, bump `CACHE_NAME` in `mom-budget-sw.js` if cached asset behavior matters.
 
-The phone polls every five seconds while visible and refreshes on foreground/wake events. Requests time out after ten seconds so a stalled connection cannot block later refreshes. The public API reads Mom Budget from the same Durable Object as the editor and sends `Cache-Control: no-store`; do not restore the old edge cache or read balances from KV. The per-IP rate limit remains in place. The Fair Share household calculation still uses the separate family `budget` KV record, but it is reference-only for spending tracking. Service worker v14 also reloads only this read-only phone page on activation so an installed app adopts updated polling code.
+The phone polls every five seconds while visible and refreshes on foreground/wake events. Requests time out after ten seconds so a stalled connection cannot block later refreshes. The protected API reads Mom Budget from the same Durable Object as the editor and sends `Cache-Control: no-store`; do not restore the old edge cache or read balances from KV. The per-IP rate limit remains in place. The Fair Share household calculation still uses the separate family `budget` KV record, but it is reference-only for spending tracking. Service worker v19 also reloads only this read-only phone page on activation so an installed app adopts updated polling code.
 
 ### Savings View
 

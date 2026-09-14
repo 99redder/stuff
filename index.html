@@ -7744,7 +7744,7 @@ async function renderMomBudget() {
   _renderMomBudgetHtml();
 }
 
-// Private phone enrollment and recovery. These owner controls use the existing
+// Private phone access management. These owner controls use the existing
 // admin session; phone cookies never authorize any /api/data action.
 let _mbPhoneInfo = null;
 let _mbPhoneRequest = 0;
@@ -7766,58 +7766,24 @@ async function mbOpenPhoneAccess() {
     _mbPhoneInfo = info.data;
     const date = timestamp => new Date(timestamp).toLocaleString();
     body.innerHTML = `
-      <p style="line-height:1.5;margin-top:0">Create a setup link, open it in Chrome on the approved phone, laptop, or desktop, and tap <strong>Set Up This Device</strong>. The link works once and expires in 30 minutes. Create a separate link for each device you want to approve, then add the app to that device’s home screen or bookmarks.</p>
-      <div class="form-grid">
-        <div class="form-group"><label for="mom-phone-name">Name for this access</label><input id="mom-phone-name" maxlength="80" value="Mom’s Galaxy"></div>
-        <div class="form-group"><label for="mom-phone-mode">Sign-in method</label><select id="mom-phone-mode"><option value="passkey">Fingerprint / device PIN (recommended)</option><option value="device">Remember device only</option></select></div>
-      </div>
-      <p style="font-size:.8rem;color:var(--text-muted)">Both stay signed in for 30 days. Fingerprint / device PIN allows easy sign-in afterward on phones and desktops. Remember device only needs another setup link after 30 days. Anyone using an unlocked, signed-in device can view the app.</p>
-      <button class="btn btn-primary" id="mom-phone-create" onclick="mbCreatePhoneInvite()">Create Setup Link</button>
-      <div id="mom-phone-link-box" class="hidden" style="margin-top:.75rem"><label for="mom-phone-link">Open this link on the approved device</label><input id="mom-phone-link" readonly style="width:100%;margin:.4rem 0" onclick="this.select()"><button class="btn btn-ghost btn-sm" onclick="mbCopyPhoneLink()">Copy Link</button><p style="font-size:.8rem;color:var(--text-muted)">This link grants access. Share it only with the person you are approving.</p></div>
+      <div style="padding:.8rem 1rem;border:1px solid var(--border);border-radius:10px;background:var(--surface);line-height:1.5">New device setup is closed. Your already-approved devices can continue to sign in, and you can remove access below.</div>
       <p id="mom-phone-status" role="status" style="font-size:.85rem;white-space:pre-line"></p>
       <h3 style="font-size:1rem;margin-top:1.5rem">Approved access</h3>
-      <p style="font-size:.8rem;color:var(--text-muted)">For a lost phone, remove its access below, then create a new setup link. Removing a passkey also removes access on devices where that passkey was synced.</p>
       ${(access.access || []).map(row => `<div style="display:flex;align-items:center;gap:1rem;padding:.65rem 0;border-bottom:1px solid var(--border)"><div style="flex:1"><strong>${escHtml(row.name)}</strong><div style="font-size:.78rem;color:var(--text-muted)">${row.mode === 'passkey' ? 'Passkey' : 'Remembered phone'} · Last used ${escHtml(date(row.lastUsedAt))}</div></div><button class="btn btn-danger btn-sm" onclick="mbRevokePhone('${escAttr(row.id)}')">Remove Access</button></div>`).join('') || '<p>No phones have been set up yet.</p>'}
-      <h3 style="font-size:1rem;margin-top:1.5rem">Unused setup links</h3>
-      ${(access.invites || []).map(row => `<div style="display:flex;align-items:center;gap:1rem;padding:.65rem 0;border-bottom:1px solid var(--border)"><div style="flex:1">${escHtml(row.name)}<div style="font-size:.78rem;color:var(--text-muted)">Expires ${escHtml(date(row.expiresAt))}</div></div><button class="btn btn-ghost btn-sm" onclick="mbCancelPhoneInvite('${escAttr(row.id)}')">Cancel Link</button></div>`).join('') || '<p>No unused setup links.</p>'}
+      <p style="font-size:.8rem;color:var(--text-muted)">For a lost device, remove its access below. Re-opening enrollment requires an explicit deployment change.</p>
       <details style="margin-top:1.5rem"><summary style="cursor:pointer;font-weight:600">Private Important Info</summary>
-        <p style="font-size:.8rem;color:var(--text-muted)">Only approved phones can read these values. Update the door PIN here after changing it on the lock.</p>
+        <p style="font-size:.8rem;color:var(--text-muted)">Only approved devices can read these values. Update the door PIN here after changing it on the lock.</p>
         ${(_mbPhoneInfo.importantInfo || []).map((row, index) => `<div class="form-group" style="margin-bottom:.75rem"><label for="mom-phone-info-${index}">${escHtml(row.label)}</label><input id="mom-phone-info-${index}" maxlength="500" value="${escAttr(row.value)}" style="width:100%"></div>`).join('')}
         <button class="btn btn-primary btn-sm" id="mom-phone-info-save" onclick="mbSavePhoneInfo()">Save Important Info</button>
         <p style="font-size:.8rem;color:var(--text-muted)">${(_mbPhoneInfo.birthdays || []).length} birthday entries are also stored privately.</p>
       </details>`;
   } catch (error) { if (request === _mbPhoneRequest) body.textContent = error.message; }
 }
-async function mbCreatePhoneInvite() {
-  const button = document.getElementById('mom-phone-create');
-  if (button.disabled) return;
-  const request = _mbPhoneRequest;
-  button.disabled = true;
-  try {
-    const result = await callApi({ action: 'mom_phone_invite', name: document.getElementById('mom-phone-name').value, mode: document.getElementById('mom-phone-mode').value });
-    if (request !== _mbPhoneRequest) return;
-    document.getElementById('mom-phone-link').value = result.url;
-    document.getElementById('mom-phone-link-box').classList.remove('hidden');
-    document.getElementById('mom-phone-status').textContent = 'Setup link ready. Expires ' + new Date(result.expiresAt).toLocaleTimeString() + '.';
-  } catch (error) { if (request === _mbPhoneRequest) document.getElementById('mom-phone-status').textContent = error.message; }
-  finally { button.disabled = false; }
-}
-async function mbCopyPhoneLink() {
-  const input = document.getElementById('mom-phone-link');
-  try {
-    await navigator.clipboard.writeText(input.value);
-    document.getElementById('mom-phone-status').textContent = 'Link copied.';
-  } catch { input.select(); document.getElementById('mom-phone-status').textContent = 'Select and copy the link above.'; }
-}
 function mbRevokePhone(id) {
-  showBrandedNotice({ type: 'danger', title: 'Remove Phone Access?', message: 'This removes this passkey or remembered phone and signs out its sessions. A new setup link will be needed to restore access.', confirmLabel: 'Remove Access', onConfirm: async () => {
+  showBrandedNotice({ type: 'danger', title: 'Remove Phone Access?', message: 'This removes this passkey or remembered device and signs out its sessions. Enrollment is currently closed, so restoring access requires an explicit deployment change.', confirmLabel: 'Remove Access', onConfirm: async () => {
     try { await callApi({ action: 'mom_phone_revoke', id }); await mbOpenPhoneAccess(); }
     catch (error) { showBrandedNotice({ title: 'Could not remove access', message: error.message }); }
   } });
-}
-async function mbCancelPhoneInvite(id) {
-  try { await callApi({ action: 'mom_phone_cancel_invite', id }); await mbOpenPhoneAccess(); }
-  catch (error) { document.getElementById('mom-phone-status').textContent = error.message; }
 }
 async function mbSavePhoneInfo() {
   if (!_mbPhoneInfo) return;

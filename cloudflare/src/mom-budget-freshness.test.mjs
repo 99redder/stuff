@@ -37,6 +37,12 @@ test('Mom Budget public details are closed and authoritative data stays private'
   const publicSummary = await api({ action: 'get_mom_budget_public_summary', month: '2026-09' });
   assert.notEqual(publicSummary.status, 200);
   assert.match((await publicSummary.json()).error, /sign-in|not found|unauthorized/i);
+  assert.equal((await api({ action: 'mom_phone_invite', name: 'Unexpected device', mode: 'passkey' }, sessionToken)).status, 400);
+  const staleInvite = await mf.dispatchFetch('https://rentals-api.99redder.workers.dev/mom/api/enroll/options', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://99redder.github.io' },
+    body: JSON.stringify({ token: 'A'.repeat(43) }),
+  });
+  assert.equal(staleInvite.status, 403);
   const updated = structuredClone(legacy);
   updated.months['2026-09'].discretionary.push({ id: 'new', date: '2026-09-01', amount: 37.84, name: 'Amazon' });
   assert.deepEqual(await (await api({ action: 'save_mom_budget', data: updated }, sessionToken)).json(), { success: true });

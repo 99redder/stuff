@@ -7,6 +7,10 @@ import {
 export const MOM_PHONE_API_ORIGIN = 'https://rentals-api.99redder.workers.dev';
 export const MOM_PHONE_WEB_ORIGIN = 'https://99redder.github.io';
 export const MOM_PHONE_SESSION_SECONDS = 30 * 24 * 60 * 60;
+// Enrollment is deliberately closed after the approved devices are set up.
+// Re-opening it requires an explicit code change and deployment; an old invite
+// or stale admin page cannot add another device.
+const MOM_PHONE_ENROLLMENT_LOCKED = true;
 const FLOW_MS = 5 * 60 * 1000;
 const INVITE_MS = 30 * 60 * 1000;
 const encode = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -40,6 +44,9 @@ export class MomPhoneAccess extends DurableObject {
       .map(row => ({ key: row.key, ...JSON.parse(row.value) }));
   }
   cleanup() { this.sql.exec('DELETE FROM records WHERE expires IS NOT NULL AND expires <= ?', Date.now()); }
+  closeEnrollmentData() {
+    if (MOM_PHONE_ENROLLMENT_LOCKED) this.sql.exec("DELETE FROM records WHERE kind IN ('invite', 'flow')");
+  }
   origin() { return this.env.MOM_PHONE_WEB_ORIGIN || MOM_PHONE_WEB_ORIGIN; }
 
   // Error details from cryptographic verification never leave the object.
@@ -75,6 +82,7 @@ export class MomPhoneAccess extends DurableObject {
   }
 
   async createInvite({ name, mode = 'passkey' }) {
+    if (MOM_PHONE_ENROLLMENT_LOCKED) { this.closeEnrollmentData(); reject('New device setup is closed.', 403); }
     name = typeof name === 'string' ? name.trim() : '';
     if (!name || name.length > 80 || !['passkey', 'device'].includes(mode)) reject('Enter a name and a valid sign-in method.');
     this.cleanup();
@@ -125,6 +133,7 @@ export class MomPhoneAccess extends DurableObject {
   }
 
   async enrollOptions(token, oldFlow) {
+    if (MOM_PHONE_ENROLLMENT_LOCKED) { this.closeEnrollmentData(); reject('New device setup is closed.', 403); }
     if (!tokenValid(token)) reject('This setup link is invalid or expired. Ask for a new link.', 401);
     const inviteKey = await hash(token);
     const invite = this.get('invite', inviteKey);

@@ -36,9 +36,9 @@ new_sqlite_classes = ["MomPhoneAccess"]
 binding = "ESAI_API"
 service = "eastern-shore-ai-contact"
 
-# Per-IP rate limiting for the public Mom Budget phone endpoint
-# (get_mom_budget_public_summary). 60 requests / 60s per IP, counted in-memory
-# at the edge — no KV writes. The handler fails open if this binding is absent.
+# Per-IP rate limiting for the protected Mom Budget phone sign-in and summary
+# endpoints. 60 requests / 60s per IP, counted in-memory at the edge — no KV
+# writes. The handler fails open if this binding is absent.
 [[ratelimits]]
 name = "PUBLIC_RATELIMIT"
 namespace_id = "1001"
