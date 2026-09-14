@@ -1,7 +1,7 @@
 {
   "name": "Money Left",
   "short_name": "Money Left",
-  "description": "Read-only Mom Budget spending left dashboard.",
+  "description": "Private, read-only budget and family information.",
   "start_url": "./mom-budget-phone.html",
   "scope": "./mom-budget-phone.html",
   "display": "standalone",
@@ -21,5 +21,6 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
-  ]
+  ],
+  "id": "./mom-budget-phone.html"
 }

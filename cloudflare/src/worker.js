@@ -3,6 +3,8 @@
 // KV keys: transactions:{property}, summaries:{property}, defaults:{property}, depreciation:{property}
 
 export { MomBudgetStore } from './mom-budget-store.js';
+export { MomPhoneAccess } from './mom-phone-access.js';
+import { handleMomPhone } from './mom-phone.js';
 
 import {
   STOCK_STICKIES_ACCOUNT_IDS,
@@ -81,6 +83,10 @@ export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin') || '';
     const url = new URL(request.url);
+
+    if (url.pathname === '/mom' || url.pathname.startsWith('/mom/')) {
+      return handleMomPhone(request, env, { readJson: readJsonLimited, summary: handleGetMomBudgetPhoneSummary });
+    }
 
     if (url.pathname.startsWith('/api/stock-stickies/')) {
       return handleStockStickiesApi(request, env, url, origin);
@@ -252,10 +258,7 @@ async function handleDataApi(request, env) {
     return jsonResponse({ ok }, ok ? 200 : 401);
   }
   if (action === 'get_mom_budget_public_summary') {
-    if (request.headers.get('Origin') !== ALLOWED_ORIGIN) {
-      return jsonResponse({ error: 'Origin required' }, 403);
-    }
-    return handleGetMomBudgetPublicSummary(request, env, body.month);
+    return jsonResponse({ error: 'Phone sign-in is now required. Open the private Money Left app.' }, 401);
   }
 
   if (!(await isAuthenticated(request, env))) {
@@ -263,6 +266,18 @@ async function handleDataApi(request, env) {
   }
 
   // Non-property actions
+  if (action.startsWith('mom_phone_')) {
+    const operations = {
+      mom_phone_list: 'list', mom_phone_invite: 'invite', mom_phone_revoke: 'revoke',
+      mom_phone_cancel_invite: 'cancel-invite', mom_phone_get_info: 'private-info', mom_phone_save_info: 'save-private-info',
+    };
+    const operation = operations[action];
+    if (!operation) return jsonResponse({ error: 'Unknown phone action' }, 400);
+    try {
+      const result = await env.MOM_PHONE_ACCESS.getByName('mom_phone').call(operation, body);
+      return jsonResponse(result, result.status || 200);
+    } catch { return jsonResponse({ error: 'Phone access is temporarily unavailable.' }, 503); }
+  }
   if (action === 'get_tax_planning') return handleGetTaxPlanning(env, body.year);
   if (action === 'save_tax_planning') return handleSaveTaxPlanning(env, body.year, body.data);
   if (action === 'fetch_fmg_tax_summary') return handleFetchFmgTaxSummary(env, body.year);
@@ -1667,10 +1682,10 @@ async function handleSaveMomBudget(env, data) {
   return jsonResponse({ success: true });
 }
 
-// Public, read-only endpoint for mom-budget-phone.html. Keep the per-IP burst
-// guard, but never cache spending balances: every poll must see completed saves.
+// Only called after the separate, read-only phone session has been verified.
+// Never cache spending balances: every poll must see completed saves.
 
-async function handleGetMomBudgetPublicSummary(request, env, requestedMonth) {
+async function handleGetMomBudgetPhoneSummary(request, env, requestedMonth) {
   // 1. Per-IP rate limit. Fail-open: if the binding is missing or errors, never take
   //    the endpoint down — the phone must keep working no matter what.
   if (env.PUBLIC_RATELIMIT) {

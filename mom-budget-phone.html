@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https://rentals-api.99redder.workers.dev; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://rentals-api.99redder.workers.dev; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
   <meta name="referrer" content="no-referrer">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0f766e">
@@ -28,6 +28,16 @@
     }
 
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    .auth-card { padding: 28px 22px; margin-top: 12vh; text-align: center; }
+    .auth-card h1 { font-size: 1.8rem; margin: 12px 0; }
+    .auth-card p { color: var(--muted); line-height: 1.55; }
+    .auth-button { width: 100%; min-height: 58px; padding: 14px; background: var(--good); color: white; border: 0; border-radius: 14px; font: inherit; font-size: 1.15rem; font-weight: 750; cursor: pointer; }
+    .auth-button:disabled { opacity: .6; cursor: wait; }
+    .auth-help { font-size: .94rem; }
+    .signout { display: block; margin: 16px auto; padding: 12px 20px; background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 12px; font: inherit; }
+    #auth-status { min-height: 1.5em; }
+
 
     html {
       min-height: 100%;
@@ -415,6 +425,16 @@
 </head>
 <body>
   <main class="app" aria-live="polite">
+    <section class="card auth-card" id="auth-card" aria-labelledby="auth-title">
+      <div aria-hidden="true" style="font-size:2.5rem">🔒</div>
+      <h1 id="auth-title">My Money Left</h1>
+      <p id="auth-description">Your budget and family information are private.</p>
+      <button class="auth-button" id="auth-button" type="button">Unlock My Budget</button>
+      <p id="auth-status" role="status" aria-live="polite">Checking your access…</p>
+      <p class="auth-help">Use your fingerprint or the PIN you use to unlock your phone.</p>
+      <details class="auth-help"><summary>Need help?</summary><p>For a new phone or first-time setup, ask Chris for a setup link. Open it in Chrome on this phone. You do not need a new password.</p></details>
+    </section>
+    <div id="private-content" hidden>
     <div class="topbar">
       <div>
         <h1>Money Left</h1>
@@ -464,80 +484,40 @@
 
     <details class="card birthdays" id="birthdays">
       <summary>Birthdays</summary>
-      <div class="birthdays-list">
-        <h2 class="birthday-month">January</h2>
-        <ul class="birthday-entries">
-          <li><span class="birthday-name">Karen Sprague</span><span class="birthday-date">January 6</span></li>
-          <li><span class="birthday-name">Dennis</span><span class="birthday-date">January 20</span></li>
-          <li><span class="birthday-name">Chris</span><span class="birthday-date">January 28, 1983</span></li>
-        </ul>
-        <h2 class="birthday-month">February</h2>
-        <ul class="birthday-entries">
-          <li><span class="birthday-name">Ellie</span><span class="birthday-date">February 12, 2018</span></li>
-        </ul>
-        <h2 class="birthday-month">April</h2>
-        <ul class="birthday-entries">
-          <li><span class="birthday-name">Denis Couture</span><span class="birthday-date">April 14</span></li>
-        </ul>
-        <h2 class="birthday-month">May</h2>
-        <ul class="birthday-entries">
-          <li><span class="birthday-name">John Chasse</span><span class="birthday-date">May 23, 1943</span></li>
-          <li><span class="birthday-name">Jim Chasse</span><span class="birthday-date">May 24, 1945</span></li>
-          <li><span class="birthday-name">Gordie</span><span class="birthday-date">May 30, 2022</span></li>
-          <li><span class="birthday-name">Frances</span><span class="birthday-date">May 30</span></li>
-          <li><span class="birthday-name">Mike</span><span class="birthday-date">May 31, 1985</span></li>
-        </ul>
-        <h2 class="birthday-month">June</h2>
-        <ul class="birthday-entries">
-          <li><span class="birthday-name">Georgia</span><span class="birthday-date">June 6</span></li>
-          <li><span class="birthday-name">Stacey Leary</span><span class="birthday-date">June 22</span></li>
-        </ul>
-        <h2 class="birthday-month">July</h2>
-        <ul class="birthday-entries">
-          <li><span class="birthday-name">Sheila Tapscott</span><span class="birthday-date">July 17</span></li>
-        </ul>
-        <h2 class="birthday-month">August</h2>
-        <ul class="birthday-entries">
-          <li><span class="birthday-name">Nancy Gorham</span><span class="birthday-date">August 12, 1952</span></li>
-          <li><span class="birthday-name">Megan</span><span class="birthday-date">August 13, 1990</span></li>
-          <li><span class="birthday-name">Florence</span><span class="birthday-date">August 13, 1922</span></li>
-          <li><span class="birthday-name">Omer</span><span class="birthday-date">August 16, 1918</span></li>
-          <li><span class="birthday-name">Bob Chasse</span><span class="birthday-date">August 28, 1946</span></li>
-        </ul>
-        <h2 class="birthday-month">October</h2>
-        <ul class="birthday-entries">
-          <li><span class="birthday-name">Aurelie</span><span class="birthday-date">October 2, 1946</span></li>
-          <li><span class="birthday-name">Kathy Couture</span><span class="birthday-date">October 8, 1954</span></li>
-        </ul>
-        <h2 class="birthday-month">November</h2>
-        <ul class="birthday-entries">
-          <li><span class="birthday-name">Betty</span><span class="birthday-date">November 18</span><span class="birthday-note">Died in 2025 at 89</span></li>
-          <li><span class="birthday-name">Becca Libby</span><span class="birthday-date">November 20</span></li>
-        </ul>
-      </div>
+      <div class="birthdays-list" id="birthdays-list"></div>
     </details>
 
     <details class="card important-info" id="important-info">
       <summary>Important Info</summary>
-      <div class="important-info-list">
-        <div class="important-info-row">
-          <span class="important-info-label">Door PIN</span>
-          <span class="important-info-value">1280</span>
-        </div>
-        <div class="important-info-row">
-          <span class="important-info-label">Address</span>
-          <span class="important-info-value">731 Wye Oak Dr Fruitland MD 21826</span>
-        </div>
-      </div>
+      <div class="important-info-list" id="important-info-list"></div>
     </details>
 
     <div class="footer" id="updated">Read-only. Updates automatically.</div>
+    <button class="signout" type="button" id="signout-button">Sign Out</button>
+    <div class="footer" id="install-help" hidden>To keep this app on your home screen, open Chrome’s menu and choose “Add to Home screen” or “Install app.”</div>
+    </div>
   </main>
 
   <script>
     'use strict';
 
-    const API = 'https://rentals-api.99redder.workers.dev/api/data';
+    const PHONE_ORIGIN = 'https://99redder.github.io';
+    const API = 'https://rentals-api.99redder.workers.dev/mom/api/';
+    const runtimeLocation = typeof location === 'undefined' ? null : location;
+    let setupToken = runtimeLocation && typeof URLSearchParams !== 'undefined'
+      ? new URLSearchParams(runtimeLocation.hash.slice(1)).get('setup') || '' : '';
+    if (runtimeLocation?.hash && typeof history !== 'undefined') history.replaceState(null, '', runtimeLocation.pathname);
+    let sessionMayExist = true;
+    let sessionExpiresAt = 0;
+    let authBusy = false;
+    let generation = 0;
+    let summaryController = null;
+    const authCard = document.getElementById('auth-card');
+    const privateContent = document.getElementById('private-content');
+    const authButton = document.getElementById('auth-button');
+    const authStatus = document.getElementById('auth-status');
+    const logoutPending = () => typeof localStorage !== 'undefined' && localStorage.getItem('mom_logout_pending') === '1';
+
     const els = {
       month: document.getElementById('month-label'),
       status: document.getElementById('status'),
@@ -622,43 +602,164 @@
       if (card) card.remove();
     }
 
+    async function phoneApi(action, body = {}, signal) {
+      const controller = signal ? null : new AbortController();
+      const timeout = controller && setTimeout(() => controller.abort(), 10000);
+      try {
+        const response = await fetch(API + action, {
+          method: 'POST', credentials: 'include', cache: 'no-store',
+          signal: signal || controller.signal,
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+        });
+        const data = await response.json();
+        if (!response.ok) throw Object.assign(new Error(data.error || 'Please try again.'), { status: response.status });
+        return data;
+      } finally { if (timeout) clearTimeout(timeout); }
+    }
+
+    function clearPrivate(message = '') {
+      generation++;
+      summaryController?.abort();
+      privateContent.hidden = true;
+      authCard.hidden = false;
+      hasData = false;
+      sessionExpiresAt = 0;
+      stopPolling();
+      for (const el of Object.values(els)) {
+        if (['overall', 'overallUsed', 'overallUsedPercent', 'overallRemainingPercent', 'fairShare',
+          'yearPlanned', 'yearActual', 'yearVariance', 'yearUsedPercent', 'yearRemainingPercent',
+          'yearMonths', 'transactionsTotal', 'updated'].some(key => els[key] === el)) el.textContent = '—';
+      }
+      els.transactionsList.innerHTML = '';
+      document.getElementById('birthdays-list').innerHTML = '';
+      document.getElementById('important-info-list').innerHTML = '';
+      document.getElementById('birthdays').open = false;
+      document.getElementById('important-info').open = false;
+      clearError();
+      authStatus.textContent = message;
+      authButton.textContent = logoutPending() ? 'Finish Signing Out' : (setupToken ? 'Set Up This Phone' : 'Unlock My Budget');
+    }
+
     async function loadSummary({ silent = false } = {}) {
-      if (isLoading) return;
+      if (isLoading || logoutPending() || setupToken) return;
       isLoading = true;
+      const attempt = generation;
       els.refresh.disabled = true;
       if (!silent || !hasData) els.status.textContent = 'Updating...';
       const controller = new AbortController();
+      summaryController = controller;
       const timeout = setTimeout(() => controller.abort(), 10000);
       try {
-        const response = await fetch(API, {
-          method: 'POST',
-          cache: 'no-store',
-          signal: controller.signal,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'get_mom_budget_public_summary' })
-        });
-        if (!response.ok) throw new Error('Could not load the budget.');
-        const data = await response.json();
+        const data = await phoneApi('summary', { action: 'get_mom_budget_public_summary' }, controller.signal);
+        if (attempt !== generation || logoutPending()) return;
+        sessionMayExist = true;
+        sessionExpiresAt = data.sessionExpiresAt;
         render(data);
         hasData = true;
+        authCard.hidden = true;
+        privateContent.hidden = false;
         lastUpdatedIso = data.updatedAt || new Date().toISOString();
         clearError();
+        startPolling();
       } catch (error) {
-        if (hasData) {
-          // Keep the last known numbers on screen, but make it unmistakable they may be
-          // old so a stale "money left" figure is never trusted as current.
+        if (attempt !== generation) return;
+        if (error.status === 401) {
+          sessionMayExist = false;
+          clearPrivate('Tap below to use your fingerprint or phone PIN.');
+        } else if (hasData && (!sessionExpiresAt || sessionExpiresAt > Date.now())) {
           els.status.textContent = `⚠ Couldn't update — figures below are from ${shortTime(lastUpdatedIso)} and may be out of date.`;
           showError('Could not refresh just now. Reopen the app or tap ↻ once you have a connection.');
         } else {
-          els.status.textContent = '';
-          showError('Could not load right now. Check the connection and tap ↻ to try again.');
+          clearPrivate('Connect to the internet, then tap Unlock My Budget.');
         }
       } finally {
         clearTimeout(timeout);
+        if (summaryController === controller) summaryController = null;
         isLoading = false;
         els.refresh.disabled = false;
       }
     }
+
+    function decodeBase64(text) {
+      return Uint8Array.from(atob(text.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+    }
+    function encodeBase64(buffer) {
+      return btoa(String.fromCharCode(...new Uint8Array(buffer))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+    function credentialJSON(credential) {
+      const response = credential.response;
+      const json = { id: credential.id, rawId: encodeBase64(credential.rawId), type: credential.type,
+        clientExtensionResults: credential.getClientExtensionResults(), response: { clientDataJSON: encodeBase64(response.clientDataJSON) } };
+      if (response.attestationObject) {
+        json.response.attestationObject = encodeBase64(response.attestationObject);
+        json.response.transports = response.getTransports ? response.getTransports() : [];
+      } else {
+        json.response.authenticatorData = encodeBase64(response.authenticatorData);
+        json.response.signature = encodeBase64(response.signature);
+        json.response.userHandle = response.userHandle ? encodeBase64(response.userHandle) : null;
+      }
+      return json;
+    }
+    async function unlock() {
+      if (authBusy) return;
+      if (logoutPending()) return signOut();
+      authBusy = true;
+      authButton.disabled = true;
+      authStatus.textContent = setupToken ? 'Setting up this phone…' : 'Use your fingerprint or phone PIN…';
+      try {
+        const enrolling = Boolean(setupToken);
+        const result = await phoneApi(enrolling ? 'enroll/options' : 'login/options', enrolling ? { token: setupToken } : {});
+        let response;
+        if (result.mode !== 'device') {
+          if (!window.PublicKeyCredential || !navigator.credentials) throw new Error('Open this link in an updated Chrome browser. Ask Chris for help if needed.');
+          const options = result.options;
+          options.challenge = decodeBase64(options.challenge);
+          if (enrolling) {
+            options.user.id = decodeBase64(options.user.id);
+            options.excludeCredentials = (options.excludeCredentials || []).map(c => ({ ...c, id: decodeBase64(c.id) }));
+          } else if (options.allowCredentials) {
+            options.allowCredentials = options.allowCredentials.map(c => ({ ...c, id: decodeBase64(c.id) }));
+          }
+          const credential = enrolling
+            ? await navigator.credentials.create({ publicKey: options })
+            : await navigator.credentials.get({ publicKey: options });
+          if (!credential) throw new Error('Please tap the button to try again.');
+          response = credentialJSON(credential);
+        }
+        await phoneApi(enrolling ? 'enroll/verify' : 'login/verify', { response });
+        setupToken = '';
+        sessionMayExist = true;
+        authStatus.textContent = 'Opening your budget…';
+        await loadSummary();
+      } catch (error) {
+        authStatus.textContent = error.name === 'NotAllowedError'
+          ? 'No problem. Tap the button to try again, or ask Chris for help.'
+          : (error.name === 'AbortError' ? 'Could not connect. Please try again.' : error.message);
+      } finally { authBusy = false; authButton.disabled = false; }
+    }
+    async function signOut() {
+      if (authBusy) return;
+      if (typeof localStorage !== 'undefined') localStorage.setItem('mom_logout_pending', '1');
+      sessionMayExist = false;
+      setupToken = '';
+      clearPrivate('Signing out…');
+      authBusy = true;
+      authButton.disabled = true;
+      try {
+        await phoneApi('logout');
+        if (typeof localStorage !== 'undefined') localStorage.removeItem('mom_logout_pending');
+        clearPrivate('You are signed out.');
+      } catch { clearPrivate('Connect to the internet and tap Finish Signing Out.'); }
+      finally { authBusy = false; authButton.disabled = false; }
+    }
+    authButton.addEventListener('click', unlock);
+    document.getElementById('signout-button').addEventListener('click', signOut);
+    window.addEventListener('storage', event => {
+      if (event.key === 'mom_logout_pending' && event.newValue === '1') {
+        sessionMayExist = false;
+        clearPrivate('Signed out in another window.');
+      }
+    });
 
     function render(data) {
       const month = data.month || {};
@@ -681,6 +782,17 @@
       els.yearVariance.textContent = money(Math.abs(variance));
       els.yearVariance.style.color = variance >= 0 ? 'var(--good)' : 'var(--bad)';
       renderTransactions(month.transactions || []);
+      const info = data.privateInfo || {};
+      const groups = new Map();
+      for (const item of info.birthdays || []) {
+        if (!groups.has(item.month)) groups.set(item.month, []);
+        groups.get(item.month).push(item);
+      }
+      document.getElementById('birthdays-list').innerHTML = [...groups].map(([month, rows]) =>
+        `<h2 class="birthday-month">${escapeHtml(month)}</h2><ul class="birthday-entries">${rows.map(row =>
+          `<li><span class="birthday-name">${escapeHtml(row.name)}</span><span class="birthday-date">${escapeHtml(row.date)}</span>${row.note ? `<span class="birthday-note">${escapeHtml(row.note)}</span>` : ''}</li>`).join('')}</ul>`).join('');
+      document.getElementById('important-info-list').innerHTML = (info.importantInfo || []).map(row =>
+        `<div class="important-info-row"><span class="important-info-label">${escapeHtml(row.label)}</span><span class="important-info-value">${escapeHtml(row.value)}</span></div>`).join('');
       els.status.textContent = 'Updated';
       els.updated.textContent = `Read-only. Last updated ${shortTime(data.updatedAt)}.`;
     }
@@ -738,9 +850,9 @@
     // seeing this morning's figures and think more money is left than really is.
     let lastAutoFetch = 0;
     function autoRefresh() {
-      if (document.visibilityState !== 'visible') return;
+      if (document.visibilityState !== 'visible' || !sessionMayExist || setupToken || logoutPending()) return;
       const now = Date.now();
-      if (now - lastAutoFetch < 4000) return; // collapse duplicate wake events (focus + visibilitychange)
+      if (hasData && now - lastAutoFetch < 4000) return; // collapse duplicate wake events after a successful refresh
       lastAutoFetch = now;
       loadSummary({ silent: true });
     }
@@ -751,8 +863,9 @@
     const POLL_MS = 5000;
     let pollTimer = null;
     function startPolling() {
-      if (pollTimer === null && document.visibilityState === 'visible') {
+      if (hasData && pollTimer === null && document.visibilityState === 'visible') {
         pollTimer = setInterval(() => {
+          if (sessionExpiresAt <= Date.now()) { sessionMayExist = false; clearPrivate('Please unlock your budget again.'); return; }
           if (document.visibilityState === 'visible') loadSummary({ silent: true });
         }, POLL_MS);
       }
@@ -769,42 +882,36 @@
         autoRefresh();
         startPolling();
       } else {
-        stopPolling();
+        clearPrivate('Checking your access…');
       }
     });
     window.addEventListener('focus', autoRefresh);
-    window.addEventListener('online', loadSummary);
-    window.addEventListener('pageshow', (event) => { if (event.persisted) loadSummary(); });
+    window.addEventListener('online', () => { if (logoutPending()) signOut(); else autoRefresh(); });
+    window.addEventListener('pagehide', () => clearPrivate('Checking your access…'));
+    window.addEventListener('pageshow', (event) => { if (event.persisted) autoRefresh(); });
 
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', async () => {
+    async function bootPhone() {
+      const local = !runtimeLocation || ['localhost', '127.0.0.1'].includes(runtimeLocation.hostname);
+      if (runtimeLocation && runtimeLocation.origin !== PHONE_ORIGIN && !local) {
+        authStatus.textContent = 'Please open the official Money Left app link.';
+        return;
+      }
+      document.getElementById('install-help').hidden = typeof window.matchMedia !== 'function' || window.matchMedia('(display-mode: standalone)').matches;
+      if ('serviceWorker' in navigator) {
         try {
-          const scriptUrl = new URL('./mom-budget-sw.js', location.href).href;
-          const desiredScope = new URL('./mom-budget-phone.html', location.href).href;
-
-          // Earlier versions registered this worker at the repository root. Remove
-          // that broad registration so it cannot control or cache the desktop app.
-          const registrations = await navigator.serviceWorker.getRegistrations();
-          for (const existing of registrations) {
-            const existingScript = existing.active?.scriptURL
-              || existing.waiting?.scriptURL
-              || existing.installing?.scriptURL;
-            if (existingScript === scriptUrl && existing.scope !== desiredScope) {
-              await existing.unregister();
-            }
-          }
-
-          const registration = await navigator.serviceWorker.register('./mom-budget-sw.js', {
-            scope: './mom-budget-phone.html'
-          });
+          const registration = await navigator.serviceWorker.register('./mom-budget-sw.js', { scope: './mom-budget-phone.html' });
           await registration.update();
-        } catch {}
-      });
+        } catch { /* Online access still works if offline installation is unavailable. */ }
+      }
+      if (logoutPending()) return signOut();
+      if (setupToken) {
+        clearPrivate('Tap Set Up This Phone. Your phone will guide you.');
+      } else {
+        lastAutoFetch = Date.now();
+        await loadSummary();
+      }
     }
-
-    lastAutoFetch = Date.now();
-    loadSummary();
-    startPolling();
+    bootPhone().catch(() => { authStatus.textContent = 'Could not connect. Please reopen the app.'; });
   </script>
 </body>
 </html>

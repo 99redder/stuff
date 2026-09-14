@@ -6,6 +6,8 @@ compatibility_flags = ["rpc"]
 [vars]
 STOCK_STICKIES_FIREBASE_PROJECT_ID = "red-s-stickies"
 STOCK_STICKIES_OWNER_UID = "tQ4KeGwCjsb5CSbrFwmWYWX3BvI2"
+MOM_PHONE_API_ORIGIN = "https://rentals-api.99redder.workers.dev"
+MOM_PHONE_WEB_ORIGIN = "https://99redder.github.io"
 
 # KV Namespace bindings
 [[kv_namespaces]]
@@ -20,6 +22,14 @@ class_name = "MomBudgetStore"
 [[migrations]]
 tag = "mom-budget-v1"
 new_sqlite_classes = ["MomBudgetStore"]
+
+[[durable_objects.bindings]]
+name = "MOM_PHONE_ACCESS"
+class_name = "MomPhoneAccess"
+
+[[migrations]]
+tag = "mom-phone-v1"
+new_sqlite_classes = ["MomPhoneAccess"]
 
 # Direct Worker-to-Worker path for the Eastern Shore AI aggregate tax summary.
 [[services]]
