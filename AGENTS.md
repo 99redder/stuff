@@ -9,7 +9,7 @@ Developer reference for AI agents working on this project.
 A single-page property management app for tracking rental income, expenses, and depreciation across three rental properties (**6AL**, **95EB**, **446BB**) plus one primary residence (**731WO**).
 
 Deployed as:
-- **Frontend**: GitHub Pages — static `index.html` served from `https://99redder.github.io/rentals/`
+- **Frontend**: GitHub Pages — static `index.html` served from `https://99redder.github.io/stuff/`
 - **API**: Cloudflare Worker — `https://rentals-api.99redder.workers.dev`
 
 There is no build step. The entire frontend is one self-contained `index.html` (HTML + CSS + JS). Do not introduce bundlers, frameworks, or separate JS/CSS files unless explicitly asked.
@@ -308,15 +308,17 @@ Separate public read-only page for an Android/Samsung Galaxy phone:
 - Service worker: `mom-budget-sw.js`
 - Icons: `mom-budget-icon-192.png`, `mom-budget-icon-512.png`, plus source SVG
 
-This page has no password gate and no editing controls. It is meant to be installed to Red's mother's phone as a simple PWA that shows:
+This page is a read-only PWA with its own private phone session. It is meant to be installed to Red's mother's phone as a simple PWA that shows:
 
 - Current month `Overall Spending Left` prominently, with used and remaining percentages
 - Fair Share as a reference card only (excluded from tracking)
 - Optional collapsed year status showing the $800/month allowance, used, remaining, and percentages
 
-The page fetches only `get_mom_budget_public_summary`, a public Worker action that returns precomputed read-only numbers. It must never call `get_mom_budget`, `save_mom_budget`, or any authenticated/editing action.
+The page fetches only the passkey-protected `/mom/api/summary` Worker route, which returns precomputed read-only numbers plus private birthdays and important information. It must never call `get_mom_budget`, `save_mom_budget`, or any authenticated/editing action. The legacy `get_mom_budget_public_summary` action is closed and returns 401.
 
-The service worker is intentionally network-first and calls `registration.update()` on launch so the installed PWA gets the newest page/assets when opened. If changing the phone PWA files, bump `CACHE_NAME` in `mom-budget-sw.js` if cached asset behavior matters.
+Phone access is owner-managed from the Mom Budget view's **Phone Access** button. Setup links expire after 30 minutes and work once. The recommended sign-in method is a platform passkey (fingerprint or phone PIN) on the Galaxy; sessions last 30 days and can be revoked individually. The Worker stores only passkey public keys and hashed bearer tokens in the `MomPhoneAccess` Durable Object. The phone's service worker caches only the empty app shell and never API responses or private content.
+
+The service worker is intentionally network-first and calls `registration.update()` on launch so the installed PWA gets the newest page/assets when opened. It is scoped to the phone page and caches only static shell assets. If changing the phone PWA files, bump `CACHE_NAME` in `mom-budget-sw.js` if cached asset behavior matters.
 
 The phone polls every five seconds while visible and refreshes on foreground/wake events. Requests time out after ten seconds so a stalled connection cannot block later refreshes. The public API reads Mom Budget from the same Durable Object as the editor and sends `Cache-Control: no-store`; do not restore the old edge cache or read balances from KV. The per-IP rate limit remains in place. The Fair Share household calculation still uses the separate family `budget` KV record, but it is reference-only for spending tracking. Service worker v14 also reloads only this read-only phone page on activation so an installed app adopts updated polling code.
 
@@ -524,6 +526,7 @@ maintenance:{property}     →  Array of maintenance entry objects
 investment:{property}      →  Investment config object
 budget                     →  { income: [...], expenses: {...}, worksheets: {...} }
 mom_budget                 →  asynchronous backup of the authoritative MomBudgetStore Durable Object record
+mom_phone_private_info     →  one-time migration source for private phone birthdays and important information; live reads use MomPhoneAccess Durable Object
 solar:config               →  Solar system config object
 solar:entries              →  Array of solar entry objects
 solar:summaries            →  { [year]: { ... } }

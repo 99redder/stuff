@@ -35,7 +35,7 @@ export async function handleMomPhone(request, env, { readJson, summary }) {
   const apiOrigin = env.MOM_PHONE_API_ORIGIN || MOM_PHONE_API_ORIGIN;
   const webOrigin = env.MOM_PHONE_WEB_ORIGIN || MOM_PHONE_WEB_ORIGIN;
   if (url.origin !== apiOrigin) return json({ error: 'Not found.' }, 404);
-  if (request.method === 'GET' && (url.pathname === '/mom' || url.pathname === '/mom/')) return Response.redirect(`${webOrigin}/rentals/mom-budget-phone.html`, 302);
+  if (request.method === 'GET' && (url.pathname === '/mom' || url.pathname === '/mom/')) return Response.redirect(`${webOrigin}/stuff/mom-budget-phone.html`, 302);
   if (!url.pathname.startsWith('/mom/api/')) return json({ error: 'Not found.' }, 404);
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { ...headers, 'Access-Control-Allow-Origin': webOrigin, 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Credentials': 'true', 'Vary': 'Origin' } });
   if (request.method !== 'POST') return json({ error: 'Not found.' }, 404);
