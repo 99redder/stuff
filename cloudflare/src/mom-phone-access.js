@@ -84,7 +84,7 @@ export class MomPhoneAccess extends DurableObject {
     const invite = { id: crypto.randomUUID(), name, mode, expiresAt: Date.now() + INVITE_MS };
     this.put('invite', key, invite, invite.expiresAt);
     const webOrigin = this.env.MOM_PHONE_WEB_ORIGIN || MOM_PHONE_WEB_ORIGIN;
-    return { ...invite, url: `${webOrigin}/rentals/mom-budget-phone.html#setup=${token}` };
+    return { ...invite, url: `${webOrigin}/stuff/mom-budget-phone.html#setup=${token}` };
   }
 
   revoke(id) {
