@@ -11694,15 +11694,17 @@ function _renderCashFlowHtml() {
       </div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1rem;align-items:start">
-      ${cfColumnHtml('income', 'Income', 'var(--success)', autoIncome)}
-      ${cfColumnHtml('expenses', 'Expenses', 'var(--danger)', autoExpenses)}
-    </div>
-    <div style="margin-top:1rem">
-      <div style="display:flex;align-items:center;gap:.4rem;font-size:.74rem;color:var(--text-muted);margin-bottom:.5rem">
-        <span style="font-size:.95rem">🔮</span>
-        <span><strong>Planning only.</strong> These future items are for organization and are <em>not</em> counted toward the income, expense, or excess totals above.</span>
+      <div style="display:flex;flex-direction:column;gap:1rem;min-width:0">
+        ${cfColumnHtml('income', 'Income', 'var(--success)', autoIncome)}
+        <div>
+          <div style="display:flex;align-items:center;gap:.4rem;font-size:.74rem;color:var(--text-muted);margin-bottom:.5rem">
+            <span style="font-size:.95rem">🔮</span>
+            <span><strong>Planning only.</strong> Not counted toward the income, expense, or excess totals above.</span>
+          </div>
+          ${cfColumnHtml('future', 'Future Cash Flow Items', 'var(--primary)', [])}
+        </div>
       </div>
-      ${cfColumnHtml('future', 'Future Cash Flow Items', 'var(--primary)', [])}
+      ${cfColumnHtml('expenses', 'Expenses', 'var(--danger)', autoExpenses)}
     </div>
     ${(cf.dismissedAuto?.length) ? `<div style="margin-top:.85rem;font-size:.8rem;color:var(--text-muted)">${cf.dismissedAuto.length} auto line${cf.dismissedAuto.length === 1 ? '' : 's'} removed. <button class="btn btn-ghost btn-sm" style="padding:.15rem .5rem;color:var(--primary)" onclick="cfRestoreDismissed()">Restore</button></div>` : ''}
   `;
