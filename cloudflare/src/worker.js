@@ -1352,6 +1352,8 @@ async function handleSaveCashFlow(env, year, data) {
   const sanitizeScenario = s => ({
     income: sanitizeItems(s?.income, 'income'),
     expenses: sanitizeItems(s?.expenses, 'expenses'),
+    // Planning-only list — never used in any total.
+    future: sanitizeItems(s?.future, 'future'),
     dismissedAuto: sanitizeDismissed(s?.dismissedAuto),
   });
 
@@ -1367,6 +1369,7 @@ async function handleSaveCashFlow(env, year, data) {
       : 0,
     income: primary.income,
     expenses: primary.expenses,
+    future: primary.future,
     dismissedAuto: primary.dismissedAuto,
   };
   await env.RENTALS.put(`cash_flow:${year}`, JSON.stringify(saved));

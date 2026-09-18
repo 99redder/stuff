@@ -11247,8 +11247,9 @@ const CF_SCENARIO_SALE_PROP = '6AL';
 // The active Cash Flow record ({ income, expenses, dismissedAuto }).
 function cfActive() {
   const cf = state.cashFlow;
-  const empty = { income: [], expenses: [], dismissedAuto: [] };
+  const empty = { income: [], expenses: [], future: [], dismissedAuto: [] };
   if (!cf) return empty;
+  if (!Array.isArray(cf.future)) cf.future = [];
   return cf;
 }
 
@@ -11287,6 +11288,8 @@ function normalizeCashFlow(raw) {
   const normalizeScenario = s => ({
     income: normalizeItems(s?.income, 'income'),
     expenses: normalizeItems(s?.expenses, 'expenses'),
+    // Planning-only list — never feeds the income/expense/excess totals.
+    future: normalizeItems(s?.future, 'future'),
     dismissedAuto: Array.isArray(s?.dismissedAuto) ? s.dismissedAuto.filter(x => typeof x === 'string') : []
   });
 
@@ -11694,6 +11697,13 @@ function _renderCashFlowHtml() {
       ${cfColumnHtml('income', 'Income', 'var(--success)', autoIncome)}
       ${cfColumnHtml('expenses', 'Expenses', 'var(--danger)', autoExpenses)}
     </div>
+    <div style="margin-top:1rem">
+      <div style="display:flex;align-items:center;gap:.4rem;font-size:.74rem;color:var(--text-muted);margin-bottom:.5rem">
+        <span style="font-size:.95rem">🔮</span>
+        <span><strong>Planning only.</strong> These future items are for organization and are <em>not</em> counted toward the income, expense, or excess totals above.</span>
+      </div>
+      ${cfColumnHtml('future', 'Future Cash Flow Items', 'var(--primary)', [])}
+    </div>
     ${(cf.dismissedAuto?.length) ? `<div style="margin-top:.85rem;font-size:.8rem;color:var(--text-muted)">${cf.dismissedAuto.length} auto line${cf.dismissedAuto.length === 1 ? '' : 's'} removed. <button class="btn btn-ghost btn-sm" style="padding:.15rem .5rem;color:var(--primary)" onclick="cfRestoreDismissed()">Restore</button></div>` : ''}
   `;
 }
@@ -11937,7 +11947,7 @@ function cfCancel() {
 }
 
 async function cfSave(type, id) {
-  if (!['income', 'expenses'].includes(type)) return;
+  if (!['income', 'expenses', 'future'].includes(type)) return;
   const name = (document.getElementById('cf-edit-name')?.value || '').trim();
   const note = (document.getElementById('cf-edit-note')?.value || '').trim();
   const date = (document.getElementById('cf-edit-date')?.value || '').trim();
