@@ -780,3 +780,18 @@ test('risk metrics: Sharpe, drawdown, and beta from flow-adjusted daily returns'
   assert.equal(risk.accounts.traditional, null);
   assert.equal(risk.total.tradingDays, 59);
 });
+
+test('SPY YTD runs from the prior year-end close to the latest stored close', async () => {
+  const { stockStickiesBenchmarkReturn } = await import('./performance-calculations.js');
+  const result = stockStickiesBenchmarkReturn({
+    days: {
+      '2025-12-31': { spy: 681.92 },
+      '2026-09-18': { spy: 761.7 },
+      '2026-09-22': { spy: 773.38 },
+      '2026-09-23': { spy: null },
+    },
+  }, 2026);
+  assert.equal(result.asOf, '2026-09-22');
+  assert.ok(Math.abs(result.ytdReturnPercent - 13.412) < 0.01);
+  assert.equal(stockStickiesBenchmarkReturn({ days: { '2026-09-22': { spy: 773 } } }, 2026), null);
+});

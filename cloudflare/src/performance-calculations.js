@@ -852,3 +852,22 @@ export function stockStickiesRiskMetrics(store) {
     .filter(Boolean));
   return { accounts, total };
 }
+
+// SPY's price return from the prior year's final close to the latest stored
+// close, so the share card compares against the same dates as the portfolio.
+export function stockStickiesBenchmarkReturn(store, year) {
+  const start = Number(store?.days?.[`${Number(year) - 1}-12-31`]?.spy);
+  const latestDate = Object.keys(store?.days || {})
+    .filter(date => date.startsWith(`${year}-`) && Number(store.days[date].spy) > 0)
+    .sort()
+    .pop();
+  if (!Number.isFinite(start) || start <= 0 || !latestDate) return null;
+  const end = Number(store.days[latestDate].spy);
+  return {
+    ticker: 'SPY',
+    ytdReturnPercent: (end / start - 1) * 100,
+    startClose: start,
+    lastClose: end,
+    asOf: latestDate,
+  };
+}

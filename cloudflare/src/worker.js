@@ -17,6 +17,7 @@ import {
   mergeStockStickiesTransactions,
   modifiedDietzPerformance,
   stockStickiesAccountValues,
+  stockStickiesBenchmarkReturn,
   stockStickiesCloseDateForTimestamp,
   stockStickiesExternalFlow,
   stockStickiesExternalFlowDate,
@@ -3354,7 +3355,9 @@ async function updateStockStickiesDailyRisk(env, year, snapshot, performanceTran
       await env.RENTALS.put(key, JSON.stringify(store));
     }
   }
-  return store ? stockStickiesRiskMetrics(store) : null;
+  return store
+    ? { ...stockStickiesRiskMetrics(store), benchmark: stockStickiesBenchmarkReturn(store, year) }
+    : null;
 }
 
 async function buildStockStickiesPerformance(env, year, snapshot, options = {}) {
@@ -3632,6 +3635,7 @@ async function buildStockStickiesPerformance(env, year, snapshot, options = {}) 
                     ? 'provisional-external-flow'
                     : 'ready'))),
     },
+    benchmark: risk?.benchmark || null,
     snapshotCount: dates.length,
     firstSnapshotDate: dates[0] || null,
     lastSnapshotDate: dates.length ? dates[dates.length - 1] : null,
