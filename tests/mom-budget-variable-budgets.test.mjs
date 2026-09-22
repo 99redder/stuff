@@ -74,26 +74,28 @@ const legacyRecord = () => ({
 test('October 2026 splits the allowance into a $400 discretionary and a $200 emergency budget', () => {
   const a = app();
   a.state.momBudget = a.mbNormalize(legacyRecord());
-  assert.equal(a.mbVariableAmount('discretionary', '2026-09'), 500);
-  assert.equal(a.mbVariableAmount('discretionary', '2026-10'), 400);
-  assert.equal(a.mbVariableAmount('discretionary', '2027-06'), 400);
+  // September ran as one $800 lump and is the only month that will.
+  assert.equal(a.mbVariableAmount('discretionary', '2026-09'), 800);
   assert.equal(a.mbVariableAmount('emergency', '2026-09'), 0);
+  assert.equal(a.mbVariableAmount('discretionary', '2026-10'), 400);
   assert.equal(a.mbVariableAmount('emergency', '2026-10'), 200);
+  assert.equal(a.mbVariableAmount('discretionary', '2027-06'), 400);
+  assert.equal(a.mbVariableAmount('emergency', '2027-06'), 200);
   // The allowance is always the itemized budgets added up, so Month Math's
   // "Spending allowance" row always equals the budget rows above it.
-  assert.equal(a.mbTrackingAllowance('2026-09'), 500);
+  assert.equal(a.mbTrackingAllowance('2026-09'), 800);
   assert.equal(a.mbTrackingAllowance('2026-10'), 600);
 });
 
-test('September is not restated by the October change', () => {
+test('September keeps the $800 lump it was tracked against', () => {
   const a = app();
   a.state.momBudget = a.mbNormalize(legacyRecord());
   const september = a.mbCalcMonth('2026-09');
-  assert.equal(september.discretionary, 500);        // unchanged by the October entry
+  assert.equal(september.discretionary, 800);
   assert.equal(september.emergency, 0);
-  assert.equal(september.trackingAllowance, 500);
+  assert.equal(september.trackingAllowance, 800);
   assert.equal(september.trackingUsed, 352.4);       // $140 copays + $212.40 discretionary
-  assert.equal(Math.round(september.trackingRemaining * 100) / 100, 147.6);
+  assert.equal(Math.round(september.trackingRemaining * 100) / 100, 447.6);
 });
 
 test('the spending allowance always equals the budget rows shown above it', () => {
@@ -127,12 +129,28 @@ test('editing a budget applies from the month on screen forward and never rewrit
   const a = app();
   a.state.momBudget = a.mbNormalize(legacyRecord());
   a.mbSetVariableAmount('discretionary', '2027-01', 450);
-  assert.equal(a.mbVariableAmount('discretionary', '2026-09'), 500);
+  assert.equal(a.mbVariableAmount('discretionary', '2026-09'), 800);
   assert.equal(a.mbVariableAmount('discretionary', '2026-12'), 400);
   assert.equal(a.mbVariableAmount('discretionary', '2027-01'), 450);
   // Setting it back to the amount already in effect drops the redundant entry.
   a.mbSetVariableAmount('discretionary', '2027-01', 400);
-  assert.deepEqual(plain(a.mbVariableSchedule('discretionary')), [{ from: '2026-10', amount: 400 }]);
+  assert.deepEqual(plain(a.mbVariableSchedule('discretionary')),
+    [{ from: '2026-09', amount: 800 }, { from: '2026-10', amount: 400 }]);
+});
+
+test('a record seeded by the first pass is corrected to the September lump', () => {
+  const a = app();
+  const halfMigrated = legacyRecord();
+  halfMigrated.template.octoberBudgetV1 = true;   // first pass ran, v2 has not
+  halfMigrated.template.variable.emergency = 0;
+  halfMigrated.template.variableSchedule = {
+    discretionary: [{ from: '2026-10', amount: 400 }],
+    emergency: [{ from: '2026-09', amount: 200 }],   // landed on September by mistake
+  };
+  a.state.momBudget = a.mbNormalize(halfMigrated);
+  assert.equal(a.mbTrackingAllowance('2026-09'), 800);
+  assert.equal(a.mbVariableAmount('emergency', '2026-09'), 0);
+  assert.equal(a.mbTrackingAllowance('2026-10'), 600);
 });
 
 test('re-normalizing an already-migrated record keeps the owner\'s edits', () => {
@@ -157,8 +175,8 @@ test('the Worker feeding the phone computes the same numbers as the app', () => 
       assert.equal(fromWorker[field], fromApp[field], `${month}.${field}`);
     }
   }
-  // The year adds up each month's own allowance ($500 Sept + $600 Oct).
-  assert.equal(w.calcMomBudgetYear(data, '2026-10').planned, 1100);
+  // The year adds up each month's own allowance ($800 Sept + $600 Oct).
+  assert.equal(w.calcMomBudgetYear(data, '2026-10').planned, 1400);
 });
 
 test('emergency spending reaches the phone as its own transaction group', () => {

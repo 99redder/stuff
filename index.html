@@ -7597,7 +7597,7 @@ const MOM_BUDGET_DEFAULT = {
     // that month onward. Editing a budget writes a change from the month on
     // screen, so past months keep the budget they were actually tracked against.
     variableSchedule: {
-      discretionary: [{ from: '2026-10', amount: 400 }],
+      discretionary: [{ from: '2026-09', amount: 800 }, { from: '2026-10', amount: 400 }],
       emergency: [{ from: '2026-10', amount: 200 }]
     }
   },
@@ -7611,6 +7611,13 @@ const MB_YEAR_STATS_OPEN_KEY = 'rentals_mom_budget_year_stats_open';
 // shown as a reference transfer and is excluded from this calculation.
 // The monthly spending allowance is always the itemized variable budgets added
 // up, so Month Math's "Spending allowance" row equals the budget rows above it.
+// September 2026 ran as a single $800 lump — the only month that did — so it is
+// pinned as an $800 discretionary budget rather than special-cased in the math.
+const MB_SEPT_LUMP_MONTH = '2026-09';
+const MB_SEPT_LUMP_AMOUNT = 800;
+const MB_BUDGET_SPLIT_MONTH = '2026-10';
+const MB_SPLIT_DISCRETIONARY = 400;
+const MB_SPLIT_EMERGENCY = 200;
 // Variable budgets that make up the monthly spending allowance, in display order.
 const MB_TRACKED_VARIABLE_KEYS = ['discretionary', 'emergency'];
 const MB_VARIABLE_META = {
@@ -7707,6 +7714,9 @@ function mbCalc401kWithdrawal() {
 
 let _mbMonth = appTodayIso().slice(0, 7);
 let _mbFixedSort = 'amount';
+// Set by mbNormalize when a one-time migration rewrites the record, so
+// renderMomBudget can save the correction instead of re-applying it every load.
+let _mbMigrationApplied = false;
 
 function mbClone(obj) {
   return JSON.parse(JSON.stringify(obj));
@@ -7861,16 +7871,23 @@ function mbNormalize(raw) {
   delete data.template.variable.groceries;  // groceries folded into Fair Share — no longer her own budget
   delete data.template.variable.gas;        // she has no car — gas budget/ledger removed entirely
   data.template.variable.discretionary = Number(data.template.variable.discretionary ?? defaults.template.variable.discretionary);
-  // One-time migration: from October 2026 the old single $800 lump allowance is
-  // split into itemized budgets — discretionary drops to $400 and a separate
-  // emergencies / unplanned bucket is added. September and earlier are left
-  // exactly as they were tracked.
-  if (!data.template.octoberBudgetV1) {
+  // One-time migration: September 2026 ran as one $800 lump allowance and is the
+  // only month that will. Pin it as an $800 discretionary budget so the itemized
+  // rows add up to what September was actually tracked against, then start the
+  // $400 discretionary + $200 emergencies split on October 1.
+  if (!data.template.octoberSplitV2) {
     data.template.variableSchedule = data.template.variableSchedule || {};
-    data.template.variableSchedule.discretionary = mbClone(defaults.template.variableSchedule.discretionary);
-    data.template.variableSchedule.emergency = mbClone(defaults.template.variableSchedule.emergency);
-    data.template.variable.emergency = 0;   // no emergency budget existed before October
-    data.template.octoberBudgetV1 = true;
+    data.template.variableSchedule.discretionary = [
+      { from: MB_SEPT_LUMP_MONTH, amount: MB_SEPT_LUMP_AMOUNT },
+      { from: MB_BUDGET_SPLIT_MONTH, amount: MB_SPLIT_DISCRETIONARY }
+    ];
+    data.template.variableSchedule.emergency = [
+      { from: MB_BUDGET_SPLIT_MONTH, amount: MB_SPLIT_EMERGENCY }
+    ];
+    data.template.variable.emergency = 0;   // no emergency budget before October
+    data.template.octoberBudgetV1 = true;   // supersedes the first pass
+    data.template.octoberSplitV2 = true;
+    _mbMigrationApplied = true;
   }
   data.template.variable.emergency = Number(data.template.variable.emergency ?? 0) || 0;
   data.template.variableSchedule = (data.template.variableSchedule && typeof data.template.variableSchedule === 'object')
@@ -7916,6 +7933,10 @@ async function renderMomBudget() {
   mbSyncHouseholdTransfers();
   if (!state.momBudget.months[_mbMonth]) state.momBudget.months[_mbMonth] = mbBlankMonth();
   _renderMomBudgetHtml();
+  if (_mbMigrationApplied) {
+    _mbMigrationApplied = false;
+    await _saveMomBudget();
+  }
 }
 
 // Private phone access management. These owner controls use the existing

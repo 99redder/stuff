@@ -1663,7 +1663,7 @@ const MOM_BUDGET_DEFAULT = {
     // what applied before the first entry; each { from, amount } takes over from
     // that month onward, so tracked months are never restated.
     variableSchedule: {
-      discretionary: [{ from: '2026-10', amount: 400 }],
+      discretionary: [{ from: '2026-09', amount: 800 }, { from: '2026-10', amount: 400 }],
       emergency: [{ from: '2026-10', amount: 200 }]
     },
     variableLocks: {}
@@ -1677,8 +1677,15 @@ const MB_TRACKING_START_DATE = `${MB_TRACKING_START_MONTH}-01`;
 // Mom's spending allowance is intentionally independent from Fair Share.
 // Fair Share remains a reference value in the public summary, but never
 // increases the amount available for (or used by) spending tracking.
-// The allowance is always the itemized variable budgets added up.
+// The allowance is always the itemized variable budgets added up. September 2026
+// ran as a single $800 lump — the only month that did — so it is pinned as an
+// $800 discretionary budget rather than special-cased in the math.
 const MB_TRACKED_VARIABLE_KEYS = ['discretionary', 'emergency'];
+const MB_SEPT_LUMP_MONTH = '2026-09';
+const MB_SEPT_LUMP_AMOUNT = 800;
+const MB_BUDGET_SPLIT_MONTH = '2026-10';
+const MB_SPLIT_DISCRETIONARY = 400;
+const MB_SPLIT_EMERGENCY = 200;
 
 async function handleGetMomBudget(env) {
   const data = await env.MOM_BUDGET_STORE.getByName('mom_budget').getBudget();
@@ -1870,16 +1877,22 @@ function normalizeMomBudget(raw) {
   delete data.template.variable.groceries;  // groceries folded into the Fair Share line — no separate budget
   delete data.template.variable.gas;        // she has no car — gas budget/ledger removed entirely
   data.template.variable.discretionary = Number(data.template.variable.discretionary ?? defaults.template.variable.discretionary) || 0;
-  // Mirror of the app's one-time October 2026 migration: the single lump
-  // allowance splits into a $400 discretionary budget plus a separate
-  // emergencies / unplanned budget. Seeded here too so the phone is correct
-  // even before the app next saves the record.
-  if (!data.template.octoberBudgetV1) {
+  // Mirror of the app's one-time migration: September 2026 stays the single $800
+  // lump it was tracked against, and the $400 discretionary + $200 emergencies
+  // split starts October 1. Applied here too so the phone is correct even
+  // before the app next saves the record.
+  if (!data.template.octoberSplitV2) {
     data.template.variableSchedule = data.template.variableSchedule || {};
-    data.template.variableSchedule.discretionary = cloneJson(defaults.template.variableSchedule.discretionary);
-    data.template.variableSchedule.emergency = cloneJson(defaults.template.variableSchedule.emergency);
-    data.template.variable.emergency = 0;   // no emergency budget existed before October
-    data.template.octoberBudgetV1 = true;
+    data.template.variableSchedule.discretionary = [
+      { from: MB_SEPT_LUMP_MONTH, amount: MB_SEPT_LUMP_AMOUNT },
+      { from: MB_BUDGET_SPLIT_MONTH, amount: MB_SPLIT_DISCRETIONARY }
+    ];
+    data.template.variableSchedule.emergency = [
+      { from: MB_BUDGET_SPLIT_MONTH, amount: MB_SPLIT_EMERGENCY }
+    ];
+    data.template.variable.emergency = 0;   // no emergency budget before October
+    data.template.octoberBudgetV1 = true;   // supersedes the first pass
+    data.template.octoberSplitV2 = true;
   }
   data.template.variable.emergency = Number(data.template.variable.emergency ?? 0) || 0;
   data.template.variableSchedule = (data.template.variableSchedule && typeof data.template.variableSchedule === 'object')

@@ -232,7 +232,7 @@ Global view (not per-property) for tracking Red's mother's monthly assistance bu
       emergency: 0
     },
     variableSchedule: {      // effective-dated changes; each entry applies from `from` onward
-      discretionary: [{ from: '2026-10', amount: 400 }],
+      discretionary: [{ from: '2026-09', amount: 800 }, { from: '2026-10', amount: 400 }],
       emergency: [{ from: '2026-10', amount: 200 }]
     },
     variableLocks: {
@@ -241,7 +241,8 @@ Global view (not per-property) for tracking Red's mother's monthly assistance bu
     },
     fairShareMigrated,     // one-time flag — wrapped household bills already removed
     carStreamingTrimmed,   // one-time flag — car/streaming bills already removed
-    octoberBudgetV1        // one-time flag — Oct 2026 budget split already seeded
+    octoberBudgetV1,       // one-time flag — first pass of the Oct 2026 split (superseded)
+    octoberSplitV2         // one-time flag — Sept $800 lump pinned + Oct split seeded
   },
   months: {
     'YYYY-MM': {
@@ -262,6 +263,8 @@ Now that the mother lives with the family, her household bills are wrapped into 
 Editing a budget input in the Monthly Template card applies **from the month currently on screen forward**, so a month that has already been tracked is never restated. Scheduled changes are listed under the input with a `×` to remove one (`mbRemoveVariableChange`).
 
 **Spending allowance.** `mbTrackingAllowance(monthKey)` is **always** the sum of the itemized variable budgets in effect for that month, so Month Math's `Spending allowance` row always equals the budget rows printed directly above it. (The old flat `MB_MONTHLY_TRACKING_ALLOWANCE = 800` constant is gone — it contradicted those rows once the budgets were itemized.) `trackingUsed` counts paid fixed bills (excluding Fair Share) plus the discretionary, emergency, and other-overage ledgers, and the year summary adds up each month's own allowance.
+
+**September 2026 is a one-off.** It ran as a single **$800 lump** allowance and is the only month that will. Rather than special-case it in the math, it is pinned as an `$800` **discretionary** budget with `$0` emergency (`MB_SEPT_LUMP_MONTH` / `MB_SEPT_LUMP_AMOUNT`), so its rows add up to the $800 it was actually tracked against. From `MB_BUDGET_SPLIT_MONTH` (`'2026-10'`) it is `MB_SPLIT_DISCRETIONARY` ($400) + `MB_SPLIT_EMERGENCY` ($200) = $600.
 
 **Current default template:**
 - Income: Social Security, 401k Distribution
@@ -331,7 +334,7 @@ discretionaryAdjusted =
 - **One-time `fairShareMigrated` migration:** removes the wrapped household bills (`rent`, `internet`, `water`, `electric`, `gas-heat`) from `template.fixed`, then ensures the auto-synced `fair-share` line exists (prepended). Also `delete`s `template.variable.groceries` (groceries folded into Fair Share).
 - **One-time `carStreamingTrimmed` migration:** removes `car-insurance`, `car-repairs`, `registration`, `netflix`, `britbox` from `template.fixed` (no longer tracked).
 - **One-time `cellTrimmed` migration:** removes `cell` (she's on the family cell plan). Default fixed list is now just `fair-share`, `medical`.
-- **One-time `octoberBudgetV1` migration:** seeds the Oct 2026 budget split — `variableSchedule.discretionary = [{from:'2026-10', amount:400}]`, `variableSchedule.emergency = [{from:'2026-10', amount:200}]`, and `variable.emergency = 0` (no emergency budget existed before October). Guarded by the flag, so later owner edits are never overwritten. **Mirrored in the worker's `normalizeMomBudget`** so the phone is correct even before the app next saves.
+- **One-time `octoberSplitV2` migration:** pins September as the `$800` lump and starts the split on October 1 — `variableSchedule.discretionary = [{from:'2026-09', amount:800}, {from:'2026-10', amount:400}]`, `variableSchedule.emergency = [{from:'2026-10', amount:200}]`, `variable.emergency = 0`. It also sets `octoberBudgetV1`, which it supersedes (that first pass could leave the emergency budget effective from September if the amount was typed with September on screen). Guarded by the flag, so later owner edits are never overwritten. When it applies it sets the module flag `_mbMigrationApplied`, and `renderMomBudget` saves the corrected record instead of re-deriving it every load. **Mirrored in the worker's `normalizeMomBudget`** so the phone is correct even before the app next saves.
 - Normalizes `variableSchedule`: valid `YYYY-MM` keys only, numeric amounts, sorted, one entry per month.
 - Ensures each month has an `emergency` ledger array.
 - **Gas removed entirely:** `delete`s `template.variable.gas`; `mbCalcMonth`/`mbTemplateTotals` drop gas from all formulas; Gas Left stat, Gas ledger card, and Gas template row are gone. Old month `gas[]` ledger entries are left in storage but unused.
@@ -860,6 +863,12 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-09-22 — Mom Budget: September stays an $800 lump, October starts the split
+
+- **September 2026 is pinned as a single `$800` discretionary budget with `$0` emergency**, so the Month Math rows add up to the $800 it was tracked against all month — it is the only month that runs as a lump. **October 1 flips to `$400` discretionary + `$200` emergencies = `$600`.** Applied by the one-time `octoberSplitV2` migration (app + worker), which supersedes `octoberBudgetV1`: the first pass could leave the emergency budget effective from September if the amount was typed with September on screen.
+- `renderMomBudget` now **persists a migration when it applies** (`_mbMigrationApplied`) instead of re-deriving it on every load.
+- Constants: `MB_SEPT_LUMP_MONTH` / `MB_SEPT_LUMP_AMOUNT` / `MB_BUDGET_SPLIT_MONTH` / `MB_SPLIT_DISCRETIONARY` / `MB_SPLIT_EMERGENCY`.
 
 ### 2026-09-22 — Mom Budget: Oct 2026 budget split + per-month discretionary totals
 
