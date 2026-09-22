@@ -1120,9 +1120,6 @@
       gap: 1.25rem;
       align-items: stretch;
     }
-    .mb-stats-row.mb-stats-primary {
-      grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.45fr);
-    }
     .mb-stats-row.mb-stats-year {
       grid-template-columns: repeat(4, minmax(0, 1fr));
     }
@@ -1267,13 +1264,11 @@
       flex: 0 0 215px;
     }
     @media (max-width: 1180px) {
-      .mb-stats-row.mb-stats-primary,
       .mb-stats-row.mb-stats-year {
         grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
       }
     }
     @media (max-width: 520px) {
-      .mb-stats-row.mb-stats-primary,
       .mb-stats-row.mb-stats-year {
         grid-template-columns: 1fr;
       }
@@ -8239,8 +8234,6 @@ function _renderMomBudgetHtml() {
 
   const templateIncomeRows = t.income.map(item => mbTemplateRow('income', item)).join('');
   const templateFixedRows = t.fixed.map((item, index) => mbFixedTemplateRow(item, index)).join('');
-  const spendingRemaining = c.overallSpendingRemaining;
-  const spendingMonthLabel = new Date(`${_mbMonth}-01T00:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
   document.getElementById('app').innerHTML = `
     <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
@@ -8264,11 +8257,6 @@ function _renderMomBudgetHtml() {
         <p style="margin:0;font-size:.72rem;font-style:italic">General information, not tax advice — confirm your specific setup with a CPA. Keep the shared bills and allocation method with your records.</p>
       </div>
     </details>
-
-    <div class="stats-row mb-stats-row mb-stats-primary">
-      ${stat('Monthly Income', fmt(c.income), 'var(--success)', `${fmt(c.unallocated)} unallocated`)}
-      ${stat('Overall Spending Left', `${spendingRemaining < 0 ? '−' : ''}${fmt(Math.abs(spendingRemaining))}`, spendingRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.trackingUsed)} used of ${fmt(c.trackingAllowance)} (${c.trackingUsedPercent.toFixed(1)}%) · ${c.trackingRemainingPercent.toFixed(1)}% left`, 'is-prominent', spendingMonthLabel)}
-    </div>
 
     <div class="mb-year-summary">
       <div class="mb-year-summary-header">
