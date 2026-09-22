@@ -8098,30 +8098,6 @@ function mbCalcMonth(monthKey) {
   };
 }
 
-function mbFixedOverageEntries(monthKey) {
-  const t = state.momBudget.template;
-  const m = state.momBudget.months[monthKey] || mbBlankMonth();
-  return t.fixed
-    .filter(item => !!m.fixedPaid?.[item.id])
-    .map(item => {
-      if (mbFixedBillKind(item) === 'fixed') return null;
-      const expected = mbFixedExpectedPayment(item, monthKey);
-      const budgeted = expected || (Number(item.amount) || 0);
-      const actual = Number(m.fixedActual?.[item.id]);
-      const paid = Number.isFinite(actual) && actual > 0 ? actual : budgeted;
-      const amount = Math.max(0, paid - budgeted);
-      return {
-        id: `fixed-over-${item.id}`,
-        date: `${monthKey}-01`,
-        name: `${item.name} over budget`,
-        amount,
-        auto: true
-      };
-    })
-    .filter(Boolean)
-    .filter(entry => entry.amount > 0);
-}
-
 function mbMonthHasActivity(month) {
   return Object.values(month.fixedPaid || {}).some(Boolean)
     || Object.values(month.fixedActual || {}).some(v => Number(v) > 0)
@@ -8179,11 +8155,6 @@ function _renderMomBudgetHtml() {
   const year = _mbMonth.slice(0, 4);
   const y = mbYearSummary(year);
   const yearStatsOpen = mbYearStatsOpen();
-  const fixedOverageRows = mbFixedOverageEntries(_mbMonth);
-  const otherOverageRows = [
-    ...fixedOverageRows,
-    ...(m.otherExpenses || []).map(entry => ({ ...entry, legacy: true }))
-  ];
   const monthOptions = Object.keys(state.momBudget.months)
     .sort().reverse()
     .map(k => `<option value="${escAttr(k)}"${k === _mbMonth ? ' selected' : ''}>${escHtml(k)}</option>`)
@@ -8303,11 +8274,6 @@ function _renderMomBudgetHtml() {
           history: true,
           emptyText: 'No emergency or unplanned spending this month.',
           note: MB_VARIABLE_META.emergency.ledgerNote
-        })}
-        ${mbLedgerCard('Other Expense Overages', 'otherExpenses', otherOverageRows, 'Description', 'name', {
-          disableAdd: true,
-          emptyText: 'No fixed bill overages recorded for this month.',
-          note: 'This fills automatically when a fixed bill is marked paid above its budgeted amount.'
         })}
         ${mbRmdCard()}
       </div>
