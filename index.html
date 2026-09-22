@@ -1178,6 +1178,88 @@
       font-size: 0.82rem;
       line-height: 1.4;
     }
+    .mb-ledger-total {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.85rem;
+      padding: 0.7rem 0.9rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface2);
+    }
+    .mb-ledger-total-label {
+      font-size: 0.7rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+    }
+    .mb-ledger-total-value {
+      font-size: 1.6rem;
+      font-weight: 800;
+      line-height: 1.15;
+      font-variant-numeric: tabular-nums;
+    }
+    .mb-ledger-total-meta {
+      text-align: right;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+    .mb-ledger-total-meta strong { font-variant-numeric: tabular-nums; }
+    .mb-ledger-history {
+      margin-top: 0.85rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface2);
+    }
+    .mb-ledger-history > summary {
+      cursor: pointer;
+      padding: 0.55rem 0.8rem;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      list-style: none;
+    }
+    .mb-ledger-history-body { padding: 0 0.5rem 0.5rem; }
+    .mb-ledger-history-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      width: 100%;
+      padding: 0.45rem 0.6rem;
+      border: 0;
+      border-radius: var(--radius);
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .mb-ledger-history-row:hover { background: var(--card-bg); }
+    .mb-ledger-history-row .mb-ledger-history-meta {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .mb-ledger-history-row strong { font-variant-numeric: tabular-nums; }
+    .mb-variable-schedule {
+      margin: 0.15rem 0 0.6rem;
+      padding: 0.35rem 0.5rem;
+      border-left: 2px solid var(--border);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .mb-variable-schedule-row {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .mb-variable-schedule-row .btn { padding: 0 0.35rem; }
     .mb-month-control {
       width: 180px;
       max-width: 100%;
@@ -7514,7 +7596,15 @@ const MOM_BUDGET_DEFAULT = {
       { id: 'fair-share', name: 'Fair Share (household)', amount: 0, frequency: 'monthly', auto: true, locked: true },
       { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 }
     ],
-    variable: { discretionary: 500 }
+    variable: { discretionary: 500, emergency: 0 },
+    // Effective-dated changes to the variable budgets. `variable[key]` is what
+    // applied before the first entry here; each { from, amount } takes over from
+    // that month onward. Editing a budget writes a change from the month on
+    // screen, so past months keep the budget they were actually tracked against.
+    variableSchedule: {
+      discretionary: [{ from: '2026-10', amount: 400 }],
+      emergency: [{ from: '2026-10', amount: 200 }]
+    }
   },
   months: {}
 };
@@ -7524,7 +7614,23 @@ const MB_TRACKING_START_MONTH = '2026-09';
 const MB_YEAR_STATS_OPEN_KEY = 'rentals_mom_budget_year_stats_open';
 // Separate spending allowance used by Mom Money Left tracking. Fair Share is
 // shown as a reference transfer and is excluded from this calculation.
+// Legacy lump allowance. From MB_BUDGET_SPLIT_MONTH it is replaced by the sum of
+// the itemized variable budgets, so earlier months keep the figure they were
+// tracked against instead of being restated.
 const MB_MONTHLY_TRACKING_ALLOWANCE = 800;
+const MB_BUDGET_SPLIT_MONTH = '2026-10';
+// Variable budgets that make up the monthly spending allowance, in display order.
+const MB_TRACKED_VARIABLE_KEYS = ['discretionary', 'emergency'];
+const MB_VARIABLE_META = {
+  discretionary: {
+    label: 'Discretionary',
+    ledgerNote: 'Discretionary includes non-grocery purchase items, prescription copays, and overages from other budget areas.'
+  },
+  emergency: {
+    label: 'Emergencies / Unplanned',
+    ledgerNote: 'Set aside for emergencies and unplanned costs. Kept separate so a surprise expense does not eat the month\u2019s discretionary budget.'
+  }
+};
 const MB_VARIABLE_FIXED_BILL_IDS = new Set(['electric', 'water', 'gas-heat']);
 const IRS_CAREGIVER_GUIDANCE_URL = 'https://www.irs.gov/faqs/irs-procedures/for-caregivers';
 const IRS_PUB_501_URL = 'https://www.irs.gov/publications/p501';
@@ -7619,7 +7725,57 @@ function mbUuid(prefix = 'mb') {
 }
 
 function mbBlankMonth() {
-  return { fixedPaid: {}, fixedActual: {}, groceries: [], gas: [], discretionary: [], otherExpenses: [] };
+  return { fixedPaid: {}, fixedActual: {}, groceries: [], gas: [], discretionary: [], emergency: [], otherExpenses: [] };
+}
+
+// ── Effective-dated variable budgets ────────────────────────────────────────
+// Every ledger is already keyed by month, so a new month starts empty on its
+// own; these helpers give each month the budget that was in effect for it.
+
+function mbVariableSchedule(key) {
+  const list = state.momBudget.template.variableSchedule?.[key];
+  if (!Array.isArray(list)) return [];
+  return list.slice().sort((a, b) => String(a.from).localeCompare(String(b.from)));
+}
+
+function mbVariableAmount(key, monthKey) {
+  let amount = Number(state.momBudget.template.variable?.[key]) || 0;
+  for (const change of mbVariableSchedule(key)) {
+    if (String(change.from) <= monthKey) amount = Number(change.amount) || 0;
+  }
+  return amount;
+}
+
+// Writes a change effective from `monthKey` forward, then drops any entry that
+// merely repeats the amount already in effect before it.
+function mbSetVariableAmount(key, monthKey, amount) {
+  const t = state.momBudget.template;
+  if (!t.variableSchedule) t.variableSchedule = {};
+  const list = mbVariableSchedule(key).filter(change => change.from !== monthKey);
+  list.push({ from: monthKey, amount });
+  list.sort((a, b) => String(a.from).localeCompare(String(b.from)));
+  let running = Number(t.variable?.[key]) || 0;
+  const cleaned = [];
+  for (const change of list) {
+    const value = Number(change.amount) || 0;
+    if (value === running) continue;
+    cleaned.push({ from: change.from, amount: value });
+    running = value;
+  }
+  t.variableSchedule[key] = cleaned;
+}
+
+// Months before the split were tracked against one lump allowance; from the
+// split on, the allowance is simply the itemized budgets added up.
+function mbTrackingAllowance(monthKey) {
+  if (monthKey < MB_BUDGET_SPLIT_MONTH) return MB_MONTHLY_TRACKING_ALLOWANCE;
+  return MB_TRACKED_VARIABLE_KEYS.reduce((s, key) => s + mbVariableAmount(key, monthKey), 0);
+}
+
+function mbMonthLabel(monthKey, style = 'short') {
+  const [year, month] = String(monthKey).split('-').map(Number);
+  if (!year || !month) return String(monthKey);
+  return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-US', { timeZone: 'UTC', month: style, year: 'numeric' });
 }
 
 function mbFixedFrequencyMonths(item) {
@@ -7716,6 +7872,29 @@ function mbNormalize(raw) {
   delete data.template.variable.groceries;  // groceries folded into Fair Share — no longer her own budget
   delete data.template.variable.gas;        // she has no car — gas budget/ledger removed entirely
   data.template.variable.discretionary = Number(data.template.variable.discretionary ?? defaults.template.variable.discretionary);
+  // One-time migration: from October 2026 the old single $800 lump allowance is
+  // split into itemized budgets — discretionary drops to $400 and a separate
+  // emergencies / unplanned bucket is added. September and earlier are left
+  // exactly as they were tracked.
+  if (!data.template.octoberBudgetV1) {
+    data.template.variableSchedule = data.template.variableSchedule || {};
+    data.template.variableSchedule.discretionary = mbClone(defaults.template.variableSchedule.discretionary);
+    data.template.variableSchedule.emergency = mbClone(defaults.template.variableSchedule.emergency);
+    data.template.variable.emergency = 0;   // no emergency budget existed before October
+    data.template.octoberBudgetV1 = true;
+  }
+  data.template.variable.emergency = Number(data.template.variable.emergency ?? 0) || 0;
+  data.template.variableSchedule = (data.template.variableSchedule && typeof data.template.variableSchedule === 'object')
+    ? data.template.variableSchedule : {};
+  MB_TRACKED_VARIABLE_KEYS.forEach(key => {
+    const list = Array.isArray(data.template.variableSchedule[key]) ? data.template.variableSchedule[key] : [];
+    const seen = new Set();
+    data.template.variableSchedule[key] = list
+      .filter(change => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(change?.from || '')))
+      .map(change => ({ from: String(change.from), amount: Number(change.amount) || 0 }))
+      .sort((a, b) => a.from.localeCompare(b.from))
+      .filter(change => (seen.has(change.from) ? false : seen.add(change.from)));
+  });
   data.template.variableLocks = data.template.variableLocks || {};
   // 401(k) RMD calculator inputs are global, not per-month. Existing records
   // without a projection year default to the current year.
@@ -7732,6 +7911,7 @@ function mbNormalize(raw) {
     delete month.fixedPaid['family-gift'];
     delete month.fixedActual['family-gift'];
     month.discretionary = Array.isArray(month.discretionary) ? month.discretionary : [];
+    month.emergency = Array.isArray(month.emergency) ? month.emergency : [];
     month.otherExpenses = Array.isArray(month.otherExpenses) ? month.otherExpenses : [];
   });
   return data;
@@ -7829,18 +8009,19 @@ function mbToggleYearStats() {
   _renderMomBudgetHtml();
 }
 
-function mbTemplateTotals() {
+function mbTemplateTotals(monthKey = _mbMonth) {
   const t = state.momBudget.template;
   const income = t.income.reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const fixed = t.fixed.reduce((s, i) => s + (Number(i.amount) || 0), 0);
-  const discretionary = Number(t.variable.discretionary) || 0;
-  return { income, fixed, discretionary, planned: fixed + discretionary };
+  const discretionary = mbVariableAmount('discretionary', monthKey);
+  const emergency = mbVariableAmount('emergency', monthKey);
+  return { income, fixed, discretionary, emergency, planned: fixed + discretionary + emergency };
 }
 
 function mbCalcMonth(monthKey) {
   const t = state.momBudget.template;
   const m = state.momBudget.months[monthKey] || mbBlankMonth();
-  const base = mbTemplateTotals();
+  const base = mbTemplateTotals(monthKey);
   const fixedDue = t.fixed.reduce((s, item) => s + mbFixedExpectedPayment(item, monthKey), 0);
   const fixedPaid = t.fixed.reduce((s, item) => {
     if (!m.fixedPaid?.[item.id]) return s;
@@ -7860,6 +8041,7 @@ function mbCalcMonth(monthKey) {
     return s + Math.max(0, paid - fallback);
   }, 0);
   const discretionarySpent = (m.discretionary || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const emergencySpent = (m.emergency || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const otherSpent = (m.otherExpenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const otherOverages = otherSpent + fixedOver;
   const discretionaryAdjusted = Math.max(0, base.discretionary - otherOverages);
@@ -7871,27 +8053,30 @@ function mbCalcMonth(monthKey) {
     const actual = Number(m.fixedActual?.[item.id]);
     return s + (Number.isFinite(actual) && actual > 0 ? actual : fallback);
   }, 0);
-  const trackingUsed = trackingFixedPaid + discretionarySpent + otherSpent;
-  const trackingRemaining = MB_MONTHLY_TRACKING_ALLOWANCE - trackingUsed;
-  const cashSpent = fixedPaid + discretionarySpent + otherSpent;
-  const budgetSpent = base.fixed + fixedOver + discretionarySpent + otherSpent;
+  const trackingUsed = trackingFixedPaid + discretionarySpent + emergencySpent + otherSpent;
+  const trackingAllowance = mbTrackingAllowance(monthKey);
+  const trackingRemaining = trackingAllowance - trackingUsed;
+  const cashSpent = fixedPaid + discretionarySpent + emergencySpent + otherSpent;
+  const budgetSpent = base.fixed + fixedOver + discretionarySpent + emergencySpent + otherSpent;
   return {
     ...base,
     fixedDue,
     fixedPaid,
     fixedOver,
     discretionarySpent,
+    emergencySpent,
+    emergencyRemaining: base.emergency - emergencySpent,
     otherSpent,
     otherOverages,
     discretionaryAdjusted,
     discretionaryRemaining: discretionaryAdjusted - discretionarySpent,
     overallSpendingRemaining: trackingRemaining,
-    trackingAllowance: MB_MONTHLY_TRACKING_ALLOWANCE,
+    trackingAllowance,
     trackingFixedPaid,
     trackingUsed,
     trackingRemaining,
-    trackingUsedPercent: (trackingUsed / MB_MONTHLY_TRACKING_ALLOWANCE) * 100,
-    trackingRemainingPercent: (trackingRemaining / MB_MONTHLY_TRACKING_ALLOWANCE) * 100,
+    trackingUsedPercent: trackingAllowance ? (trackingUsed / trackingAllowance) * 100 : 0,
+    trackingRemainingPercent: trackingAllowance ? (trackingRemaining / trackingAllowance) * 100 : 0,
     unallocated: base.income - base.planned,
     cashLeft: base.income - cashSpent,
     reserveDelta: base.fixed - fixedPaid,
@@ -7929,6 +8114,7 @@ function mbMonthHasActivity(month) {
   return Object.values(month.fixedPaid || {}).some(Boolean)
     || Object.values(month.fixedActual || {}).some(v => Number(v) > 0)
     || (month.discretionary || []).length > 0
+    || (month.emergency || []).length > 0
     || (month.otherExpenses || []).length > 0;
 }
 
@@ -8075,7 +8261,9 @@ function _renderMomBudgetHtml() {
     </div>
 
     <div class="stats-row mb-stats-row mb-stats-categories">
-      ${stat('Spending Used', fmt(c.trackingUsed), 'var(--text)', `${c.trackingUsedPercent.toFixed(1)}% of $800 allowance`)}
+      ${stat('Spending Used', fmt(c.trackingUsed), 'var(--text)', `${c.trackingUsedPercent.toFixed(1)}% of ${fmt(c.trackingAllowance)} allowance`)}
+      ${stat('Discretionary Left', `${c.discretionaryRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.discretionaryRemaining))}`, c.discretionaryRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.discretionarySpent)} spent of ${fmt(c.discretionary)}`)}
+      ${stat('Emergency Left', `${c.emergencyRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.emergencyRemaining))}`, c.emergencyRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.emergencySpent)} spent of ${fmt(c.emergency)}`)}
     </div>
 
     <div class="mb-year-summary">
@@ -8085,7 +8273,7 @@ function _renderMomBudgetHtml() {
       </div>
       <div class="stats-row mb-stats-row mb-stats-year${yearStatsOpen ? '' : ' hidden'}">
         ${stat(`${year} Months`, String(y.months), 'var(--text-muted)', 'tracked')}
-        ${stat(`${year} Allocated`, fmt(y.planned), 'var(--text)', '$800 per month')}
+        ${stat(`${year} Allocated`, fmt(y.planned), 'var(--text)', `${y.months ? fmt(y.planned / y.months) : fmt(0)} per month on average`)}
         ${stat(`${year} Used`, fmt(y.actual), 'var(--danger)', `${y.planned ? (y.actual / y.planned * 100).toFixed(1) : '0.0'}% used`)}
         ${stat(`${year} Remaining`, `${y.variance < 0 ? '−' : ''}${fmt(Math.abs(y.variance))}`, y.variance >= 0 ? 'var(--success)' : 'var(--danger)', `${y.planned ? (y.variance / y.planned * 100).toFixed(1) : '0.0'}% left`)}
       </div>
@@ -8107,7 +8295,15 @@ function _renderMomBudgetHtml() {
         </div>
 
         ${mbLedgerCard('Discretionary', 'discretionary', m.discretionary || [], 'Description', 'name', {
-          note: 'Discretionary includes non-grocery purchase items, prescription copays, and overages from other budget areas.'
+          budgetKey: 'discretionary',
+          history: true,
+          note: MB_VARIABLE_META.discretionary.ledgerNote
+        })}
+        ${mbLedgerCard('Emergencies / Unplanned', 'emergency', m.emergency || [], 'Description', 'name', {
+          budgetKey: 'emergency',
+          history: true,
+          emptyText: 'No emergency or unplanned spending this month.',
+          note: MB_VARIABLE_META.emergency.ledgerNote
         })}
         ${mbLedgerCard('Other Expense Overages', 'otherExpenses', otherOverageRows, 'Description', 'name', {
           disableAdd: true,
@@ -8124,6 +8320,8 @@ function _renderMomBudgetHtml() {
             <div class="tp-row"><span>Income</span><strong style="color:var(--success)">${fmt(c.income)}</strong></div>
             <div class="tp-row"><span>Fixed bills</span><strong>${fmt(c.fixed)}</strong></div>
             <div class="tp-row"><span>Discretionary budget</span><strong>${fmt(c.discretionary)}</strong></div>
+            <div class="tp-row"><span>Emergencies / unplanned budget</span><strong>${fmt(c.emergency)}</strong></div>
+            <div class="tp-row sub"><span>Spending allowance</span><strong>${fmt(c.trackingAllowance)}</strong></div>
             <div class="tp-row sub"><span>Unallocated after budget</span><strong>${c.unallocated < 0 ? '−' : ''}${fmt(Math.abs(c.unallocated))}</strong></div>
             <div class="tp-row"><span>Fixed bills paid</span><strong>${fmt(c.fixedPaid)}</strong></div>
             ${c.otherOverages ? `<div class="tp-row"><span>Other overages</span><strong style="color:var(--danger)">${fmt(c.otherOverages)}</strong></div>
@@ -8148,15 +8346,32 @@ function _renderMomBudgetHtml() {
             ${templateFixedRows}
 
             <div class="tp-group">Variable Budgets</div>
-            <div class="tp-pay-row">
-              <span style="flex:1;font-weight:600">Discretionary</span>
-              ${mbLockButton(t.variableLocks.discretionary, `mbToggleVariableLock('discretionary')`, t.variableLocks.discretionary ? 'Unlock discretionary budget' : 'Lock discretionary budget')}
-              <span class="mb-money mb-variable-money"><input type="text" inputmode="decimal" class="form-input" value="${escAttr(moneyInputValue(t.variable.discretionary))}" ${t.variableLocks.discretionary ? 'disabled' : ''} onchange="mbUpdateVariable('discretionary', this.value)" onblur="formatMoneyInput(this)"></span>
-            </div>
+            <div class="mb-card-note">Amounts apply to <strong>${escHtml(mbMonthLabel(_mbMonth))}</strong> and every month after it. Change one while viewing a later month to schedule a raise or cut without restating months already tracked.</div>
+            ${MB_TRACKED_VARIABLE_KEYS.map(key => mbVariableBudgetRow(key)).join('')}
           </div>
         </div>
       </div>
     </div>`;
+}
+
+function mbVariableBudgetRow(key) {
+  const t = state.momBudget.template;
+  const meta = MB_VARIABLE_META[key] || { label: key };
+  const locked = !!t.variableLocks?.[key];
+  const amount = mbVariableAmount(key, _mbMonth);
+  const schedule = mbVariableSchedule(key);
+  const changes = schedule.map(change => `
+    <div class="mb-variable-schedule-row">
+      <span>From <strong>${escHtml(mbMonthLabel(change.from))}</strong>: ${fmt(change.amount)}</span>
+      ${locked ? '' : `<button class="btn btn-ghost btn-sm" style="color:var(--danger)" title="Remove this scheduled change" onclick="mbRemoveVariableChange('${escAttr(key)}','${escAttr(change.from)}')">×</button>`}
+    </div>`).join('');
+  return `
+    <div class="tp-pay-row">
+      <span style="flex:1;font-weight:600">${escHtml(meta.label)}</span>
+      ${mbLockButton(locked, `mbToggleVariableLock('${key}')`, locked ? `Unlock ${meta.label.toLowerCase()} budget` : `Lock ${meta.label.toLowerCase()} budget`)}
+      <span class="mb-money mb-variable-money"><input type="text" inputmode="decimal" class="form-input" value="${escAttr(moneyInputValue(amount))}" ${locked ? 'disabled' : ''} onchange="mbUpdateVariable('${escAttr(key)}', this.value)" onblur="formatMoneyInput(this)"></span>
+    </div>
+    ${changes ? `<div class="mb-variable-schedule"><div>Before the first change: ${fmt(Number(t.variable?.[key]) || 0)}</div>${changes}</div>` : ''}`;
 }
 
 function mbLockButton(locked, onClick, title) {
@@ -8379,6 +8594,60 @@ async function mbSaveTemplateAdd() {
   await _saveMomBudget();
 }
 
+// Totals for `section` in every tracked month before the one on screen, newest
+// first. Ledgers are stored per month, so each month starts clean on its own and
+// the earlier ones stay intact for reference.
+function mbLedgerHistory(section) {
+  return Object.entries(state.momBudget.months || {})
+    .filter(([monthKey]) => monthKey < _mbMonth && monthKey >= MB_TRACKING_START_MONTH)
+    .map(([monthKey, month]) => {
+      const rows = Array.isArray(month?.[section]) ? month[section] : [];
+      return {
+        monthKey,
+        count: rows.length,
+        total: rows.reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0)
+      };
+    })
+    .filter(row => row.count > 0)
+    .sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+}
+
+function mbLedgerHistoryHtml(section) {
+  const history = mbLedgerHistory(section);
+  if (!history.length) return '';
+  const rows = history.map(row => `
+    <button type="button" class="mb-ledger-history-row" onclick="mbSetMonth('${escAttr(row.monthKey)}')">
+      <span>${escHtml(mbMonthLabel(row.monthKey))}
+        <span class="mb-ledger-history-meta">· ${row.count} entr${row.count === 1 ? 'y' : 'ies'}</span>
+      </span>
+      <strong>${fmt(row.total)}</strong>
+    </button>`).join('');
+  return `
+    <details class="mb-ledger-history">
+      <summary>Previous months (${history.length}) — tap a month to view its entries</summary>
+      <div class="mb-ledger-history-body">${rows}</div>
+    </details>`;
+}
+
+// `budgetKey` turns on the month-total strip at the top of the card: the running
+// total for the month on screen, measured against that month's budget.
+function mbLedgerTotalHtml(section, entries, budgetKey) {
+  const spent = entries.reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
+  const budget = mbVariableAmount(budgetKey, _mbMonth);
+  const left = budget - spent;
+  return `
+    <div class="mb-ledger-total">
+      <div>
+        <div class="mb-ledger-total-label">${escHtml(mbMonthLabel(_mbMonth, 'long'))} total</div>
+        <div class="mb-ledger-total-value" style="color:${spent > budget ? 'var(--danger)' : 'var(--text)'}">${fmt(spent)}</div>
+      </div>
+      <div class="mb-ledger-total-meta">
+        <div>of <strong>${fmt(budget)}</strong> budget</div>
+        <div style="color:${left >= 0 ? 'var(--success)' : 'var(--danger)'}"><strong>${left < 0 ? '−' : ''}${fmt(Math.abs(left))}</strong> ${left < 0 ? 'over' : 'left'}</div>
+      </div>
+    </div>`;
+}
+
 function mbLedgerCard(title, section, entries, label, nameKey, options = {}) {
   const hasDescription = !['groceries', 'gas'].includes(section);
   const rows = entries.length ? entries.map(e => `
@@ -8413,6 +8682,7 @@ function mbLedgerCard(title, section, entries, label, nameKey, options = {}) {
   return `<div class="card tp-card">
     <div class="card-header"><div class="card-title">${escHtml(title)}</div></div>
     <div class="card-body">
+      ${options.budgetKey ? mbLedgerTotalHtml(section, entries, options.budgetKey) : ''}
       ${options.note ? `<div class="mb-card-note">${escHtml(options.note)}</div>` : ''}
       <div class="table-wrap">
         <table>
@@ -8422,6 +8692,7 @@ function mbLedgerCard(title, section, entries, label, nameKey, options = {}) {
         </table>
       </div>
       ${addRow}
+      ${options.history ? mbLedgerHistoryHtml(section) : ''}
     </div>
   </div>`;
 }
@@ -8550,11 +8821,31 @@ async function mbToggleTemplateLock(section, id) {
   await _saveMomBudget();
 }
 
+// Edits apply from the month on screen forward, so months already tracked keep
+// the budget they were measured against.
 async function mbUpdateVariable(key, value) {
   if (state.momBudget.template.variableLocks?.[key]) return;
-  state.momBudget.template.variable[key] = parseMoney(value);
+  mbSetVariableAmount(key, _mbMonth, parseMoney(value));
   _renderMomBudgetHtml();
   await _saveMomBudget();
+}
+
+function mbRemoveVariableChange(key, from) {
+  if (state.momBudget.template.variableLocks?.[key]) return;
+  const meta = MB_VARIABLE_META[key] || { label: key };
+  showBrandedNotice({
+    title: 'Remove scheduled change',
+    message: `Remove the ${meta.label} budget change effective ${mbMonthLabel(from)}? Those months fall back to the amount in effect before it.`,
+    type: 'danger',
+    confirmLabel: 'Yes, Remove',
+    onConfirm: () => {
+      const t = state.momBudget.template;
+      t.variableSchedule = t.variableSchedule || {};
+      t.variableSchedule[key] = mbVariableSchedule(key).filter(change => change.from !== from);
+      _renderMomBudgetHtml();
+      _saveMomBudget();
+    }
+  });
 }
 
 async function mbToggleVariableLock(key) {

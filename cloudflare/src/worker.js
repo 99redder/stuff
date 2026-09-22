@@ -1658,7 +1658,14 @@ const MOM_BUDGET_DEFAULT = {
       { id: 'fair-share', name: 'Fair Share (household)', amount: 0, frequency: 'monthly', auto: true, locked: true },
       { id: 'medical', name: 'CoPays / Prescriptions', amount: 140 }
     ],
-    variable: { discretionary: 500 },
+    variable: { discretionary: 500, emergency: 0 },
+    // Effective-dated variable budgets — mirrors index.html. `variable[key]` is
+    // what applied before the first entry; each { from, amount } takes over from
+    // that month onward, so tracked months are never restated.
+    variableSchedule: {
+      discretionary: [{ from: '2026-10', amount: 400 }],
+      emergency: [{ from: '2026-10', amount: 200 }]
+    },
     variableLocks: {}
   },
   months: {}
@@ -1670,7 +1677,11 @@ const MB_TRACKING_START_DATE = `${MB_TRACKING_START_MONTH}-01`;
 // Mom's spending allowance is intentionally independent from Fair Share.
 // Fair Share remains a reference value in the public summary, but never
 // increases the amount available for (or used by) spending tracking.
+// Before MB_BUDGET_SPLIT_MONTH the allowance was one lump figure; from that
+// month on it is the itemized variable budgets added up.
 const MB_MONTHLY_TRACKING_ALLOWANCE = 800;
+const MB_BUDGET_SPLIT_MONTH = '2026-10';
+const MB_TRACKED_VARIABLE_KEYS = ['discretionary', 'emergency'];
 
 async function handleGetMomBudget(env) {
   const data = await env.MOM_BUDGET_STORE.getByName('mom_budget').getBudget();
@@ -1735,6 +1746,10 @@ async function handleGetMomBudgetPhoneSummary(request, env, requestedMonth) {
       otherOverages: month.otherOverages,
       discretionarySpent: month.discretionarySpent,
       discretionaryAdjusted: month.discretionaryAdjusted,
+      discretionaryBudget: month.discretionary,
+      emergencyBudget: month.emergency,
+      emergencySpent: month.emergencySpent,
+      emergencyRemaining: month.emergencyRemaining,
       fairShare,
       transactions
     },
@@ -1778,7 +1793,28 @@ function monthLabel(monthKey) {
 }
 
 function blankMomBudgetMonth() {
-  return { fixedPaid: {}, fixedActual: {}, groceries: [], gas: [], discretionary: [], otherExpenses: [] };
+  return { fixedPaid: {}, fixedActual: {}, groceries: [], gas: [], discretionary: [], emergency: [], otherExpenses: [] };
+}
+
+// ── Effective-dated variable budgets (mirrors index.html) ───────────────────
+
+function momVariableSchedule(data, key) {
+  const list = data.template?.variableSchedule?.[key];
+  if (!Array.isArray(list)) return [];
+  return list.slice().sort((a, b) => String(a.from).localeCompare(String(b.from)));
+}
+
+function momVariableAmount(data, key, monthKey) {
+  let amount = Number(data.template?.variable?.[key]) || 0;
+  for (const change of momVariableSchedule(data, key)) {
+    if (String(change.from) <= monthKey) amount = Number(change.amount) || 0;
+  }
+  return amount;
+}
+
+function momTrackingAllowance(data, monthKey) {
+  if (monthKey < MB_BUDGET_SPLIT_MONTH) return MB_MONTHLY_TRACKING_ALLOWANCE;
+  return MB_TRACKED_VARIABLE_KEYS.reduce((s, key) => s + momVariableAmount(data, key, monthKey), 0);
 }
 
 function momFixedFrequencyMonths(item) {
@@ -1838,6 +1874,29 @@ function normalizeMomBudget(raw) {
   delete data.template.variable.groceries;  // groceries folded into the Fair Share line — no separate budget
   delete data.template.variable.gas;        // she has no car — gas budget/ledger removed entirely
   data.template.variable.discretionary = Number(data.template.variable.discretionary ?? defaults.template.variable.discretionary) || 0;
+  // Mirror of the app's one-time October 2026 migration: the single lump
+  // allowance splits into a $400 discretionary budget plus a separate
+  // emergencies / unplanned budget. Seeded here too so the phone is correct
+  // even before the app next saves the record.
+  if (!data.template.octoberBudgetV1) {
+    data.template.variableSchedule = data.template.variableSchedule || {};
+    data.template.variableSchedule.discretionary = cloneJson(defaults.template.variableSchedule.discretionary);
+    data.template.variableSchedule.emergency = cloneJson(defaults.template.variableSchedule.emergency);
+    data.template.variable.emergency = 0;   // no emergency budget existed before October
+    data.template.octoberBudgetV1 = true;
+  }
+  data.template.variable.emergency = Number(data.template.variable.emergency ?? 0) || 0;
+  data.template.variableSchedule = (data.template.variableSchedule && typeof data.template.variableSchedule === 'object')
+    ? data.template.variableSchedule : {};
+  for (const key of MB_TRACKED_VARIABLE_KEYS) {
+    const list = Array.isArray(data.template.variableSchedule[key]) ? data.template.variableSchedule[key] : [];
+    const seen = new Set();
+    data.template.variableSchedule[key] = list
+      .filter(change => validMonthKey(String(change?.from || '')))
+      .map(change => ({ from: String(change.from), amount: Number(change.amount) || 0 }))
+      .sort((a, b) => a.from.localeCompare(b.from))
+      .filter(change => (seen.has(change.from) ? false : seen.add(change.from)));
+  }
 
   data.months = data.months && typeof data.months === 'object' ? data.months : {};
   // This is a cloned, read-only view for the phone. Preserve saved records, but
@@ -1854,8 +1913,9 @@ function normalizeMomBudget(raw) {
     delete month.fixedPaid['family-gift'];
     delete month.fixedActual['family-gift'];
     month.discretionary = Array.isArray(month.discretionary) ? month.discretionary : [];
+    month.emergency = Array.isArray(month.emergency) ? month.emergency : [];
     month.otherExpenses = Array.isArray(month.otherExpenses) ? month.otherExpenses : [];
-    for (const ledger of ['discretionary', 'otherExpenses']) {
+    for (const ledger of ['discretionary', 'emergency', 'otherExpenses']) {
       month[ledger] = month[ledger].filter(entry => !validDateString(entry.date) || entry.date >= MB_TRACKING_START_DATE);
     }
   });
@@ -1872,18 +1932,19 @@ function syncMomHouseholdTransfers(data, fairShare) {
   item.locked = true;
 }
 
-function momBudgetTemplateTotals(data) {
+function momBudgetTemplateTotals(data, monthKey) {
   const t = data.template;
   const income = t.income.reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const fixed = t.fixed.reduce((s, i) => s + (Number(i.amount) || 0), 0);
-  const discretionary = Number(t.variable.discretionary) || 0;
-  return { income, fixed, discretionary, planned: fixed + discretionary };
+  const discretionary = momVariableAmount(data, 'discretionary', monthKey);
+  const emergency = momVariableAmount(data, 'emergency', monthKey);
+  return { income, fixed, discretionary, emergency, planned: fixed + discretionary + emergency };
 }
 
 function calcMomBudgetMonth(data, monthKey) {
   const t = data.template;
   const m = data.months[monthKey] || blankMomBudgetMonth();
-  const base = momBudgetTemplateTotals(data);
+  const base = momBudgetTemplateTotals(data, monthKey);
   const fixedPaid = t.fixed.reduce((s, item) => {
     if (!m.fixedPaid?.[item.id]) return s;
     const expected = momFixedExpectedPayment(item, monthKey);
@@ -1902,12 +1963,13 @@ function calcMomBudgetMonth(data, monthKey) {
     return s + Math.max(0, paid - fallback);
   }, 0);
   const discretionarySpent = (m.discretionary || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const emergencySpent = (m.emergency || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const otherSpent = (m.otherExpenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const otherOverages = otherSpent + fixedOver;
   const discretionaryAdjusted = Math.max(0, base.discretionary - otherOverages);
-  const budgetSpent = base.fixed + fixedOver + discretionarySpent + otherSpent;
-  // Spending tracking is a separate $800 allowance. Count paid bills and
-  // ledgers, but explicitly exclude the auto-synced Fair Share transfer.
+  const budgetSpent = base.fixed + fixedOver + discretionarySpent + emergencySpent + otherSpent;
+  // Spending tracking is a separate allowance. Count paid bills and ledgers,
+  // but explicitly exclude the auto-synced Fair Share transfer.
   const trackingFixedPaid = t.fixed.reduce((s, item) => {
     if (item.id === 'fair-share' || !m.fixedPaid?.[item.id]) return s;
     const expected = momFixedExpectedPayment(item, monthKey);
@@ -1916,23 +1978,26 @@ function calcMomBudgetMonth(data, monthKey) {
     const actual = Number(m.fixedActual?.[item.id]);
     return s + (Number.isFinite(actual) && actual > 0 ? actual : fallback);
   }, 0);
-  const trackingUsed = trackingFixedPaid + discretionarySpent + otherSpent;
-  const trackingRemaining = MB_MONTHLY_TRACKING_ALLOWANCE - trackingUsed;
+  const trackingUsed = trackingFixedPaid + discretionarySpent + emergencySpent + otherSpent;
+  const trackingAllowance = momTrackingAllowance(data, monthKey);
+  const trackingRemaining = trackingAllowance - trackingUsed;
   return {
     ...base,
     fixedPaid,
     fixedOver,
     discretionarySpent,
+    emergencySpent,
+    emergencyRemaining: base.emergency - emergencySpent,
     otherOverages,
     discretionaryAdjusted,
     discretionaryRemaining: discretionaryAdjusted - discretionarySpent,
     overallSpendingRemaining: trackingRemaining,
-    trackingAllowance: MB_MONTHLY_TRACKING_ALLOWANCE,
+    trackingAllowance,
     trackingFixedPaid,
     trackingUsed,
     trackingRemaining,
-    trackingUsedPercent: (trackingUsed / MB_MONTHLY_TRACKING_ALLOWANCE) * 100,
-    trackingRemainingPercent: (trackingRemaining / MB_MONTHLY_TRACKING_ALLOWANCE) * 100,
+    trackingUsedPercent: trackingAllowance ? (trackingUsed / trackingAllowance) * 100 : 0,
+    trackingRemainingPercent: trackingAllowance ? (trackingRemaining / trackingAllowance) * 100 : 0,
     budgetSpent,
     variance: base.planned - budgetSpent
   };
@@ -1977,6 +2042,18 @@ function momBudgetMonthTransactions(data, monthKey) {
     });
   }
 
+  for (const entry of m.emergency || []) {
+    const amount = Number(entry.amount) || 0;
+    if (amount <= 0) continue;
+    entries.push({
+      id: entry.id || `emergency-${entry.date || defaultDate}-${entry.name || entry.description || amount}`,
+      date: validDateString(entry.date) ? entry.date : defaultDate,
+      name: entry.name || entry.description || 'Emergency',
+      amount,
+      group: 'Emergencies / Unplanned'
+    });
+  }
+
   for (const entry of m.otherExpenses || []) {
     const amount = Number(entry.amount) || 0;
     if (amount <= 0) continue;
@@ -2004,6 +2081,7 @@ function momMonthHasActivity(month) {
   return Object.values(month.fixedPaid || {}).some(Boolean)
     || Object.values(month.fixedActual || {}).some(v => Number(v) > 0)
     || (month.discretionary || []).length > 0
+    || (month.emergency || []).length > 0
     || (month.otherExpenses || []).length > 0;
 }
 

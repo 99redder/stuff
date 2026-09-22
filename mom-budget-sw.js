@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'mom-budget-phone-';
-const CACHE_NAME = `${CACHE_PREFIX}v19`;
+const CACHE_NAME = `${CACHE_PREFIX}v20`;
 const BASE = new URL('./', self.location.href);
 const EXPECTED_SCOPE = new URL('./mom-budget-phone.html', self.location.href).href;
 const LEGACY = self.registration.scope !== EXPECTED_SCOPE;

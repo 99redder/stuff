@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-NJUli/KegXY+2hwIPAMLIk0jmY/oseynbP0hFuJoejM='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://rentals-api.99redder.workers.dev; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-iPNI8n8cxavs5SUne2WT5s/gol/P+sT6dHul0KxLuOE='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://rentals-api.99redder.workers.dev; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
   <meta name="referrer" content="no-referrer">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0f766e">
@@ -448,7 +448,23 @@
     <section class="card overall">
       <div class="label">Overall Spending Left</div>
       <div class="amount" id="overall">$0</div>
-      <div class="note">$800 monthly allowance · <span id="overall-used">$0</span> used (<span id="overall-used-percent">0.0%</span>) · <span id="overall-remaining-percent">100.0%</span> left</div>
+      <div class="note"><span id="overall-allowance">$0</span> monthly allowance · <span id="overall-used">$0</span> used (<span id="overall-used-percent">0.0%</span>) · <span id="overall-remaining-percent">100.0%</span> left</div>
+    </section>
+
+    <section class="card category" aria-label="Discretionary">
+      <div>
+        <div class="category-name">Discretionary Left</div>
+        <div class="category-sub"><span id="discretionary-spent">$0</span> spent of <span id="discretionary-budget">$0</span></div>
+      </div>
+      <div class="category-amount" id="discretionary-left">$0</div>
+    </section>
+
+    <section class="card category transfer" aria-label="Emergencies and unplanned">
+      <div>
+        <div class="category-name">Emergencies / Unplanned</div>
+        <div class="category-sub"><span id="emergency-spent">$0</span> spent of <span id="emergency-budget">$0</span></div>
+      </div>
+      <div class="category-amount" id="emergency-left">$0</div>
     </section>
 
     <section class="card category transfer" aria-label="Fair Share">
@@ -463,7 +479,7 @@
 
     <section class="card year" id="year-card">
       <div class="year-title" id="year-title">Year Status</div>
-      <div class="category-sub" style="margin-bottom:12px">Tracking started September 1, 2026 · $800 allowance per month.</div>
+      <div class="category-sub" style="margin-bottom:12px">Tracking started September 1, 2026. Allocated is every tracked month's allowance added up.</div>
       <div class="year-row"><span>Months tracked</span><strong id="year-months">0</strong></div>
       <div class="year-row"><span>Allocated</span><strong id="year-planned">$0</strong></div>
       <div class="year-row"><span>Used <small id="year-used-percent">0.0%</small></span><strong id="year-actual">$0</strong></div>
@@ -522,7 +538,14 @@
       month: document.getElementById('month-label'),
       status: document.getElementById('status'),
       overall: document.getElementById('overall'),
+      overallAllowance: document.getElementById('overall-allowance'),
       overallUsed: document.getElementById('overall-used'),
+      discretionaryLeft: document.getElementById('discretionary-left'),
+      discretionarySpent: document.getElementById('discretionary-spent'),
+      discretionaryBudget: document.getElementById('discretionary-budget'),
+      emergencyLeft: document.getElementById('emergency-left'),
+      emergencySpent: document.getElementById('emergency-spent'),
+      emergencyBudget: document.getElementById('emergency-budget'),
       overallUsedPercent: document.getElementById('overall-used-percent'),
       overallRemainingPercent: document.getElementById('overall-remaining-percent'),
       fairShare: document.getElementById('fair-share'),
@@ -626,7 +649,9 @@
       sessionExpiresAt = 0;
       stopPolling();
       for (const el of Object.values(els)) {
-        if (['overall', 'overallUsed', 'overallUsedPercent', 'overallRemainingPercent', 'fairShare',
+        if (['overall', 'overallAllowance', 'overallUsed', 'overallUsedPercent', 'overallRemainingPercent', 'fairShare',
+          'discretionaryLeft', 'discretionarySpent', 'discretionaryBudget',
+          'emergencyLeft', 'emergencySpent', 'emergencyBudget',
           'yearPlanned', 'yearActual', 'yearVariance', 'yearUsedPercent', 'yearRemainingPercent',
           'yearMonths', 'transactionsTotal', 'updated'].some(key => els[key] === el)) el.textContent = '—';
       }
@@ -766,7 +791,14 @@
       const year = data.year || {};
       els.month.textContent = data.monthLabel || data.monthKey || 'Current month';
       setAmount(els.overall, month.overallSpendingRemaining);
+      els.overallAllowance.textContent = money(month.trackingAllowance);
       els.overallUsed.textContent = money(month.trackingUsed);
+      setAmount(els.discretionaryLeft, month.discretionaryRemaining);
+      els.discretionarySpent.textContent = money(month.discretionarySpent);
+      els.discretionaryBudget.textContent = money(month.discretionaryBudget);
+      setAmount(els.emergencyLeft, month.emergencyRemaining);
+      els.emergencySpent.textContent = money(month.emergencySpent);
+      els.emergencyBudget.textContent = money(month.emergencyBudget);
       els.overallUsedPercent.textContent = `${(Number(month.trackingUsedPercent) || 0).toFixed(1)}%`;
       els.overallRemainingPercent.textContent = `${(Number(month.trackingRemainingPercent ?? (100 - (Number(month.trackingUsedPercent) || 0))) || 0).toFixed(1)}%`;
       els.fairShare.textContent = money(month.fairShare);

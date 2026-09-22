@@ -227,20 +227,28 @@ Global view (not per-property) for tracking Red's mother's monthly assistance bu
         auto             // true ONLY for the 'fair-share' line (read-only, value synced from the budget)
       }
     ],
-    variable: {
-      discretionary: 500
+    variable: {              // amount in effect BEFORE the first variableSchedule entry
+      discretionary: 500,
+      emergency: 0
+    },
+    variableSchedule: {      // effective-dated changes; each entry applies from `from` onward
+      discretionary: [{ from: '2026-10', amount: 400 }],
+      emergency: [{ from: '2026-10', amount: 200 }]
     },
     variableLocks: {
-      discretionary: false
+      discretionary: false,
+      emergency: false
     },
     fairShareMigrated,     // one-time flag — wrapped household bills already removed
-    carStreamingTrimmed    // one-time flag — car/streaming bills already removed
+    carStreamingTrimmed,   // one-time flag — car/streaming bills already removed
+    octoberBudgetV1        // one-time flag — Oct 2026 budget split already seeded
   },
   months: {
     'YYYY-MM': {
       fixedPaid: { [fixedId]: true },
       fixedActual: { [fixedId]: number },
       discretionary: [{ id, date, amount, name }],
+      emergency: [{ id, date, amount, name }],
       otherExpenses: [{ id, date, amount, name }]
     }
   },
@@ -249,10 +257,16 @@ Global view (not per-property) for tracking Red's mother's monthly assistance bu
 ```
 Now that the mother lives with the family, her household bills are wrapped into a single **auto-synced `fair-share` fixed line** whose monthly amount is pulled live from the Monthly Budget's Fair Share section (`mbSyncFairShare()` → `fsCalc().herShare`, run in `renderMomBudget` after `ensureBudgetLoaded()`). Groceries were folded into that household share, and **Gas was removed entirely (she has no car)** — so the only variable budget left is Discretionary. She effectively tracks just **Fair Share, Discretionary, and overages**.
 
+**Effective-dated variable budgets.** `template.variable[key]` is the amount that applied **before** the first scheduled change; `template.variableSchedule[key]` is a sorted list of `{ from: 'YYYY-MM', amount }` entries, each taking over from that month onward. Resolve with `mbVariableAmount(key, monthKey)`; write with `mbSetVariableAmount(key, monthKey, amount)`, which writes a change effective from that month and drops any entry that merely repeats the amount already in effect. `MB_TRACKED_VARIABLE_KEYS` (`discretionary`, `emergency`) drives the template rows, ledger cards, and the allowance; labels/notes live in `MB_VARIABLE_META`.
+
+Editing a budget input in the Monthly Template card applies **from the month currently on screen forward**, so a month that has already been tracked is never restated. Scheduled changes are listed under the input with a `×` to remove one (`mbRemoveVariableChange`).
+
+**Spending allowance.** `mbTrackingAllowance(monthKey)` returns the flat legacy `MB_MONTHLY_TRACKING_ALLOWANCE` ($800) for months before `MB_BUDGET_SPLIT_MONTH` (`'2026-10'`), and the sum of the itemized variable budgets from that month on. October 2026 onward that is `$400 discretionary + $200 emergencies = $600`. `trackingUsed` counts paid fixed bills (excluding Fair Share) plus the discretionary, emergency, and other-overage ledgers.
+
 **Current default template:**
 - Income: Social Security, 401k Distribution
 - Fixed/reserve list: **Fair Share (household)** (auto-synced), CoPays / Prescriptions
-- Variable budgets: Discretionary (Gas removed — she has no car; Cell Phone removed — she's on the family plan)
+- Variable budgets: Discretionary, **Emergencies / Unplanned** (Gas removed — she has no car; Cell Phone removed — she's on the family plan)
 - The wrapped-away household bills (Rent, Internet, Water / Sewer / Trash, Electric, Nat Gas / Heat) and the Groceries budget were removed when she moved in with the family — their cost is represented by the single Fair Share line. Car Insurance / Car Repairs / Car Registration / Netflix / BritBox were also dropped (no longer tracked).
 
 **Fixed bill kinds:**
@@ -300,8 +314,11 @@ discretionaryAdjusted =
 `Overall Spending Left` shows the selected month in italic text and the note: `Discretionary, including other overage amounts`.
 
 **Ledger cards:**
-- Discretionary: date + description + amount rows. Note at top says discretionary includes non-grocery purchases, prescription copays, and overages from other budget areas.
-- Other Expense Overages: no manual Add row. It auto-populates fixed bill overages. Legacy/manual rows are still included if already present in saved data.
+- Every ledger is stored per month under `months['YYYY-MM']`, so a new month starts empty on its own and earlier months are kept intact.
+- Discretionary and Emergencies / Unplanned pass `budgetKey` and `history: true` to `mbLedgerCard`:
+  - `budgetKey` renders `mbLedgerTotalHtml()` — a strip at the top of the card with the **running total for the month on screen**, that month's budget, and the amount left (red when over). It re-renders with every entry added or deleted.
+  - `history: true` renders `mbLedgerHistoryHtml()` — a collapsed **Previous months** list (via `mbLedgerHistory(section)`) with each earlier month's entry count and total; clicking a row calls `mbSetMonth()` to open it.
+- Other Expense Overages: no manual Add row, no total strip. It auto-populates fixed bill overages. Legacy/manual rows are still included if already present in saved data.
 
 **Monthly Template card:**
 - Income template rows and fixed template rows are edited here.
@@ -315,6 +332,9 @@ discretionaryAdjusted =
 - **One-time `fairShareMigrated` migration:** removes the wrapped household bills (`rent`, `internet`, `water`, `electric`, `gas-heat`) from `template.fixed`, then ensures the auto-synced `fair-share` line exists (prepended). Also `delete`s `template.variable.groceries` (groceries folded into Fair Share).
 - **One-time `carStreamingTrimmed` migration:** removes `car-insurance`, `car-repairs`, `registration`, `netflix`, `britbox` from `template.fixed` (no longer tracked).
 - **One-time `cellTrimmed` migration:** removes `cell` (she's on the family cell plan). Default fixed list is now just `fair-share`, `medical`.
+- **One-time `octoberBudgetV1` migration:** seeds the Oct 2026 budget split — `variableSchedule.discretionary = [{from:'2026-10', amount:400}]`, `variableSchedule.emergency = [{from:'2026-10', amount:200}]`, and `variable.emergency = 0` (no emergency budget existed before October). Guarded by the flag, so later owner edits are never overwritten. **Mirrored in the worker's `normalizeMomBudget`** so the phone is correct even before the app next saves.
+- Normalizes `variableSchedule`: valid `YYYY-MM` keys only, numeric amounts, sorted, one entry per month.
+- Ensures each month has an `emergency` ledger array.
 - **Gas removed entirely:** `delete`s `template.variable.gas`; `mbCalcMonth`/`mbTemplateTotals` drop gas from all formulas; Gas Left stat, Gas ledger card, and Gas template row are gone. Old month `gas[]` ledger entries are left in storage but unused.
 - Backfills fixed item `frequency`, `dueMonth`, and `paymentAmount` from defaults.
 - Migrates old fixed Gas into the new monthly `gas` ledger, then removes old fixed Gas paid/actual state.
@@ -340,6 +360,14 @@ This page has no password gate and no editing controls. It is meant to be instal
 - Optional collapsed year status showing allocated, used, and under/over allocated
 
 The page fetches only `get_mom_budget_public_summary`, a public Worker action that returns precomputed read-only numbers. It must never call `get_mom_budget`, `save_mom_budget`, or any authenticated/editing action. **The worker keeps its own parallel copy of the Mom Budget math** (`normalizeMomBudget` / `momBudgetTemplateTotals` / `calcMomBudgetMonth`) — when changing the frontend's `mbCalcMonth`/template, mirror it here or the phone shows stale numbers. (Groceries and Gas were removed from both.) The `month.fairShare` field is computed by `calcFairShareFromBudget(budget)` — a mirror of the frontend `fsCalc()` (shared budget expenses ÷ household size) that reads the `budget` KV record directly, so it stays accurate even if the `mom_budget` record's fair-share line is stale. `FS_SHARED_CAT_DEFAULTS` in the worker must match index.html.
+
+It shows `Overall Spending Left` (with that month's allowance from `month.trackingAllowance` — **no longer a hardcoded $800**), then `Discretionary Left` and `Emergencies / Unplanned` cards fed by `month.discretionaryBudget` / `discretionarySpent` / `discretionaryRemaining` and `month.emergencyBudget` / `emergencySpent` / `emergencyRemaining`, then Fair Share.
+
+> **Gotcha — CSP script hash.** `mom-budget-phone.html` pins its own inline `<script>` with a sha256 hash in the `Content-Security-Policy` meta tag (`script-src 'self' 'sha256-…'`). **Any edit to that script silently blocks the entire page** until the hash is regenerated:
+> ```bash
+> python3 -c "import re,hashlib,base64;s=open('mom-budget-phone.html').read();print('sha256-'+base64.b64encode(hashlib.sha256(re.search(r'<script>([\s\S]*?)</script>',s).group(1).encode()).digest()).decode())"
+> ```
+> `tests/mom-budget-variable-budgets.test.mjs` fails with the correct replacement hash when they drift. `index.html` and `mobile/index.html` use `'unsafe-inline'` and are not affected.
 
 The service worker is intentionally network-first and calls `registration.update()` on launch so the installed PWA gets the newest page/assets when opened. If changing the phone PWA files, bump `CACHE_NAME` in `mom-budget-sw.js` if cached asset behavior matters.
 
@@ -660,7 +688,7 @@ Maintenance entries use `capitalImprovement: true` when marked **Improvement** i
 |---|---|---|
 | `get_mom_budget` | — | `{ data: { template, months } }` |
 | `save_mom_budget` | `data: { template, months }` | `{ success: true }` — full overwrite of the `mom_budget` KV record |
-| `get_mom_budget_public_summary` | optional `month: "YYYY-MM"` | `{ monthKey, monthLabel, updatedAt, month: { overallSpendingRemaining, discretionaryRemaining, discretionaryAdjusted, otherOverages, discretionarySpent, fairShare }, year: {...} }` — public unauthenticated read-only summary for `mom-budget-phone.html`; returns calculated numbers only, never raw editable records. `month.fairShare` is computed live from the `budget` KV record (`calcFairShareFromBudget`). Guarded by a per-IP rate limit (`env.PUBLIC_RATELIMIT`, 60 req/60s → `429`, fails open) and a ~45s edge cache (synthetic GET cache key keyed by month, `Cache-Control: public, s-maxage=45`). Both are invisible to the phone and cap bot/flood abuse. |
+| `get_mom_budget_public_summary` | optional `month: "YYYY-MM"` | `{ monthKey, monthLabel, updatedAt, month: { overallSpendingRemaining, trackingAllowance, trackingUsed, discretionaryBudget, discretionarySpent, discretionaryRemaining, discretionaryAdjusted, emergencyBudget, emergencySpent, emergencyRemaining, otherOverages, fairShare, transactions }, year: {...} }` — public unauthenticated read-only summary for `mom-budget-phone.html`; returns calculated numbers only, never raw editable records. `month.fairShare` is computed live from the `budget` KV record (`calcFairShareFromBudget`). Guarded by a per-IP rate limit (`env.PUBLIC_RATELIMIT`, 60 req/60s → `429`, fails open) and a ~45s edge cache (synthetic GET cache key keyed by month, `Cache-Control: public, s-maxage=45`). Both are invisible to the phone and cap bot/flood abuse. |
 
 #### Move-In Purchases (per-property — 4781MC only)
 All of these reject any property other than `4781MC` (`requireMoveInPurchaseProperty`) with a 400.
@@ -752,7 +780,7 @@ depreciation:{property}    →  { costBasis, placedInService, purchaseDate }
 maintenance:{property}     →  Array of maintenance entry objects
 investment:{property}      →  Investment config object
 budget                     →  { income: [...], expenses: {...}, worksheets: {...}, fairShare: { householdSize, roundDollar, shared: { [itemId]: bool } } }
-mom_budget                 →  { template: { income, fixed, variable, variableLocks }, months: { [YYYY-MM]: {...} } }
+mom_budget                 →  { template: { income, fixed, variable, variableSchedule, variableLocks }, months: { [YYYY-MM]: {...} } }
 solar:config               →  Solar system config object
 solar:entries              →  Array of solar entry objects
 solar:summaries            →  { [year]: { ... } }
@@ -833,6 +861,16 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-09-22 — Mom Budget: Oct 2026 budget split + per-month discretionary totals
+
+- **Variable budgets are now effective-dated.** `template.variableSchedule[key]` holds `{ from:'YYYY-MM', amount }` entries on top of the pre-schedule `template.variable[key]`; `mbVariableAmount(key, monthKey)` resolves the amount for a month and `mbSetVariableAmount()` writes a change from the month on screen forward. Editing a budget therefore **never restates a month that has already been tracked** — September stays on its $500 discretionary and $800 lump allowance.
+- **From October 2026: discretionary $500 → $400, plus a new `Emergencies / Unplanned` budget at $200/mo** with its own month-keyed ledger (`months['YYYY-MM'].emergency`) and ledger card. Seeded by the one-time `octoberBudgetV1` migration in `mbNormalize` (mirrored in the worker's `normalizeMomBudget` so the phone is right before the app next saves).
+- **The $800 `MB_MONTHLY_TRACKING_ALLOWANCE` is no longer the fixed allowance.** `mbTrackingAllowance(monthKey)` returns the legacy lump for months before `MB_BUDGET_SPLIT_MONTH` (`'2026-10'`) and the sum of the itemized budgets from then on ($600). `trackingUsed` now includes emergency spending, and the year summary adds each month's own allowance.
+- **The Discretionary and Emergency cards lead with the month's running total** (`mbLedgerTotalHtml`) — total spent, that month's budget, and the amount left — and end with a collapsed **Previous months** list (`mbLedgerHistory` / `mbLedgerHistoryHtml`) that jumps to any earlier month. Ledgers were already per-month, so the reset was automatic; this makes it visible and keeps the old entries one tap away.
+- **Mirrored everywhere:** worker public summary (new `discretionaryBudget` / `emergencyBudget` / `emergencySpent` / `emergencyRemaining` fields, emergency transactions group), `mom-budget-phone.html` (dynamic allowance text + Discretionary / Emergencies cards, `CACHE_NAME` → `v20`), and `mobile/index.html` (`momVariable()`, emergency stat + card, `CACHE_NAME` → `v35`). New `tests/mom-budget-variable-budgets.test.mjs` pins app/worker/mobile to the same numbers.
+- **Fixed a latent footgun:** editing `mom-budget-phone.html`'s inline script invalidated its pinned CSP sha256 hash, which silently blocked the whole page. Hash regenerated and now guarded by a test.
+- **Worker deploy required** for the phone to show the new allowance and emergency figures.
 
 ### 2026-08-14 — Health: completion celebration (confetti + toast + haptic)
 
