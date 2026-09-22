@@ -7,8 +7,9 @@ const html = readFileSync(new URL('../mom-budget-phone.html', import.meta.url), 
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const settle = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 
-test('phone keeps Fair Share as a reference card and omits the redundant usage card', () => {
-  assert.match(html, /Reference only · not included in tracking/);
+test('phone names Fair Share as what she pays and omits the redundant usage card', () => {
+  assert.match(html, /This is what you pay to Chris and Megan each month/);
+  assert.doesNotMatch(html, /Reference only/);
   assert.doesNotMatch(html, /Used This Month/);
 });
 
