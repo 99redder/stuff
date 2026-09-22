@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-tMioLjZ8DYevtbl3cIJ6xEg6eXtlVGX5l0nl1lzGNb0='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://rentals-api.99redder.workers.dev; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-aw69pIGHUWYToJOXG+/i7x30GzRNjFEdksZXqKQ/j44='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://rentals-api.99redder.workers.dev; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
   <meta name="referrer" content="no-referrer">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0f766e">
@@ -451,14 +451,6 @@
       <div class="note"><span id="overall-allowance">$0</span> monthly allowance · <span id="overall-used">$0</span> used (<span id="overall-used-percent">0.0%</span>) · <span id="overall-remaining-percent">100.0%</span> left</div>
     </section>
 
-    <section class="card category transfer" aria-label="Discretionary">
-      <div>
-        <div class="category-name">Discretionary Left</div>
-        <div class="category-sub"><span id="discretionary-spent">$0</span> spent of <span id="discretionary-budget">$0</span></div>
-      </div>
-      <div class="category-amount" id="discretionary-left">$0</div>
-    </section>
-
     <section class="card category transfer" aria-label="Fair Share">
       <div>
         <div class="category-name">Fair Share</div>
@@ -532,9 +524,6 @@
       overall: document.getElementById('overall'),
       overallAllowance: document.getElementById('overall-allowance'),
       overallUsed: document.getElementById('overall-used'),
-      discretionaryLeft: document.getElementById('discretionary-left'),
-      discretionarySpent: document.getElementById('discretionary-spent'),
-      discretionaryBudget: document.getElementById('discretionary-budget'),
       overallUsedPercent: document.getElementById('overall-used-percent'),
       overallRemainingPercent: document.getElementById('overall-remaining-percent'),
       fairShare: document.getElementById('fair-share'),
@@ -639,7 +628,6 @@
       stopPolling();
       for (const el of Object.values(els)) {
         if (['overall', 'overallAllowance', 'overallUsed', 'overallUsedPercent', 'overallRemainingPercent', 'fairShare',
-          'discretionaryLeft', 'discretionarySpent', 'discretionaryBudget',
           'yearPlanned', 'yearActual', 'yearVariance', 'yearUsedPercent', 'yearRemainingPercent',
           'yearMonths', 'transactionsTotal', 'updated'].some(key => els[key] === el)) el.textContent = '—';
       }
@@ -781,9 +769,6 @@
       setAmount(els.overall, month.overallSpendingRemaining);
       els.overallAllowance.textContent = money(month.trackingAllowance);
       els.overallUsed.textContent = money(month.trackingUsed);
-      setAmount(els.discretionaryLeft, month.discretionaryRemaining);
-      els.discretionarySpent.textContent = money(month.discretionarySpent);
-      els.discretionaryBudget.textContent = money(month.discretionaryBudget);
       els.overallUsedPercent.textContent = `${(Number(month.trackingUsedPercent) || 0).toFixed(1)}%`;
       els.overallRemainingPercent.textContent = `${(Number(month.trackingRemainingPercent ?? (100 - (Number(month.trackingUsedPercent) || 0))) || 0).toFixed(1)}%`;
       els.fairShare.textContent = money(month.fairShare);

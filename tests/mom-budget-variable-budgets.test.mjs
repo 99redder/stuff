@@ -188,14 +188,14 @@ test('emergency spending reaches the phone as its own transaction group', () => 
   assert.ok(!transactions.some(entry => entry.id === 'fixed-fair-share'), 'Fair Share stays a reference transfer');
 });
 
-test('the phone page shows the allowance and discretionary, and never mentions emergencies', () => {
+test('the phone page shows one spending number and no per-budget breakdown', () => {
   const html = read('mom-budget-phone.html');
   assert.doesNotMatch(html, /\$800 monthly allowance/);
-  for (const id of ['overall-allowance', 'discretionary-left', 'discretionary-spent', 'discretionary-budget']) {
-    assert.match(html, new RegExp(`id="${id}"`), id);
-  }
+  assert.match(html, /id="overall-allowance"/);
   assert.match(html, /els\.overallAllowance\.textContent = money\(month\.trackingAllowance\)/);
-  // Her phone deliberately carries no emergencies / unplanned card.
+  // Overall Spending Left is the whole picture for her; the discretionary and
+  // emergencies breakdowns repeat it and only add confusion, so neither is here.
+  assert.doesNotMatch(html, /discretionary/i);
   assert.doesNotMatch(html, /emergenc/i);
 });
 
