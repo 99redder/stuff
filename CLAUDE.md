@@ -287,14 +287,13 @@ Editing a budget input in the Monthly Template card applies **from the month cur
 
 **Mom Budget tab layout:**
 - Header row: back button, `Mom Budget` title, month input, existing-month dropdown
-- Top summary row:
+- Top summary row (the only stat row):
   - `Monthly Income`
-  - prominent `Overall Spending Left`
-- Second summary row:
-  - `Discretionary Left`
+  - prominent `Overall Spending Left` — its sub-line carries the used/allowance/percent detail
+  - There is deliberately **no second stat row**. `Spending Used` duplicated the Overall card's sub-line, and `Discretionary Left` / `Emergency Left` duplicated the total strip at the top of each ledger card.
 - Annual summary: collapsed by default behind an Expand/Minimize button; open state persists in `localStorage` key `rentals_mom_budget_year_stats_open`
 - Main layout:
-  - Left column cards: Fixed Bills, Discretionary, Other Expense Overages, **401(k) Minimum Distribution (RMD)**
+  - Left column cards: Fixed Bills, Discretionary, Emergencies / Unplanned, Other Expense Overages, **401(k) Minimum Distribution (RMD)**
   - Right sticky column: Month Math and Monthly Template
 
 **401(k) RMD calculator** (`mbRmdCard()` / `mbCalcRmd()` / `mbUpdateRmd()`): card at the bottom of the left column. The same card also shows a **"Withdrawal to fund the monthly budget"** section (`mb401kIncomeItem()` / `mbCalc401kWithdrawal()`): it treats the monthly-template 401(k) income line (id `401k`, else name match) as the desired **net** and grosses it up for the 20% withholding (`gross = net ÷ 0.80`), showing monthly/annual gross, withheld, and net, plus a note comparing the annualized gross against the RMD minimum (met vs. shortfall). Live-syncs from the template amount; app-only (not on the phone PWA). Her birth date is a **fixed constant** (`MOM_RMD_BIRTH_YEAR = 1952`, born Aug 12, 1952; retired, no spouse → IRS Uniform Lifetime Table applies), so the **only editable input is the prior Dec 31 balance**, stored in `state.momBudget.rmd.balance` and saved with the record. `RMD = balance ÷ RMD_UNIFORM_LIFETIME[ageThisYear]` (IRS Uniform Lifetime Table, 2022+); shows yearly minimum + monthly equivalent. `mbRmdStartAge(birthYear)` applies SECURE Act 2.0 start ages (73 for 1951–1959, 75 for 1960+) and the card shows a "not required yet" note if below it. App-only — not surfaced on the phone PWA.
@@ -867,6 +866,7 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 - **Variable budgets are now effective-dated.** `template.variableSchedule[key]` holds `{ from:'YYYY-MM', amount }` entries on top of the pre-schedule `template.variable[key]`; `mbVariableAmount(key, monthKey)` resolves the amount for a month and `mbSetVariableAmount()` writes a change from the month on screen forward. Editing a budget therefore **never restates a month that has already been tracked** — September stays on its $500 discretionary and $800 lump allowance.
 - **From October 2026: discretionary $500 → $400, plus a new `Emergencies / Unplanned` budget at $200/mo** with its own month-keyed ledger (`months['YYYY-MM'].emergency`) and ledger card. Seeded by the one-time `octoberBudgetV1` migration in `mbNormalize` (mirrored in the worker's `normalizeMomBudget` so the phone is right before the app next saves).
 - **The $800 `MB_MONTHLY_TRACKING_ALLOWANCE` constant is gone.** `mbTrackingAllowance(monthKey)` is always the sum of the itemized budgets in effect that month, so Month Math's `Spending allowance` row can never contradict the budget rows above it (a flat $800 next to a $400 + $200 split did exactly that). `trackingUsed` now includes emergency spending, and the year summary adds each month's own allowance.
+- **Removed the second stat row** (`Spending Used` / `Discretionary Left` / `Emergency Left`) — every tile on it now duplicated either the Overall Spending Left sub-line or a ledger card's own total strip.
 - **The Discretionary and Emergency cards lead with the month's running total** (`mbLedgerTotalHtml`) — total spent, that month's budget, and the amount left — and end with a collapsed **Previous months** list (`mbLedgerHistory` / `mbLedgerHistoryHtml`) that jumps to any earlier month. Ledgers were already per-month, so the reset was automatic; this makes it visible and keeps the old entries one tap away.
 - **Mirrored everywhere:** worker public summary (new `discretionaryBudget` / `emergencyBudget` / `emergencySpent` / `emergencyRemaining` fields, emergency transactions group), `mom-budget-phone.html` (dynamic allowance text + Discretionary / Emergencies cards, `CACHE_NAME` → `v20`), and `mobile/index.html` (`momVariable()`, emergency stat + card, `CACHE_NAME` → `v35`). New `tests/mom-budget-variable-budgets.test.mjs` pins app/worker/mobile to the same numbers.
 - **Fixed a latent footgun:** editing `mom-budget-phone.html`'s inline script invalidated its pinned CSP sha256 hash, which silently blocked the whole page. Hash regenerated and now guarded by a test.

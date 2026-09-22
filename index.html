@@ -1123,9 +1123,6 @@
     .mb-stats-row.mb-stats-primary {
       grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.45fr);
     }
-    .mb-stats-row.mb-stats-categories {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
     .mb-stats-row.mb-stats-year {
       grid-template-columns: repeat(4, minmax(0, 1fr));
     }
@@ -1271,14 +1268,12 @@
     }
     @media (max-width: 1180px) {
       .mb-stats-row.mb-stats-primary,
-      .mb-stats-row.mb-stats-categories,
       .mb-stats-row.mb-stats-year {
         grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
       }
     }
     @media (max-width: 520px) {
       .mb-stats-row.mb-stats-primary,
-      .mb-stats-row.mb-stats-categories,
       .mb-stats-row.mb-stats-year {
         grid-template-columns: 1fr;
       }
@@ -8252,12 +8247,6 @@ function _renderMomBudgetHtml() {
     <div class="stats-row mb-stats-row mb-stats-primary">
       ${stat('Monthly Income', fmt(c.income), 'var(--success)', `${fmt(c.unallocated)} unallocated`)}
       ${stat('Overall Spending Left', `${spendingRemaining < 0 ? '−' : ''}${fmt(Math.abs(spendingRemaining))}`, spendingRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.trackingUsed)} used of ${fmt(c.trackingAllowance)} (${c.trackingUsedPercent.toFixed(1)}%) · ${c.trackingRemainingPercent.toFixed(1)}% left`, 'is-prominent', spendingMonthLabel)}
-    </div>
-
-    <div class="stats-row mb-stats-row mb-stats-categories">
-      ${stat('Spending Used', fmt(c.trackingUsed), 'var(--text)', `${c.trackingUsedPercent.toFixed(1)}% of ${fmt(c.trackingAllowance)} allowance`)}
-      ${stat('Discretionary Left', `${c.discretionaryRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.discretionaryRemaining))}`, c.discretionaryRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.discretionarySpent)} spent of ${fmt(c.discretionary)}`)}
-      ${stat('Emergency Left', `${c.emergencyRemaining < 0 ? '−' : ''}${fmt(Math.abs(c.emergencyRemaining))}`, c.emergencyRemaining >= 0 ? 'var(--success)' : 'var(--danger)', `${fmt(c.emergencySpent)} spent of ${fmt(c.emergency)}`)}
     </div>
 
     <div class="mb-year-summary">
