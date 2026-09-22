@@ -7707,7 +7707,14 @@ function mbCalc401kWithdrawal() {
   };
 }
 
-let _mbMonth = appTodayIso().slice(0, 7);
+// Land on the month the new budget setup starts until the calendar catches up,
+// so the tab opens on the setup that matters rather than September's one-off.
+function mbDefaultMonth() {
+  const current = appTodayIso().slice(0, 7);
+  return current < MB_BUDGET_SPLIT_MONTH ? MB_BUDGET_SPLIT_MONTH : current;
+}
+
+let _mbMonth = mbDefaultMonth();
 let _mbFixedSort = 'amount';
 // Set by mbNormalize when a one-time migration rewrites the record, so
 // renderMomBudget can save the correction instead of re-applying it every load.
@@ -8273,6 +8280,12 @@ function _renderMomBudgetHtml() {
 
     <div class="tp-layout">
       <div>
+        ${mbLedgerCard('Discretionary', 'discretionary', m.discretionary || [], 'Description', 'name', {
+          budgetKey: 'discretionary',
+          history: true,
+          note: MB_VARIABLE_META.discretionary.ledgerNote
+        })}
+
         <div class="card tp-card">
           <div class="card-header" style="gap:.75rem;flex-wrap:wrap">
             <div class="card-title">Fixed Bills — ${escHtml(_mbMonth)}</div>
@@ -8285,12 +8298,6 @@ function _renderMomBudgetHtml() {
           </div>
           <div class="card-body"><div class="mb-fixed-list">${fixedRows}</div></div>
         </div>
-
-        ${mbLedgerCard('Discretionary', 'discretionary', m.discretionary || [], 'Description', 'name', {
-          budgetKey: 'discretionary',
-          history: true,
-          note: MB_VARIABLE_META.discretionary.ledgerNote
-        })}
         ${mbLedgerCard('Emergencies / Unplanned', 'emergency', m.emergency || [], 'Description', 'name', {
           budgetKey: 'emergency',
           history: true,
