@@ -1240,6 +1240,35 @@
       color: var(--text-muted);
     }
     .mb-ledger-history-row strong { font-variant-numeric: tabular-nums; }
+    .mb-ledger-history-row > span:last-child {
+      display: flex;
+      align-items: baseline;
+      gap: 0.5rem;
+      white-space: nowrap;
+    }
+    .mb-ledger-history-empty {
+      padding: 0.45rem 0.6rem;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+    .mb-ledger-history-total {
+      margin-top: 0.2rem;
+      border-top: 1px solid var(--border);
+      border-radius: 0;
+      font-weight: 700;
+      cursor: default;
+    }
+    .mb-ledger-history-total:hover { background: transparent; }
+    .mb-ledger-delta {
+      font-size: 0.72rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      padding: 0.1rem 0.4rem;
+      border-radius: 999px;
+    }
+    .mb-ledger-delta.is-under { color: var(--success); background: rgba(16, 185, 129, 0.12); }
+    .mb-ledger-delta.is-even { color: var(--text-muted); background: var(--surface2); }
+    .mb-ledger-delta.is-over { color: var(--danger); background: rgba(239, 68, 68, 0.12); }
     .mb-variable-schedule {
       margin: 0.15rem 0 0.6rem;
       padding: 0.35rem 0.5rem;
@@ -8257,6 +8286,13 @@ function _renderMomBudgetHtml() {
           note: MB_VARIABLE_META.discretionary.ledgerNote
         })}
 
+        ${mbLedgerCard('Emergencies / Unplanned', 'emergency', m.emergency || [], 'Description', 'name', {
+          budgetKey: 'emergency',
+          history: true,
+          emptyText: 'No emergency or unplanned spending this month.',
+          note: MB_VARIABLE_META.emergency.ledgerNote
+        })}
+
         <div class="card tp-card">
           <div class="card-header" style="gap:.75rem;flex-wrap:wrap">
             <div class="card-title">Fixed Bills — ${escHtml(_mbMonth)}</div>
@@ -8269,12 +8305,6 @@ function _renderMomBudgetHtml() {
           </div>
           <div class="card-body"><div class="mb-fixed-list">${fixedRows}</div></div>
         </div>
-        ${mbLedgerCard('Emergencies / Unplanned', 'emergency', m.emergency || [], 'Description', 'name', {
-          budgetKey: 'emergency',
-          history: true,
-          emptyText: 'No emergency or unplanned spending this month.',
-          note: MB_VARIABLE_META.emergency.ledgerNote
-        })}
         ${mbRmdCard()}
       </div>
 
@@ -8559,38 +8589,86 @@ async function mbSaveTemplateAdd() {
   await _saveMomBudget();
 }
 
-// Totals for `section` in every tracked month before the one on screen, newest
-// first. Ledgers are stored per month, so each month starts clean on its own and
-// the earlier ones stay intact for reference.
-function mbLedgerHistory(section) {
-  return Object.entries(state.momBudget.months || {})
-    .filter(([monthKey]) => monthKey < _mbMonth && monthKey >= MB_TRACKING_START_MONTH)
-    .map(([monthKey, month]) => {
-      const rows = Array.isArray(month?.[section]) ? month[section] : [];
-      return {
-        monthKey,
-        count: rows.length,
-        total: rows.reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0)
-      };
-    })
-    .filter(row => row.count > 0)
-    .sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+// Every tracked month from the start of tracking through the one on screen.
+function mbTrackedMonthsThrough(monthKey = _mbMonth) {
+  const months = [];
+  let [year, month] = MB_TRACKING_START_MONTH.split('-').map(Number);
+  const [endYear, endMonth] = String(monthKey).split('-').map(Number);
+  if (!endYear || !endMonth) return months;
+  while (year < endYear || (year === endYear && month <= endMonth)) {
+    months.push(`${year}-${String(month).padStart(2, '0')}`);
+    month += 1;
+    if (month > 12) { month = 1; year += 1; }
+  }
+  return months;
 }
 
-function mbLedgerHistoryHtml(section) {
-  const history = mbLedgerHistory(section);
-  if (!history.length) return '';
-  const rows = history.map(row => `
+// One month measured against the budget that was in effect for it. Ledgers are
+// stored per month, so each month starts clean on its own and earlier ones stay
+// intact — `spent` reads whatever that month actually holds, even none.
+function mbLedgerMonthStat(section, budgetKey, monthKey) {
+  const rows = state.momBudget.months?.[monthKey]?.[section];
+  const entries = Array.isArray(rows) ? rows : [];
+  const spent = entries.reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
+  const budget = mbVariableAmount(budgetKey, monthKey);
+  return { monthKey, count: entries.length, spent, budget, diff: budget - spent };
+}
+
+// Year to date: every tracked month of `year` up to and including the month on
+// screen. Budgets come from the schedule, so a month never opened still counts.
+function mbLedgerYearStat(section, budgetKey, year) {
+  const stat = mbTrackedMonthsThrough()
+    .filter(monthKey => monthKey.slice(0, 4) === String(year))
+    .reduce((acc, monthKey) => {
+      const month = mbLedgerMonthStat(section, budgetKey, monthKey);
+      acc.months += 1;
+      acc.count += month.count;
+      acc.spent += month.spent;
+      acc.budget += month.budget;
+      return acc;
+    }, { year: String(year), months: 0, count: 0, spent: 0, budget: 0 });
+  stat.diff = stat.budget - stat.spent;
+  return stat;
+}
+
+function mbOverUnderHtml(diff) {
+  if (!diff) return '<span class="mb-ledger-delta is-even">on budget</span>';
+  const over = diff < 0;
+  return `<span class="mb-ledger-delta ${over ? 'is-over' : 'is-under'}">${fmt(Math.abs(diff))} ${over ? 'over' : 'under'}</span>`;
+}
+
+// Past-month rows plus the year-to-date roll-up, collapsed under the ledger.
+function mbLedgerHistoryHtml(section, budgetKey) {
+  const year = _mbMonth.slice(0, 4);
+  const prior = mbTrackedMonthsThrough()
+    .filter(monthKey => monthKey < _mbMonth)
+    .map(monthKey => mbLedgerMonthStat(section, budgetKey, monthKey))
+    // A month with neither a budget nor any spending has nothing to report —
+    // the emergency bucket didn't exist before October, for instance.
+    .filter(month => month.count > 0 || month.budget > 0)
+    .reverse();
+  const ytd = mbLedgerYearStat(section, budgetKey, year);
+  if (!prior.length && !ytd.months) return '';
+  const rows = prior.map(row => `
     <button type="button" class="mb-ledger-history-row" onclick="mbSetMonth('${escAttr(row.monthKey)}')">
       <span>${escHtml(mbMonthLabel(row.monthKey))}
-        <span class="mb-ledger-history-meta">· ${row.count} entr${row.count === 1 ? 'y' : 'ies'}</span>
+        <span class="mb-ledger-history-meta">· ${row.count} entr${row.count === 1 ? 'y' : 'ies'} · ${fmt(row.budget)} budget</span>
       </span>
-      <strong>${fmt(row.total)}</strong>
-    </button>`).join('');
+      <span><strong>${fmt(row.spent)}</strong> ${mbOverUnderHtml(row.diff)}</span>
+    </button>`).join('') || `
+    <div class="mb-ledger-history-empty">No earlier months tracked yet.</div>`;
   return `
     <details class="mb-ledger-history">
-      <summary>Previous months (${history.length}) — tap a month to view its entries</summary>
-      <div class="mb-ledger-history-body">${rows}</div>
+      <summary>History &amp; year to date — ${escHtml(year)}: ${fmt(ytd.spent)} of ${fmt(ytd.budget)}${ytd.diff ? ` · ${fmt(Math.abs(ytd.diff))} ${ytd.diff < 0 ? 'over' : 'under'}` : ' · on budget'}</summary>
+      <div class="mb-ledger-history-body">
+        ${rows}
+        <div class="mb-ledger-history-row mb-ledger-history-total">
+          <span>${escHtml(year)} year to date
+            <span class="mb-ledger-history-meta">· ${ytd.months} month${ytd.months === 1 ? '' : 's'} · ${fmt(ytd.budget)} budgeted</span>
+          </span>
+          <span><strong>${fmt(ytd.spent)}</strong> ${mbOverUnderHtml(ytd.diff)}</span>
+        </div>
+      </div>
     </details>`;
 }
 
@@ -8657,7 +8735,7 @@ function mbLedgerCard(title, section, entries, label, nameKey, options = {}) {
         </table>
       </div>
       ${addRow}
-      ${options.history ? mbLedgerHistoryHtml(section) : ''}
+      ${options.history && options.budgetKey ? mbLedgerHistoryHtml(section, options.budgetKey) : ''}
     </div>
   </div>`;
 }

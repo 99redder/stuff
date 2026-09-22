@@ -117,12 +117,15 @@ test('each month gets its own ledgers, so a new month starts empty and earlier o
   vm.runInContext("_mbMonth = '2026-11'", a);
   assert.equal(a.mbCalcMonth('2026-11').discretionarySpent, 0);
   assert.equal(a.mbCalcMonth('2026-11').emergencySpent, 0);
-  assert.deepEqual(plain(a.mbLedgerHistory('discretionary')),
-    [{ monthKey: '2026-10', count: 1, total: 88.12 }, { monthKey: '2026-09', count: 1, total: 212.4 }]);
-  assert.deepEqual(plain(a.mbLedgerHistory('emergency')), [{ monthKey: '2026-10', count: 1, total: 240 }]);
+  assert.deepEqual(plain(['2026-10', '2026-09'].map(key => a.mbLedgerMonthStat('discretionary', 'discretionary', key))), [
+    { monthKey: '2026-10', count: 1, spent: 88.12, budget: 400, diff: 311.88 },
+    { monthKey: '2026-09', count: 1, spent: 212.4, budget: 800, diff: 587.6 },
+  ]);
+  assert.deepEqual(plain(a.mbLedgerMonthStat('emergency', 'emergency', '2026-10')),
+    { monthKey: '2026-10', count: 1, spent: 240, budget: 200, diff: -40 });
   // The history only looks backwards from the month on screen.
   vm.runInContext("_mbMonth = '2026-09'", a);
-  assert.equal(a.mbLedgerHistory('discretionary').length, 0);
+  assert.equal(a.mbTrackedMonthsThrough().filter(key => key < '2026-09').length, 0);
 });
 
 test('editing a budget applies from the month on screen forward and never rewrites tracked months', () => {
@@ -227,4 +230,43 @@ test('the phone page CSP hash still matches its inline script', () => {
   const pinned = html.match(/script-src 'self' '(sha256-[A-Za-z0-9+/=]+)'/)[1];
   assert.equal(pinned, digest,
     `Regenerate the CSP hash in mom-budget-phone.html: script-src 'self' '${digest}'`);
+});
+
+test('the ledger history measures each month against its own budget and rolls up year to date', () => {
+  const a = app();
+  a.state.momBudget = a.mbNormalize(legacyRecord());
+  vm.runInContext("_mbMonth = '2026-11'", a);
+
+  // Tracking starts in September, so November's history covers Sep and Oct.
+  assert.deepEqual(plain(a.mbTrackedMonthsThrough()), ['2026-09', '2026-10', '2026-11']);
+
+  const discretionary = a.mbLedgerYearStat('discretionary', 'discretionary', '2026');
+  assert.equal(discretionary.months, 3);
+  assert.equal(discretionary.budget, 800 + 400 + 400);
+  assert.equal(discretionary.spent, 212.4 + 88.12);
+  assert.equal(Math.round(discretionary.diff * 100) / 100, 1299.48);   // under budget
+
+  // A month that overspends shows as over, and the year nets it out.
+  const emergency = a.mbLedgerYearStat('emergency', 'emergency', '2026');
+  assert.equal(emergency.budget, 0 + 200 + 200);   // no emergency budget in September
+  assert.equal(emergency.spent, 240);
+  assert.equal(emergency.diff, 160);
+  assert.equal(a.mbLedgerMonthStat('emergency', 'emergency', '2026-10').diff, -40);
+
+  const html = a.mbLedgerHistoryHtml('emergency', 'emergency');
+  assert.match(html, /year to date/);
+  assert.match(html, /over/);                       // October's overspend is labelled
+  assert.match(html, /mbSetMonth\('2026-10'\)/);    // and is still one tap away
+});
+
+test('year to date counts a month the owner never opened, using its scheduled budget', () => {
+  const a = app();
+  const record = legacyRecord();
+  delete record.months['2026-10'];                  // October never visited
+  a.state.momBudget = a.mbNormalize(record);
+  vm.runInContext("_mbMonth = '2026-11'", a);
+  const ytd = a.mbLedgerYearStat('discretionary', 'discretionary', '2026');
+  assert.equal(ytd.months, 3);
+  assert.equal(ytd.budget, 800 + 400 + 400);        // budget comes from the schedule
+  assert.equal(ytd.spent, 212.4);
 });
