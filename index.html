@@ -1172,6 +1172,11 @@
       font-size: 0.82rem;
       line-height: 1.4;
     }
+    .mb-card-icon {
+      margin-right: 0.45rem;
+      font-size: 1.05em;
+      line-height: 1;
+    }
     .mb-ledger-total {
       display: flex;
       align-items: center;
@@ -7631,6 +7636,7 @@ const MOM_BUDGET_DEFAULT = {
 const MB_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MB_TRACKING_START_MONTH = '2026-09';
 const MB_YEAR_STATS_OPEN_KEY = 'rentals_mom_budget_year_stats_open';
+const MB_RMD_OPEN_KEY = 'rentals_mom_budget_rmd_open';
 // Separate spending allowance used by Mom Money Left tracking. Fair Share is
 // shown as a reference transfer and is excluded from this calculation.
 // The monthly spending allowance is always the itemized variable budgets added
@@ -7647,10 +7653,12 @@ const MB_TRACKED_VARIABLE_KEYS = ['discretionary', 'emergency'];
 const MB_VARIABLE_META = {
   discretionary: {
     label: 'Discretionary',
+    icon: '\u{1F6CD}\u{FE0F}',
     ledgerNote: 'Discretionary includes non-grocery purchase items, prescription copays, and overages from other budget areas.'
   },
   emergency: {
     label: 'Emergencies / Unplanned',
+    icon: '\u{1F6A8}',
     ledgerNote: 'Set aside for emergencies and unplanned costs. Kept separate so a surprise expense does not eat the month\u2019s discretionary budget.'
   }
 };
@@ -8050,6 +8058,16 @@ function mbToggleYearStats() {
   _renderMomBudgetHtml();
 }
 
+// The RMD card is reference material, not a daily input — it starts minimized.
+function mbRmdOpen() {
+  return localStorage.getItem(MB_RMD_OPEN_KEY) === '1';
+}
+
+function mbToggleRmd() {
+  localStorage.setItem(MB_RMD_OPEN_KEY, mbRmdOpen() ? '0' : '1');
+  _renderMomBudgetHtml();
+}
+
 function mbTemplateTotals(monthKey = _mbMonth) {
   const t = state.momBudget.template;
   const income = t.income.reduce((s, i) => s + (Number(i.amount) || 0), 0);
@@ -8283,12 +8301,14 @@ function _renderMomBudgetHtml() {
         ${mbLedgerCard('Discretionary', 'discretionary', m.discretionary || [], 'Description', 'name', {
           budgetKey: 'discretionary',
           history: true,
+          icon: MB_VARIABLE_META.discretionary.icon,
           note: MB_VARIABLE_META.discretionary.ledgerNote
         })}
 
         ${mbLedgerCard('Emergencies / Unplanned', 'emergency', m.emergency || [], 'Description', 'name', {
           budgetKey: 'emergency',
           history: true,
+          icon: MB_VARIABLE_META.emergency.icon,
           emptyText: 'No emergency or unplanned spending this month.',
           note: MB_VARIABLE_META.emergency.ledgerNote
         })}
@@ -8318,7 +8338,6 @@ function _renderMomBudgetHtml() {
             <div class="tp-row"><span>Emergencies / unplanned budget</span><strong>${fmt(c.emergency)}</strong></div>
             <div class="tp-row sub"><span>Spending allowance</span><strong>${fmt(c.trackingAllowance)}</strong></div>
             <div class="tp-row sub"><span>Unallocated after budget</span><strong>${c.unallocated < 0 ? '−' : ''}${fmt(Math.abs(c.unallocated))}</strong></div>
-            <div class="tp-row"><span>Fixed bills paid</span><strong>${fmt(c.fixedPaid)}</strong></div>
             ${c.otherOverages ? `<div class="tp-row"><span>Other overages</span><strong style="color:var(--danger)">${fmt(c.otherOverages)}</strong></div>
             <div class="tp-row sub"><span>Adjusted discretionary</span><strong>${fmt(c.discretionaryAdjusted)}</strong></div>` : ''}
             <div class="tp-row ${c.cashLeft >= 0 ? 'refund' : 'owed'}"><span>Cash left by recorded spend</span><span>${c.cashLeft < 0 ? '−' : ''}${fmt(Math.abs(c.cashLeft))}</span></div>
@@ -8438,10 +8457,20 @@ function mbRmdCard() {
       Add a 401(k) distribution amount to the monthly template's income section and this shows the gross withdrawal needed to net it after 20% withholding.</div>`;
   }
 
+  const open = mbRmdOpen();
+  // Keep the headline figure readable while the card is closed.
+  const collapsedNote = !c.balance ? 'Balance not entered'
+    : c.required ? `${c.year} minimum ${fmt(c.rmd)}`
+    : 'Not required yet';
+
   return `
     <div class="card tp-card">
-      <div class="card-header"><div class="card-title">Traditional 401(k) Minimum Distribution (RMD)</div></div>
-      <div class="card-body">
+      <div class="card-header" style="gap:.75rem;flex-wrap:wrap">
+        <div class="card-title">Traditional 401(k) Minimum Distribution (RMD)</div>
+        ${open ? '' : `<span style="font-size:.78rem;font-weight:600;color:var(--text-muted)">${escHtml(collapsedNote)}</span>`}
+        <button class="btn btn-ghost btn-sm" type="button" style="margin-left:auto" onclick="mbToggleRmd()" aria-expanded="${open ? 'true' : 'false'}">${open ? 'Minimize' : 'Expand'}</button>
+      </div>
+      <div class="card-body${open ? '' : ' hidden'}">
         <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.85rem">
           <div style="flex:0 1 130px;min-width:120px">
             <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Distribution year</label>
@@ -8723,7 +8752,7 @@ function mbLedgerCard(title, section, entries, label, nameKey, options = {}) {
       </div>`);
 
   return `<div class="card tp-card">
-    <div class="card-header"><div class="card-title">${escHtml(title)}</div></div>
+    <div class="card-header"><div class="card-title">${options.icon ? `<span class="mb-card-icon" aria-hidden="true">${options.icon}</span>` : ''}${escHtml(title)}</div></div>
     <div class="card-body">
       ${options.budgetKey ? mbLedgerTotalHtml(section, entries, options.budgetKey) : ''}
       ${options.note ? `<div class="mb-card-note">${escHtml(options.note)}</div>` : ''}

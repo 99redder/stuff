@@ -14,13 +14,18 @@ const BUILTINS = { console, Date, Math, JSON, Number, String, Object, Array, Int
 // vm contexts have their own Array/Object prototypes, so deep-equal needs plain values.
 const plain = value => JSON.parse(JSON.stringify(value));
 
-function app() {
+function app(store = {}) {
   const html = read('index.html');
   const context = vm.createContext({
     ...BUILTINS,
     appTodayIso: () => '2026-10-15', CURRENT_YEAR: 2026,
     state: { momBudget: null }, crypto: { randomUUID: () => 'id' },
-    localStorage: { getItem: () => null, setItem: () => {} },
+    localStorage: {
+      getItem: key => (key in store ? store[key] : null),
+      setItem: (key, value) => { store[key] = value; },
+    },
+    document: { getElementById: () => ({ innerHTML: '', textContent: '' }) },
+    moneyInputValue: value => Number(value).toFixed(2), fmtDate: String,
     fmt: value => `$${Number(value).toFixed(2)}`, escHtml: String, escAttr: String,
   });
   vm.runInContext(between(html, '// ── View: Mom Budget', '// ── Solar ROI'), context);
@@ -269,4 +274,30 @@ test('year to date counts a month the owner never opened, using its scheduled bu
   assert.equal(ytd.months, 3);
   assert.equal(ytd.budget, 800 + 400 + 400);        // budget comes from the schedule
   assert.equal(ytd.spent, 212.4);
+});
+
+test('the RMD card starts minimized and remembers being opened', () => {
+  const store = {};
+  const a = app(store);
+  a.state.momBudget = a.mbNormalize(legacyRecord());
+  a.state.momBudget.rmd = { balance: 120000, year: 2026 };
+
+  assert.equal(a.mbRmdOpen(), false, 'reference material, not a daily input');
+  let card = a.mbRmdCard();
+  assert.match(card, /class="card-body hidden"/);
+  assert.match(card, />Expand</);
+  assert.match(card, /2026 minimum \$/, 'the headline figure still reads while closed');
+
+  a.mbToggleRmd();
+  assert.equal(store.rentals_mom_budget_rmd_open, '1');
+  card = a.mbRmdCard();
+  assert.doesNotMatch(card, /class="card-body hidden"/);
+  assert.match(card, />Minimize</);
+});
+
+test('Month Math drops the Fixed bills paid row and the ledger cards carry icons', () => {
+  const html = read('index.html');
+  assert.doesNotMatch(html, /Fixed bills paid/);
+  assert.match(html, /icon: MB_VARIABLE_META\.discretionary\.icon/);
+  assert.match(html, /icon: MB_VARIABLE_META\.emergency\.icon/);
 });
