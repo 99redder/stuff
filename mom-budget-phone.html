@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-aw69pIGHUWYToJOXG+/i7x30GzRNjFEdksZXqKQ/j44='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://rentals-api.99redder.workers.dev; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-1zyQPiq+s9FaAHPfaoO61EMo8q6a7B/jqCEbYRDSe8U='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://rentals-api.99redder.workers.dev; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
   <meta name="referrer" content="no-referrer">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0f766e">
@@ -812,7 +812,9 @@
 
       els.transactionsList.innerHTML = items.map((item) => {
         const date = formatDate(item.date);
-        const group = item.group || 'Transaction';
+        // Everything she sees here is her own day-to-day spending, so the
+        // "Discretionary" tag is noise. Anything else still names itself.
+        const group = item.group === 'Discretionary' ? '' : item.group;
         const meta = [date, group].filter(Boolean).join(' · ');
         return `
           <div class="transaction-row">

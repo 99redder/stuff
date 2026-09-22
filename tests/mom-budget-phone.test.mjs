@@ -133,3 +133,17 @@ test('mobile Mom starts with September even when no month records exist', () => 
   assert.equal(c.state.momMonth, '2026-09');
   for (const match of mobileHtml.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)) new vm.Script(match[1]);
 });
+
+test('her transaction rows show the date alone, since everything there is discretionary', () => {
+  const p = phone();
+  p.context.renderTransactions([
+    { id: 'a', date: '2026-10-03', name: 'Pharmacy', amount: 88.12, group: 'Discretionary' },
+    { id: 'b', date: '2026-10-05', name: 'CoPays / Prescriptions', amount: 140, group: 'Fixed bills' },
+  ]);
+  const html = p.elements.get('transactions-list').innerHTML;
+  assert.match(html, /Pharmacy/);
+  assert.doesNotMatch(html, /Discretionary/);
+  // Anything that is not her everyday spending still names itself.
+  assert.match(html, /Fixed bills/);
+  assert.equal(p.elements.get('transactions-total').textContent, '$228.12');
+});

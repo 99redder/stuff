@@ -195,7 +195,8 @@ test('the phone page shows one spending number and no per-budget breakdown', () 
   assert.match(html, /els\.overallAllowance\.textContent = money\(month\.trackingAllowance\)/);
   // Overall Spending Left is the whole picture for her; the discretionary and
   // emergencies breakdowns repeat it and only add confusion, so neither is here.
-  assert.doesNotMatch(html, /discretionary/i);
+  assert.doesNotMatch(html, /Discretionary Left/);
+  assert.doesNotMatch(html, /id="discretionary-/);
   assert.doesNotMatch(html, /emergenc/i);
 });
 
