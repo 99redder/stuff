@@ -7640,7 +7640,9 @@ const MB_RMD_OPEN_KEY = 'rentals_mom_budget_rmd_open';
 // Separate spending allowance used by Mom Money Left tracking. Fair Share is
 // shown as a reference transfer and is excluded from this calculation.
 // The monthly spending allowance is always the itemized variable budgets added
-// up, so Month Math's "Spending allowance" row equals the budget rows above it.
+// up. It is not printed as its own Month Math row — a subtotal sitting among
+// the budget rows read as just another line item — but it still drives the
+// phone's headline, the year roll-up, and every remaining/percent figure.
 // September 2026 ran as a single $800 lump — the only month that did — so it is
 // pinned as an $800 discretionary budget rather than special-cased in the math.
 const MB_SEPT_LUMP_MONTH = '2026-09';
@@ -8336,7 +8338,6 @@ function _renderMomBudgetHtml() {
             <div class="tp-row"><span>Fixed bills</span><strong>${fmt(c.fixed)}</strong></div>
             <div class="tp-row"><span>Discretionary budget</span><strong>${fmt(c.discretionary)}</strong></div>
             <div class="tp-row"><span>Emergencies / unplanned budget</span><strong>${fmt(c.emergency)}</strong></div>
-            <div class="tp-row sub"><span>Spending allowance</span><strong>${fmt(c.trackingAllowance)}</strong></div>
             <div class="tp-row sub"><span>Unallocated after budget</span><strong>${c.unallocated < 0 ? '−' : ''}${fmt(Math.abs(c.unallocated))}</strong></div>
             ${c.otherOverages ? `<div class="tp-row"><span>Other overages</span><strong style="color:var(--danger)">${fmt(c.otherOverages)}</strong></div>
             <div class="tp-row sub"><span>Adjusted discretionary</span><strong>${fmt(c.discretionaryAdjusted)}</strong></div>` : ''}
