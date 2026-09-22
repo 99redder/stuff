@@ -677,3 +677,178 @@ export function buildStockStickiesCspLedger(
       ),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Daily risk metrics (Sharpe, max drawdown, beta vs SPY)
+//
+// The daily store holds one end-of-day value per account per trading day plus
+// that day's external cash flow, the SPY close, and the annualized risk-free
+// rate. Jan 1 – Sep 22 2026 was rebuilt from Robinhood activity CSVs
+// (source: 'backfill'); later days are appended from post-close holdings
+// snapshots (source: 'snapshot').
+// ---------------------------------------------------------------------------
+
+const TRADING_DAYS_PER_YEAR = 252;
+const RISK_MIN_DAYS = 20;
+// Days where an account starts below this are skipped: a near-empty account
+// turns a few dollars of noise into huge percentage moves.
+const RISK_MIN_ACCOUNT_VALUE = 1000;
+
+function easternParts(date) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    weekday: 'short',
+  }).formatToParts(date).map(part => [part.type, part.value]));
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    minutes: Number(parts.hour) * 60 + Number(parts.minute),
+    weekday: parts.weekday,
+  };
+}
+
+function previousWeekday(isoDate) {
+  const date = new Date(`${isoDate}T12:00:00Z`);
+  do {
+    date.setUTCDate(date.getUTCDate() - 1);
+  } while (date.getUTCDay() === 0 || date.getUTCDay() === 6);
+  return date.toISOString().slice(0, 10);
+}
+
+// The trading day whose close a snapshot taken at `timestamp` reflects, or
+// null while the market is open (a mid-session balance is not a close).
+export function stockStickiesCloseDateForTimestamp(timestamp) {
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return null;
+  const eastern = easternParts(date);
+  const weekend = eastern.weekday === 'Sat' || eastern.weekday === 'Sun';
+  if (weekend || eastern.minutes < 9 * 60 + 30) return previousWeekday(eastern.date);
+  if (eastern.minutes >= 16 * 60) return eastern.date;
+  return null;
+}
+
+// Adds (or refreshes) one snapshot-derived day. Backfilled days are never
+// overwritten, and only the latest snapshot day may be replaced.
+export function appendStockStickiesDailyValue(store, entry) {
+  const days = { ...(store?.days || {}) };
+  const dates = Object.keys(days).sort();
+  const lastDate = dates[dates.length - 1] || null;
+  if (!entry?.date || (lastDate && entry.date < lastDate)) return null;
+  if (lastDate === entry.date && days[lastDate]?.source !== 'snapshot') return null;
+  days[entry.date] = {
+    accounts: entry.accounts,
+    source: 'snapshot',
+    snapshotFetchedAt: entry.snapshotFetchedAt || null,
+    spy: Number.isFinite(entry.spy) ? entry.spy : null,
+    riskFreeRate: Number.isFinite(entry.riskFreeRate) ? entry.riskFreeRate : null,
+  };
+  return { ...(store || {}), days };
+}
+
+function dailyReturnSeries(store) {
+  const dates = Object.keys(store?.days || {}).sort();
+  const series = [];
+  let lastRiskFree = 0.04;
+  for (let index = 1; index < dates.length; index += 1) {
+    const previous = store.days[dates[index - 1]];
+    const current = store.days[dates[index]];
+    if (Number.isFinite(current.riskFreeRate)) lastRiskFree = current.riskFreeRate;
+    const accounts = {};
+    for (const id of STOCK_STICKIES_ACCOUNT_IDS) {
+      const start = Number(previous.accounts?.[id]?.value);
+      const end = Number(current.accounts?.[id]?.value);
+      const flow = Number(current.accounts?.[id]?.externalFlow) || 0;
+      if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+      const base = start + Math.max(flow, 0);
+      if (start < RISK_MIN_ACCOUNT_VALUE || base <= 0) continue;
+      accounts[id] = { value: start, return: (end - start - flow) / base };
+    }
+    series.push({
+      date: dates[index],
+      accounts,
+      spyReturn: Number.isFinite(previous.spy) && Number.isFinite(current.spy) && previous.spy > 0
+        ? current.spy / previous.spy - 1
+        : null,
+      riskFree: lastRiskFree / TRADING_DAYS_PER_YEAR,
+    });
+  }
+  return series;
+}
+
+function mean(values) {
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function sampleVariance(values) {
+  const average = mean(values);
+  return values.reduce((sum, value) => sum + (value - average) ** 2, 0) / (values.length - 1);
+}
+
+function riskMetricsFor(points) {
+  if (points.length < RISK_MIN_DAYS) return null;
+  const excess = points.map(point => point.return - point.riskFree);
+  const deviation = Math.sqrt(sampleVariance(excess));
+  let equity = 1;
+  let peak = 1;
+  let maxDrawdown = 0;
+  let maxDrawdownDate = null;
+  for (const point of points) {
+    equity *= 1 + point.return;
+    peak = Math.max(peak, equity);
+    if (equity / peak - 1 < maxDrawdown) {
+      maxDrawdown = equity / peak - 1;
+      maxDrawdownDate = point.date;
+    }
+  }
+  const paired = points.filter(point => Number.isFinite(point.spyReturn));
+  let beta = null;
+  if (paired.length >= RISK_MIN_DAYS) {
+    const portfolio = paired.map(point => point.return);
+    const market = paired.map(point => point.spyReturn);
+    const portfolioMean = mean(portfolio);
+    const marketMean = mean(market);
+    const covariance = portfolio.reduce(
+      (sum, value, index) => sum + (value - portfolioMean) * (market[index] - marketMean),
+      0
+    ) / (paired.length - 1);
+    const marketVariance = sampleVariance(market);
+    beta = marketVariance > 0 ? covariance / marketVariance : null;
+  }
+  return {
+    sharpeRatio: deviation > 0 ? (mean(excess) / deviation) * Math.sqrt(TRADING_DAYS_PER_YEAR) : null,
+    maxDrawdownPercent: maxDrawdown * 100,
+    maxDrawdownDate,
+    beta,
+    volatilityPercent: deviation * Math.sqrt(TRADING_DAYS_PER_YEAR) * 100,
+    timeWeightedReturnPercent: (equity - 1) * 100,
+    benchmark: 'SPY',
+    tradingDays: points.length,
+    firstDate: points[0].date,
+    lastDate: points[points.length - 1].date,
+  };
+}
+
+export function stockStickiesRiskMetrics(store) {
+  const series = dailyReturnSeries(store);
+  const accounts = {};
+  for (const id of STOCK_STICKIES_ACCOUNT_IDS) {
+    accounts[id] = riskMetricsFor(series
+      .filter(day => day.accounts[id])
+      .map(day => ({ ...day, return: day.accounts[id].return })));
+  }
+  const total = riskMetricsFor(series
+    .map(day => {
+      const rows = Object.values(day.accounts);
+      const capital = rows.reduce((sum, row) => sum + row.value, 0);
+      return capital > 0
+        ? { ...day, return: rows.reduce((sum, row) => sum + row.value * row.return, 0) / capital }
+        : null;
+    })
+    .filter(Boolean));
+  return { accounts, total };
+}

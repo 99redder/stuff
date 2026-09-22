@@ -731,3 +731,52 @@ test('lookback transactions establish lots without counting prior-year realized 
   assert.equal(ledger.accounts.individual.premiumCredits, 0);
   assert.equal(ledger.accounts.individual.closingDebits, 200);
 });
+
+test('snapshot timestamps map to the close they reflect', async () => {
+  const { stockStickiesCloseDateForTimestamp } = await import('./performance-calculations.js');
+  // Midnight ET Wednesday reflects Tuesday's close.
+  assert.equal(stockStickiesCloseDateForTimestamp('2026-09-23T04:00:30Z'), '2026-09-22');
+  // After the 4 PM ET close counts as that day.
+  assert.equal(stockStickiesCloseDateForTimestamp('2026-09-22T20:34:16Z'), '2026-09-22');
+  // Mid-session balances are not closes.
+  assert.equal(stockStickiesCloseDateForTimestamp('2026-09-22T17:00:00Z'), null);
+  // Weekend snapshots reflect Friday.
+  assert.equal(stockStickiesCloseDateForTimestamp('2026-09-20T15:00:00Z'), '2026-09-18');
+});
+
+test('daily store appends snapshot closes without overwriting the backfill', async () => {
+  const { appendStockStickiesDailyValue } = await import('./performance-calculations.js');
+  const store = { days: { '2026-09-22': { accounts: {}, source: 'backfill' } } };
+  assert.equal(appendStockStickiesDailyValue(store, { date: '2026-09-22', accounts: {} }), null);
+  assert.equal(appendStockStickiesDailyValue(store, { date: '2026-09-21', accounts: {} }), null);
+  const next = appendStockStickiesDailyValue(store, { date: '2026-09-23', accounts: { roth: { value: 1 } }, spy: 700 });
+  assert.equal(next.days['2026-09-23'].source, 'snapshot');
+  const refreshed = appendStockStickiesDailyValue(next, { date: '2026-09-23', accounts: { roth: { value: 2 } } });
+  assert.equal(refreshed.days['2026-09-23'].accounts.roth.value, 2);
+});
+
+test('risk metrics: Sharpe, drawdown, and beta from flow-adjusted daily returns', async () => {
+  const { stockStickiesRiskMetrics } = await import('./performance-calculations.js');
+  const days = {};
+  let value = 100_000;
+  let spy = 500;
+  const start = Date.parse('2026-01-02T12:00:00Z');
+  for (let index = 0; index < 60; index += 1) {
+    const marketMove = index % 2 ? 0.01 : -0.005;
+    spy *= 1 + marketMove;
+    // A $10k start-of-day deposit on day 30 must not register as a gain.
+    const externalFlow = index === 30 ? 10_000 : 0;
+    value = (value + externalFlow) * (1 + 2 * marketMove);
+    days[new Date(start + index * 86_400_000).toISOString().slice(0, 10)] = {
+      accounts: { roth: { value, externalFlow } },
+      spy,
+      riskFreeRate: 0.04,
+    };
+  }
+  const risk = stockStickiesRiskMetrics({ days });
+  assert.ok(Math.abs(risk.accounts.roth.beta - 2) < 1e-9);
+  assert.ok(risk.accounts.roth.sharpeRatio > 0);
+  assert.ok(risk.accounts.roth.maxDrawdownPercent < 0 && risk.accounts.roth.maxDrawdownPercent > -1.1);
+  assert.equal(risk.accounts.traditional, null);
+  assert.equal(risk.total.tradingDays, 59);
+});

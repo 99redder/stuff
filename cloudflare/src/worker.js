@@ -11,11 +11,16 @@ import {
   aggregateModifiedDietzReturn,
   assessStockStickiesRefreshConsistency,
   anchoredInstitutionPerformance,
+  appendStockStickiesDailyValue,
   buildStockStickiesCspLedger,
   isRecognizedExternalFlow,
   mergeStockStickiesTransactions,
   modifiedDietzPerformance,
   stockStickiesAccountValues,
+  stockStickiesCloseDateForTimestamp,
+  stockStickiesExternalFlow,
+  stockStickiesExternalFlowDate,
+  stockStickiesRiskMetrics,
 } from './performance-calculations.js';
 import { requestRobinhoodInvestmentsRefresh } from './stock-stickies-plaid-refresh.js';
 
@@ -60,6 +65,9 @@ const STOCK_STICKIES_INVESTMENTS_REFRESH_IN_FLIGHT_MS = 90 * 1000;
 const STOCK_STICKIES_PERFORMANCE_CONFIG_KEY = 'stock_stickies:plaid:robinhood:performance:config';
 const STOCK_STICKIES_PERFORMANCE_SNAPSHOT_PREFIX = 'stock_stickies:plaid:robinhood:performance:snapshots:';
 const STOCK_STICKIES_PERFORMANCE_TRANSACTION_PREFIX = 'stock_stickies:plaid:robinhood:performance:transactions:';
+// End-of-day account values for Sharpe / drawdown / beta. Seeded from
+// Robinhood activity CSVs, then extended from post-close holdings snapshots.
+const STOCK_STICKIES_PERFORMANCE_DAILY_PREFIX = 'stock_stickies:plaid:robinhood:performance:daily:';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
@@ -3280,6 +3288,75 @@ function configuredStockStickiesPerformanceAnchor(config, year, account) {
   };
 }
 
+async function fetchYahooDailyClose(symbol, date) {
+  const start = Math.floor(Date.parse(`${date}T00:00:00Z`) / 1000) - 6 * 86_400;
+  const end = Math.floor(Date.parse(`${date}T00:00:00Z`) / 1000) + 2 * 86_400;
+  const response = await fetch(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
+    `?period1=${start}&period2=${end}&interval=1d`,
+    { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; rentals-api)' } }
+  );
+  if (!response.ok) return null;
+  const result = (await response.json())?.chart?.result?.[0];
+  const offset = Number(result?.meta?.gmtoffset) || 0;
+  const closes = result?.indicators?.quote?.[0]?.close || [];
+  const index = (result?.timestamp || []).findIndex(timestamp =>
+    new Date((timestamp + offset) * 1000).toISOString().slice(0, 10) === date
+  );
+  const close = index >= 0 ? Number(closes[index]) : NaN;
+  return Number.isFinite(close) ? close : null;
+}
+
+// Appends the snapshot's close to the daily store (when it is a post-close
+// snapshot) and returns the risk metrics for every account and the total.
+async function updateStockStickiesDailyRisk(env, year, snapshot, performanceTransactions) {
+  const key = `${STOCK_STICKIES_PERFORMANCE_DAILY_PREFIX}${year}`;
+  let store = await env.RENTALS.get(key, 'json');
+  const closeDate = snapshot ? stockStickiesCloseDateForTimestamp(snapshot.fetchedAt) : null;
+  const dates = Object.keys(store?.days || {}).sort();
+  const lastDay = store?.days?.[dates[dates.length - 1]];
+  const alreadyRecorded = lastDay && (
+    dates[dates.length - 1] > closeDate ||
+    lastDay.source !== 'snapshot' && dates[dates.length - 1] === closeDate ||
+    lastDay.snapshotFetchedAt === snapshot?.fetchedAt
+  );
+  if (store && closeDate && closeDate.startsWith(`${year}-`) && !alreadyRecorded) {
+    const priorDates = dates.filter(date => date < closeDate);
+    const priorDate = priorDates[priorDates.length - 1] || `${year}-01-01`;
+    const values = stockStickiesAccountValues(snapshot);
+    const accounts = {};
+    for (const id of STOCK_STICKIES_ACCOUNT_IDS) {
+      const externalFlow = performanceTransactions
+        .filter(transaction => transaction.stockStickiesAccount === id)
+        .reduce((sum, transaction) => {
+          const flow = stockStickiesExternalFlow(transaction);
+          const date = stockStickiesExternalFlowDate(transaction);
+          return flow !== null && date > priorDate && date <= closeDate ? sum + flow : sum;
+        }, 0);
+      accounts[id] = {
+        value: Math.round(Number(values[id] || 0) * 100) / 100,
+        externalFlow: Math.round(externalFlow * 100) / 100,
+      };
+    }
+    const [spy, irx] = await Promise.all([
+      fetchYahooDailyClose('SPY', closeDate).catch(() => null),
+      fetchYahooDailyClose('^IRX', closeDate).catch(() => null),
+    ]);
+    const updated = appendStockStickiesDailyValue(store, {
+      date: closeDate,
+      snapshotFetchedAt: snapshot.fetchedAt,
+      accounts,
+      spy,
+      riskFreeRate: Number.isFinite(irx) ? irx / 100 : null,
+    });
+    if (updated) {
+      store = { ...updated, updatedAt: new Date().toISOString() };
+      await env.RENTALS.put(key, JSON.stringify(store));
+    }
+  }
+  return store ? stockStickiesRiskMetrics(store) : null;
+}
+
 async function buildStockStickiesPerformance(env, year, snapshot, options = {}) {
   const config = await env.RENTALS.get(STOCK_STICKIES_PERFORMANCE_CONFIG_KEY, 'json');
   const snapshotStore = await env.RENTALS.get(
@@ -3336,6 +3413,14 @@ async function buildStockStickiesPerformance(env, year, snapshot, options = {}) 
         config?.cspLedgerReconciliations?.[String(year)]?.accounts || {},
     }
   );
+  const risk = await updateStockStickiesDailyRisk(env, year, snapshot, performanceTransactions)
+    .catch(error => {
+      console.error(JSON.stringify({
+        event: 'stock_stickies_daily_risk_error',
+        message: error instanceof Error ? error.message : String(error),
+      }));
+      return null;
+    });
   const openingValues = config?.openingValues?.[String(year)] || {};
   const cashFlowCoverage = config?.cashFlowCoverage?.[String(year)] || {};
   const accounts = {};
@@ -3394,6 +3479,7 @@ async function buildStockStickiesPerformance(env, year, snapshot, options = {}) 
       valueChangeAfterReconciliation: anchoredCalculation?.valueChangeAfterAnchor ?? null,
       netExternalFlowAfterReconciliation:
         anchoredCalculation?.netExternalFlowAfterAnchor ?? null,
+      risk: risk?.accounts?.[id] || null,
       status: !Number.isFinite(openingValue)
         ? 'needs-opening-value'
         : (!transactionResult.data
@@ -3535,6 +3621,7 @@ async function buildStockStickiesPerformance(env, year, snapshot, options = {}) 
       netExternalFlow: totalCalculation?.netExternalFlow ?? null,
       externalFlowCount: totalCalculation?.externalFlowCount ?? 0,
       transactionCount: performanceTransactions.length,
+      risk: risk?.total || null,
       status: !allOpeningValuesPresent
         ? 'needs-opening-value'
         : (!transactionResult.data
