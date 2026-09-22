@@ -7614,11 +7614,8 @@ const MB_TRACKING_START_MONTH = '2026-09';
 const MB_YEAR_STATS_OPEN_KEY = 'rentals_mom_budget_year_stats_open';
 // Separate spending allowance used by Mom Money Left tracking. Fair Share is
 // shown as a reference transfer and is excluded from this calculation.
-// Legacy lump allowance. From MB_BUDGET_SPLIT_MONTH it is replaced by the sum of
-// the itemized variable budgets, so earlier months keep the figure they were
-// tracked against instead of being restated.
-const MB_MONTHLY_TRACKING_ALLOWANCE = 800;
-const MB_BUDGET_SPLIT_MONTH = '2026-10';
+// The monthly spending allowance is always the itemized variable budgets added
+// up, so Month Math's "Spending allowance" row equals the budget rows above it.
 // Variable budgets that make up the monthly spending allowance, in display order.
 const MB_TRACKED_VARIABLE_KEYS = ['discretionary', 'emergency'];
 const MB_VARIABLE_META = {
@@ -7765,10 +7762,7 @@ function mbSetVariableAmount(key, monthKey, amount) {
   t.variableSchedule[key] = cleaned;
 }
 
-// Months before the split were tracked against one lump allowance; from the
-// split on, the allowance is simply the itemized budgets added up.
 function mbTrackingAllowance(monthKey) {
-  if (monthKey < MB_BUDGET_SPLIT_MONTH) return MB_MONTHLY_TRACKING_ALLOWANCE;
   return MB_TRACKED_VARIABLE_KEYS.reduce((s, key) => s + mbVariableAmount(key, monthKey), 0);
 }
 

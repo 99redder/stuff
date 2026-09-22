@@ -1677,10 +1677,7 @@ const MB_TRACKING_START_DATE = `${MB_TRACKING_START_MONTH}-01`;
 // Mom's spending allowance is intentionally independent from Fair Share.
 // Fair Share remains a reference value in the public summary, but never
 // increases the amount available for (or used by) spending tracking.
-// Before MB_BUDGET_SPLIT_MONTH the allowance was one lump figure; from that
-// month on it is the itemized variable budgets added up.
-const MB_MONTHLY_TRACKING_ALLOWANCE = 800;
-const MB_BUDGET_SPLIT_MONTH = '2026-10';
+// The allowance is always the itemized variable budgets added up.
 const MB_TRACKED_VARIABLE_KEYS = ['discretionary', 'emergency'];
 
 async function handleGetMomBudget(env) {
@@ -1813,7 +1810,6 @@ function momVariableAmount(data, key, monthKey) {
 }
 
 function momTrackingAllowance(data, monthKey) {
-  if (monthKey < MB_BUDGET_SPLIT_MONTH) return MB_MONTHLY_TRACKING_ALLOWANCE;
   return MB_TRACKED_VARIABLE_KEYS.reduce((s, key) => s + momVariableAmount(data, key, monthKey), 0);
 }
 
