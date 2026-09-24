@@ -130,7 +130,7 @@ export default {
   async scheduled(controller, env, ctx) {
     // Cloudflare cron expressions run in UTC. Paired triggers cover each Eastern
     // time in both EST and EDT; the Eastern-time guards prevent duplicates.
-    //   16:10 ET — Stock Stickies fresh position sync (captures the day's trades)
+    //   16:10 ET Mon–Fri — Stock Stickies fresh position sync (captures the day's trades)
     //   07:00 ET — Stock Stickies fresh position sync (captures overnight moves)
     //   06:00 ET — rentals Robinhood balance refresh (+ Monday tax-page check)
     const easternTime = new Intl.DateTimeFormat('en-US', {
@@ -140,7 +140,12 @@ export default {
       hourCycle: 'h23',
     }).format(new Date(controller.scheduledTime));
     const easternHour = easternTime.slice(0, 2);
-    if (easternTime === '16:10') {
+    const easternWeekday = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      weekday: 'short',
+    }).format(new Date(controller.scheduledTime));
+    // Market-close sync on trading weekdays only; there are no weekend closes to capture.
+    if (easternTime === '16:10' && easternWeekday !== 'Sat' && easternWeekday !== 'Sun') {
       ctx.waitUntil(runScheduledStockStickiesPositionSync(env, controller.scheduledTime, 'market-close'));
     }
     if (easternTime === '07:00') {
@@ -149,7 +154,6 @@ export default {
     if (easternHour === '06') {
       ctx.waitUntil(runScheduledRobinhoodRefresh(env, controller.scheduledTime));
       // Weekly (Mondays, ET): ping IRS + Maryland guidance pages for changes.
-      const easternWeekday = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short' }).format(new Date(controller.scheduledTime));
       if (easternWeekday === 'Mon') ctx.waitUntil(runTaxUpdateCheck(env).catch(() => {}));
     }
   }
