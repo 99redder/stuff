@@ -62,8 +62,10 @@ simple = { limit = 4, period = 60 }
 # time so only the correct trigger runs through EST/EDT changes.
 [triggers]
 # UTC. 16:10 ET = 20:10 (EDT) / 21:10 (EST); 07:00 ET = 11:00 (EDT) / 12:00 (EST);
-# 06:00 ET = 10:00 (EDT) / 11:00 (EST). The handler's Eastern-time guards pick the right one.
-crons = ["10 20 * * *", "10 21 * * *", "0 10 * * *", "0 11 * * *", "0 12 * * *"]
+# 06:00 ET = 10:00 (EDT) / 11:00 (EST). The handler's Eastern-time guards pick the right
+# firing. Multi-hour expressions keep this to 2 triggers — the Workers Free plan allows
+# only 5 cron triggers per account, across all Workers.
+crons = ["10 20,21 * * *", "0 10,11,12 * * *"]
 
 # Environment variables (set via: wrangler env.<env>.secret put KEY VALUE)
 # wrangler secret put ADMIN_PASSWORD
