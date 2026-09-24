@@ -61,6 +61,8 @@ const STOCK_STICKIES_HOLDINGS_CACHE_KEY = 'stock_stickies:plaid:robinhood:holdin
 const STOCK_STICKIES_HOLDINGS_PREVIOUS_CACHE_KEY = 'stock_stickies:plaid:robinhood:holdings:previous';
 const STOCK_STICKIES_HOLDINGS_FALLBACK_MAX_AGE_MS = 36 * 60 * 60 * 1000;
 const STOCK_STICKIES_INVESTMENTS_REFRESH_KEY = 'stock_stickies:plaid:robinhood:investments-refresh';
+// Latest completed scheduled sync (07:00 / 16:10 ET) — the app applies each one once.
+const STOCK_STICKIES_SCHEDULED_SYNC_KEY = 'stock_stickies:plaid:robinhood:scheduled-sync';
 const STOCK_STICKIES_INVESTMENTS_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
 const STOCK_STICKIES_INVESTMENTS_REFRESH_IN_FLIGHT_MS = 90 * 1000;
 const STOCK_STICKIES_PERFORMANCE_CONFIG_KEY = 'stock_stickies:plaid:robinhood:performance:config';
@@ -126,15 +128,23 @@ export default {
   },
 
   async scheduled(controller, env, ctx) {
-    // Cloudflare cron expressions run in UTC. Paired triggers cover midnight
-    // and 6 AM in both EST and EDT; the Eastern-hour guard prevents duplicates.
-    const easternHour = new Intl.DateTimeFormat('en-US', {
+    // Cloudflare cron expressions run in UTC. Paired triggers cover each Eastern
+    // time in both EST and EDT; the Eastern-time guards prevent duplicates.
+    //   16:10 ET — Stock Stickies fresh position sync (captures the day's trades)
+    //   07:00 ET — Stock Stickies fresh position sync (captures overnight moves)
+    //   06:00 ET — rentals Robinhood balance refresh (+ Monday tax-page check)
+    const easternTime = new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/New_York',
       hour: '2-digit',
+      minute: '2-digit',
       hourCycle: 'h23',
     }).format(new Date(controller.scheduledTime));
-    if (easternHour === '00') {
-      ctx.waitUntil(runScheduledStockStickiesHoldingsRefresh(env, controller.scheduledTime));
+    const easternHour = easternTime.slice(0, 2);
+    if (easternTime === '16:10') {
+      ctx.waitUntil(runScheduledStockStickiesPositionSync(env, controller.scheduledTime, 'market-close'));
+    }
+    if (easternTime === '07:00') {
+      ctx.waitUntil(runScheduledStockStickiesPositionSync(env, controller.scheduledTime, 'morning'));
     }
     if (easternHour === '06') {
       ctx.waitUntil(runScheduledRobinhoodRefresh(env, controller.scheduledTime));
@@ -3997,27 +4007,36 @@ async function handleStockStickiesPlaidRefresh(env, corsHeaders) {
   }
 }
 
-async function runScheduledStockStickiesHoldingsRefresh(env, scheduledTime) {
+// Scheduled fresh sync (same paid /investments/refresh as the manual button, with its
+// cooldown and in-flight guards). A completed run is recorded so the Stock Stickies app
+// applies it once on the next page load.
+async function runScheduledStockStickiesPositionSync(env, scheduledTime, slot) {
   try {
-    const snapshot = await refreshStockStickiesHoldingsSnapshot(env);
-    const performance = await buildStockStickiesPerformance(
-      env,
-      stockStickiesPerformanceYear(new Date(scheduledTime)),
-      snapshot
-    );
+    const response = await handleStockStickiesPlaidRefresh(env, {});
+    const body = await response.json().catch(() => ({}));
+    if (response.ok && body.refresh?.completedAt) {
+      await env.RENTALS.put(STOCK_STICKIES_SCHEDULED_SYNC_KEY, JSON.stringify({
+        slot,
+        scheduledTime: new Date(scheduledTime).toISOString(),
+        completedAt: body.refresh.completedAt,
+        fetchedAt: body.fetchedAt || null,
+        positionsChanged: body.refresh.positionsChanged === true,
+      }));
+    }
     console.log(JSON.stringify({
-      event: 'scheduled_stock_stickies_holdings_refresh',
+      event: 'scheduled_stock_stickies_position_sync',
+      slot,
       scheduledTime: new Date(scheduledTime).toISOString(),
-      fetchedAt: snapshot.fetchedAt,
-      positionCount: snapshot.positions.length,
-      cryptoPositionCount: snapshot.cryptoPositionCount,
-      performanceSnapshotCount: performance.snapshotCount,
+      status: response.status,
+      code: body.code || null,
+      fetchedAt: body.fetchedAt || null,
+      positionCount: Array.isArray(body.positions) ? body.positions.length : null,
     }));
   } catch (error) {
     console.error(JSON.stringify({
-      event: 'scheduled_stock_stickies_holdings_refresh_error',
+      event: 'scheduled_stock_stickies_position_sync_error',
+      slot,
       scheduledTime: new Date(scheduledTime).toISOString(),
-      code: String(error?.code || 'UNKNOWN_ERROR').slice(0, 80),
       message: error instanceof Error ? error.message : String(error),
     }));
   }
@@ -4031,7 +4050,8 @@ async function handleStockStickiesPlaidHoldings(env, corsHeaders) {
       stockStickiesPerformanceYear(),
       snapshot
     );
-    return jsonResponse({ ...snapshot, performance, source: 'live' }, 200, corsHeaders);
+    const scheduledSync = await env.RENTALS.get(STOCK_STICKIES_SCHEDULED_SYNC_KEY, 'json');
+    return jsonResponse({ ...snapshot, performance, scheduledSync, source: 'live' }, 200, corsHeaders);
   } catch (error) {
     const code = String(error?.code || 'UNKNOWN_ERROR').slice(0, 80);
     const needsConsent = error?.needsConsent === true;
@@ -4051,9 +4071,11 @@ async function handleStockStickiesPlaidHoldings(env, corsHeaders) {
           stockStickiesPerformanceYear(),
           cached
         );
+        const scheduledSync = await env.RENTALS.get(STOCK_STICKIES_SCHEDULED_SYNC_KEY, 'json');
         return jsonResponse({
           ...cached,
           performance,
+          scheduledSync,
           source: 'nightly-cache',
           stale: true,
         }, 200, corsHeaders);
