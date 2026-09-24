@@ -48,6 +48,30 @@ test('Plaid cash-direction signs convert to investor cash-flow signs', () => {
     name: 'Internal account transfer',
     amount: -500,
   }), null);
+  assert.equal(stockStickiesExternalFlow({
+    type: 'transfer',
+    subtype: 'transfer',
+    name: 'Transfer to Robinhood Checking account ending in 4445 of $1271.32 - TRANSFER',
+    amount: 1271.32,
+  }), -1271.32);
+  assert.equal(stockStickiesExternalFlow({
+    type: 'transfer',
+    subtype: 'transfer',
+    name: 'Transfer to Robinhood Custodial account ending in 8574 of $993.93 - TRANSFER',
+    amount: 993.93,
+  }), -993.93);
+  assert.equal(stockStickiesExternalFlow({
+    type: 'transfer',
+    subtype: 'transfer',
+    name: 'Transfer from Robinhood Checking account ending in 4445 of $500.00 - TRANSFER',
+    amount: -500,
+  }), 500);
+  assert.equal(stockStickiesExternalFlow({
+    type: 'transfer',
+    subtype: 'transfer',
+    name: 'Transfer to Robinhood Retirement account ending in 1234 of $500.00 - TRANSFER',
+    amount: 500,
+  }), null);
 });
 
 test('external flows use initiation datetime before settlement date', () => {

@@ -63,6 +63,13 @@ function externalFlowSubtype(transaction) {
   const description = String(transaction?.name || '').toLowerCase();
   if (/\bach\s+deposit\b/.test(description)) return 'deposit';
   if (/\bach\s+withdrawal\b/.test(description)) return 'withdrawal';
+  // Moves to/from the user's other Robinhood products (Checking, Custodial,
+  // etc.) leave the tracked brokerage accounts too. Brokerage/retirement
+  // accounts stay excluded because those are transfers between tracked ones.
+  const sibling = description.match(
+    /\btransfer\s+(to|from)\s+robinhood\s+(?:checking|custodial|spending|savings)\b/
+  );
+  if (sibling) return sibling[1] === 'to' ? 'withdrawal' : 'deposit';
   return '';
 }
 
