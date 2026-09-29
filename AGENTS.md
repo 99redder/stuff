@@ -597,6 +597,11 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ## Recent Updates
 
+### 2026-09-29 — Mom phone birthday editor
+
+- The desktop Mom Budget **🔒 Phone Access** modal has a **Birthdays** editor (`mbBirthdayEditorHtml` / `mbAddBirthday` / `mbRemoveBirthday` / `mbSavePhoneBirthdays`): name, month, date text, optional note, add/remove. Edits live in `_mbBirthdayDraft` until **Save Birthdays**, which sorts into calendar order (`mbSortBirthdays`: month, then first 1–2 digit number in the date) and saves via `mom_phone_save_info`. Important Info saves send the last *saved* birthdays, so unsaved birthday edits never leak through.
+- The Durable Object's `BIRTHDAY_ADDITIONS` (one-time, id-flagged inserts in `cloudflare/src/mom-phone-access.js`) added Amy Gelinas (Oct 4); prefer the editor for future changes.
+
 ### 2026-09-11 — Mom phone birthdays
 
 - Added a collapsed `Birthdays` section below the phone app's budget sections, with 21 entries grouped by month in calendar order. Supplied birth years and Betty's memorial note are preserved; missing birth years are not inferred.

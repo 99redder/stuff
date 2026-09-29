@@ -7983,10 +7983,12 @@ async function renderMomBudget() {
 // Private phone access management. These owner controls use the existing
 // admin session; phone cookies never authorize any /api/data action.
 let _mbPhoneInfo = null;
+let _mbBirthdayDraft = [];   // unsaved birthday edits; _mbPhoneInfo stays the saved record
 let _mbPhoneRequest = 0;
 function mbClosePhoneAccess() {
   _mbPhoneRequest++;
   _mbPhoneInfo = null;
+  _mbBirthdayDraft = [];
   document.getElementById('mom-phone-modal').classList.add('hidden');
   document.getElementById('mom-phone-body').innerHTML = '';
 }
@@ -8000,6 +8002,7 @@ async function mbOpenPhoneAccess() {
     const [access, info] = await Promise.all([callApi({ action: 'mom_phone_list' }), callApi({ action: 'mom_phone_get_info' })]);
     if (request !== _mbPhoneRequest || modal.classList.contains('hidden')) return;
     _mbPhoneInfo = info.data;
+    _mbBirthdayDraft = (info.data.birthdays || []).map(row => ({ ...row }));
     const date = timestamp => new Date(timestamp).toLocaleString();
     body.innerHTML = `
       <div style="padding:.8rem 1rem;border:1px solid var(--border);border-radius:10px;background:var(--surface);line-height:1.5">New device setup is closed. Your already-approved devices can continue to sign in, and you can remove access below.</div>
@@ -8011,7 +8014,15 @@ async function mbOpenPhoneAccess() {
         <p style="font-size:.8rem;color:var(--text-muted)">Only approved devices can read these values. Update the door PIN here after changing it on the lock.</p>
         ${(_mbPhoneInfo.importantInfo || []).map((row, index) => `<div class="form-group" style="margin-bottom:.75rem"><label for="mom-phone-info-${index}">${escHtml(row.label)}</label><input id="mom-phone-info-${index}" maxlength="500" value="${escAttr(row.value)}" style="width:100%"></div>`).join('')}
         <button class="btn btn-primary btn-sm" id="mom-phone-info-save" onclick="mbSavePhoneInfo()">Save Important Info</button>
-        <p style="font-size:.8rem;color:var(--text-muted)">${(_mbPhoneInfo.birthdays || []).length} birthday entries are also stored privately.</p>
+      </details>
+      <details style="margin-top:1rem"><summary style="cursor:pointer;font-weight:600">Birthdays</summary>
+        <p style="font-size:.8rem;color:var(--text-muted)">Shown on her phone grouped by month. Saving sorts the list into calendar order.</p>
+        <div id="mom-phone-birthdays">${mbBirthdayEditorHtml()}</div>
+        <div style="display:flex;gap:.5rem;margin-top:.5rem">
+          <button class="btn btn-ghost btn-sm" onclick="mbAddBirthday()">+ Add Birthday</button>
+          <button class="btn btn-primary btn-sm" id="mom-phone-birthdays-save" onclick="mbSavePhoneBirthdays()">Save Birthdays</button>
+        </div>
+        <p id="mom-phone-birthdays-status" role="status" style="font-size:.85rem"></p>
       </details>`;
   } catch (error) { if (request === _mbPhoneRequest) body.textContent = error.message; }
 }
@@ -8034,6 +8045,76 @@ async function mbSavePhoneInfo() {
     _mbPhoneInfo = data;
     document.getElementById('mom-phone-status').textContent = 'Private information saved.';
   } catch (error) { if (request === _mbPhoneRequest) document.getElementById('mom-phone-status').textContent = error.message; }
+  finally { button.disabled = false; }
+}
+
+// Birthday editor for the phone's private info. Edits stay in _mbBirthdayDraft
+// until Save; the saved list is sorted into calendar order (month, then day).
+const MB_BIRTHDAY_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function mbBirthdayEditorHtml() {
+  const rows = _mbBirthdayDraft;
+  if (!rows.length) return '<p style="font-size:.85rem;color:var(--text-muted)">No birthdays yet.</p>';
+  const monthOptions = selected => MB_BIRTHDAY_MONTHS.map(m => `<option${m === selected ? ' selected' : ''}>${m}</option>`).join('')
+    + (selected && !MB_BIRTHDAY_MONTHS.includes(selected) ? `<option selected>${escHtml(selected)}</option>` : '');
+  return rows.map((row, i) => `
+    <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:.4rem;align-items:center;padding:.5rem 0;border-bottom:1px solid var(--border)">
+      <input aria-label="Name" placeholder="Name" maxlength="100" value="${escAttr(row.name)}" oninput="mbUpdateBirthday(${i},'name',this.value)">
+      <input aria-label="Date" placeholder="e.g. October 4, 1980" maxlength="100" value="${escAttr(row.date)}" oninput="mbUpdateBirthday(${i},'date',this.value)">
+      <button class="btn btn-ghost btn-sm" title="Remove" aria-label="Remove ${escAttr(row.name)}" onclick="mbRemoveBirthday(${i})">✕</button>
+      <select aria-label="Month" onchange="mbUpdateBirthday(${i},'month',this.value)">${monthOptions(row.month)}</select>
+      <input aria-label="Note" placeholder="Note (optional)" maxlength="300" value="${escAttr(row.note || '')}" oninput="mbUpdateBirthday(${i},'note',this.value)" style="grid-column:2 / -1">
+    </div>`).join('');
+}
+function mbRenderBirthdayEditor() {
+  const el = document.getElementById('mom-phone-birthdays');
+  if (el) el.innerHTML = mbBirthdayEditorHtml();
+}
+function mbUpdateBirthday(index, key, value) {
+  const row = _mbBirthdayDraft[index];
+  if (!row) return;
+  const previousMonth = row.month;
+  row[key] = value;
+  // Changing the month on a date that is still just the month name keeps them in step.
+  if (key === 'month' && (!row.date.trim() || row.date.trim() === previousMonth)) { row.date = value + ' '; mbRenderBirthdayEditor(); }
+}
+function mbAddBirthday() {
+  if (!_mbPhoneInfo) return;
+  const month = MB_BIRTHDAY_MONTHS[new Date().getMonth()];
+  _mbBirthdayDraft.push({ month, name: '', date: month + ' ', note: '' });
+  mbRenderBirthdayEditor();
+  const inputs = document.querySelectorAll('#mom-phone-birthdays input[aria-label="Name"]');
+  inputs[inputs.length - 1]?.focus();
+}
+function mbRemoveBirthday(index) {
+  _mbBirthdayDraft.splice(index, 1);
+  mbRenderBirthdayEditor();
+  document.getElementById('mom-phone-birthdays-status').textContent = 'Removed — click Save Birthdays to apply.';
+}
+function mbSortBirthdays(rows) {
+  const monthIndex = m => { const i = MB_BIRTHDAY_MONTHS.indexOf(m); return i < 0 ? 12 : i; };
+  const day = d => { const match = String(d).match(/\b(\d{1,2})\b/); return match ? Number(match[1]) : 99; };
+  return rows.map((row, i) => ({ row, i }))
+    .sort((a, b) => monthIndex(a.row.month) - monthIndex(b.row.month) || day(a.row.date) - day(b.row.date) || a.i - b.i)
+    .map(x => x.row);
+}
+async function mbSavePhoneBirthdays() {
+  if (!_mbPhoneInfo) return;
+  const request = _mbPhoneRequest;
+  const button = document.getElementById('mom-phone-birthdays-save');
+  const status = document.getElementById('mom-phone-birthdays-status');
+  if (button.disabled) return;
+  const rows = _mbBirthdayDraft.map(row => ({ ...row, name: row.name.trim(), date: row.date.trim(), note: (row.note || '').trim() }));
+  if (rows.some(row => !row.name || !row.date)) { status.textContent = 'Every birthday needs a name and a date.'; return; }
+  button.disabled = true;
+  const data = { ..._mbPhoneInfo, birthdays: mbSortBirthdays(rows) };
+  try {
+    await callApi({ action: 'mom_phone_save_info', data });
+    if (request !== _mbPhoneRequest) return;
+    _mbPhoneInfo = data;
+    _mbBirthdayDraft = data.birthdays.map(row => ({ ...row }));
+    mbRenderBirthdayEditor();
+    status.textContent = `Saved ${data.birthdays.length} birthdays.`;
+  } catch (error) { if (request === _mbPhoneRequest) status.textContent = error.message; }
   finally { button.disabled = false; }
 }
 
