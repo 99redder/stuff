@@ -838,3 +838,17 @@ test('YTD series compounds flow-adjusted daily returns and tracks SPY from year-
   assert.equal(series.points[2].spy, 1);
   assert.equal(stockStickiesYtdSeries({ days: {} }, 2026), null);
 });
+
+test('an unreported deposit (implausible one-day jump) is skipped, not counted as return', async () => {
+  const { stockStickiesYtdSeries } = await import('./performance-calculations.js');
+  const series = stockStickiesYtdSeries({
+    days: {
+      '2025-12-31': { accounts: { individual: { value: 1_000 }, roth: { value: 100_000 } } },
+      '2026-01-02': { accounts: { individual: { value: 2_575 }, roth: { value: 101_000 } } },
+      '2026-01-05': { accounts: { individual: { value: 2_600 }, roth: { value: 101_000 } } },
+    },
+  }, 2026);
+  assert.equal(series.points[1].accounts.individual, null);
+  assert.equal(series.points[1].total, 1);
+  assert.equal(series.points[2].accounts.individual, 0.97);
+});

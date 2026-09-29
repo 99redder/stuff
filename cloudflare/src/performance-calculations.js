@@ -700,6 +700,10 @@ const RISK_MIN_DAYS = 20;
 // Days where an account starts below this are skipped: a near-empty account
 // turns a few dollars of noise into huge percentage moves.
 const RISK_MIN_ACCOUNT_VALUE = 1000;
+// A whole-account move beyond this in one day is almost always a deposit or
+// withdrawal Plaid never reported (e.g. Individual, Sep 24 2026: $1,003 -> $2,575
+// with no flow), not performance, so that account-day is skipped.
+const RISK_MAX_DAILY_RETURN = 0.25;
 
 function easternParts(date) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
@@ -773,7 +777,9 @@ function dailyReturnSeries(store) {
       if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
       const base = start + Math.max(flow, 0);
       if (start < RISK_MIN_ACCOUNT_VALUE || base <= 0) continue;
-      accounts[id] = { value: start, return: (end - start - flow) / base };
+      const dailyReturn = (end - start - flow) / base;
+      if (Math.abs(dailyReturn) > RISK_MAX_DAILY_RETURN) continue;
+      accounts[id] = { value: start, return: dailyReturn };
     }
     series.push({
       date: dates[index],
