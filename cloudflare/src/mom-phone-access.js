@@ -254,7 +254,7 @@ export class MomPhoneAccess extends DurableObject {
 
   async privateInfo() {
     const current = this.get('private', 'info');
-    if (current) return current;
+    if (current) return this.applyBirthdayAdditions(current);
     // One-time import from the private KV migration record. Recheck after I/O.
     const legacy = await this.env.RENTALS.get('mom_phone_private_info', 'json');
     return this.ctx.storage.transactionSync(() => {
@@ -263,8 +263,27 @@ export class MomPhoneAccess extends DurableObject {
       if (!legacy) return { birthdays: [], importantInfo: [] };
       const normalized = normalizePrivateInfo(legacy);
       this.put('private', 'info', normalized);
-      return normalized;
+      return this.applyBirthdayAdditions(normalized);
     });
+  }
+  // One-time birthday additions (there is no birthday editor). Each id is
+  // recorded once applied, so an entry is never re-added after being removed.
+  applyBirthdayAdditions(info) {
+    const pending = BIRTHDAY_ADDITIONS.filter(add => !this.get('birthday-addition', add.id));
+    if (!pending.length) return info;
+    const birthdays = [...info.birthdays];
+    for (const { id, after, entry } of pending) {
+      if (!birthdays.some(row => row.name === entry.name)) {
+        const anchor = birthdays.findIndex(row => row.name === after);
+        const lastInMonth = birthdays.map(row => row.month).lastIndexOf(entry.month);
+        const at = anchor >= 0 ? anchor + 1 : lastInMonth >= 0 ? lastInMonth + 1 : birthdays.length;
+        birthdays.splice(at, 0, entry);
+      }
+      this.put('birthday-addition', id, { appliedAt: Date.now() });
+    }
+    const updated = { ...info, birthdays };
+    this.put('private', 'info', updated);
+    return updated;
   }
   savePrivateInfo(data) {
     const normalized = normalizePrivateInfo(data);
@@ -272,6 +291,11 @@ export class MomPhoneAccess extends DurableObject {
     return { success: true };
   }
 }
+
+// Birthdays list is in calendar order; `after` names the entry to insert behind.
+const BIRTHDAY_ADDITIONS = [
+  { id: 'amy-gelinas-2026-09', after: 'Aurelie', entry: { month: 'October', name: 'Amy Gelinas', date: 'October 4', note: '' } },
+];
 
 function normalizePrivateInfo(data) {
   if (!data || !Array.isArray(data.birthdays) || !Array.isArray(data.importantInfo) || data.birthdays.length > 100 || data.importantInfo.length > 30) reject('Invalid private information.');
