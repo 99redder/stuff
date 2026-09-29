@@ -819,3 +819,22 @@ test('SPY YTD runs from the prior year-end close to the latest stored close', as
   assert.ok(Math.abs(result.ytdReturnPercent - 13.412) < 0.01);
   assert.equal(stockStickiesBenchmarkReturn({ days: { '2026-09-22': { spy: 773 } } }, 2026), null);
 });
+
+test('YTD series compounds flow-adjusted daily returns and tracks SPY from year-end', async () => {
+  const { stockStickiesYtdSeries } = await import('./performance-calculations.js');
+  const series = stockStickiesYtdSeries({
+    days: {
+      '2025-12-31': { accounts: { roth: { value: 10_000 } }, spy: 500 },
+      '2026-01-02': { accounts: { roth: { value: 11_000 } }, spy: 510 },
+      // A $5k deposit is not a gain: 16,500 = (11,000 + 5,000) * 1.03125.
+      '2026-01-05': { accounts: { roth: { value: 16_500, externalFlow: 5_000 } }, spy: 505 },
+    },
+  }, 2026);
+  assert.deepEqual(series.points.map(point => point.date), ['2025-12-31', '2026-01-02', '2026-01-05']);
+  assert.equal(series.points[1].total, 10);
+  assert.equal(series.points[1].spy, 2);
+  assert.equal(series.points[2].accounts.roth, 13.44);
+  assert.equal(series.points[2].accounts.traditional, null);
+  assert.equal(series.points[2].spy, 1);
+  assert.equal(stockStickiesYtdSeries({ days: {} }, 2026), null);
+});

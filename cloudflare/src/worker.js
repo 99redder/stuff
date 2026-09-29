@@ -22,6 +22,7 @@ import {
   stockStickiesExternalFlow,
   stockStickiesExternalFlowDate,
   stockStickiesRiskMetrics,
+  stockStickiesYtdSeries,
 } from './performance-calculations.js';
 import { requestRobinhoodInvestmentsRefresh } from './stock-stickies-plaid-refresh.js';
 
@@ -3370,7 +3371,11 @@ async function updateStockStickiesDailyRisk(env, year, snapshot, performanceTran
     }
   }
   return store
-    ? { ...stockStickiesRiskMetrics(store), benchmark: stockStickiesBenchmarkReturn(store, year) }
+    ? {
+        ...stockStickiesRiskMetrics(store),
+        benchmark: stockStickiesBenchmarkReturn(store, year),
+        ytdSeries: stockStickiesYtdSeries(store, year),
+      }
     : null;
 }
 
@@ -3650,6 +3655,7 @@ async function buildStockStickiesPerformance(env, year, snapshot, options = {}) 
                     : 'ready'))),
     },
     benchmark: risk?.benchmark || null,
+    ytdSeries: risk?.ytdSeries || null,
     snapshotCount: dates.length,
     firstSnapshotDate: dates[0] || null,
     lastSnapshotDate: dates.length ? dates[dates.length - 1] : null,

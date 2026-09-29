@@ -860,6 +860,46 @@ export function stockStickiesRiskMetrics(store) {
   return { accounts, total };
 }
 
+// Cumulative time-weighted return for each trading day of `year`, per account
+// and value-weighted in total, alongside SPY's price return from the prior
+// year-end close. Days an account is skipped (below the minimum value) are null.
+export function stockStickiesYtdSeries(store, year) {
+  const startDate = `${Number(year) - 1}-12-31`;
+  const startSpy = Number(store?.days?.[startDate]?.spy);
+  const days = dailyReturnSeries(store).filter(day => day.date.startsWith(`${year}-`));
+  if (!days.length) return null;
+  const round = value => Math.round(value * 10000) / 100;
+  const equity = Object.fromEntries(STOCK_STICKIES_ACCOUNT_IDS.map(id => [id, 1]));
+  let totalEquity = 1;
+  const points = [{
+    date: startDate,
+    total: 0,
+    accounts: Object.fromEntries(STOCK_STICKIES_ACCOUNT_IDS.map(id => [id, 0])),
+    spy: Number.isFinite(startSpy) && startSpy > 0 ? 0 : null,
+  }];
+  for (const day of days) {
+    const accounts = {};
+    for (const id of STOCK_STICKIES_ACCOUNT_IDS) {
+      const row = day.accounts[id];
+      if (row) equity[id] *= 1 + row.return;
+      accounts[id] = row ? round(equity[id] - 1) : null;
+    }
+    const rows = Object.values(day.accounts);
+    const capital = rows.reduce((sum, row) => sum + row.value, 0);
+    if (capital > 0) {
+      totalEquity *= 1 + rows.reduce((sum, row) => sum + row.value * row.return, 0) / capital;
+    }
+    const spy = Number(store.days[day.date]?.spy);
+    points.push({
+      date: day.date,
+      total: round(totalEquity - 1),
+      accounts,
+      spy: Number.isFinite(startSpy) && startSpy > 0 && spy > 0 ? round(spy / startSpy - 1) : null,
+    });
+  }
+  return { year: Number(year), benchmark: 'SPY', points };
+}
+
 // SPY's price return from the prior year's final close to the latest stored
 // close, so the share card compares against the same dates as the portfolio.
 export function stockStickiesBenchmarkReturn(store, year) {
