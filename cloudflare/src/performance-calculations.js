@@ -700,9 +700,10 @@ const RISK_MIN_DAYS = 20;
 // Days where an account starts below this are skipped: a near-empty account
 // turns a few dollars of noise into huge percentage moves.
 const RISK_MIN_ACCOUNT_VALUE = 1000;
-// A whole-account move beyond this in one day is almost always a deposit or
-// withdrawal Plaid never reported (e.g. Individual, Sep 24 2026: $1,003 -> $2,575
-// with no flow), not performance, so that account-day is skipped.
+// A whole-account move beyond this in one day is almost always money or a
+// sub-account Plaid never reported moving (e.g. Individual, Sep 24 2026: $1,003 ->
+// $2,575 when the crypto account first appeared in Plaid), not performance, so
+// that account-day is skipped.
 const RISK_MAX_DAILY_RETURN = 0.25;
 
 function easternParts(date) {
