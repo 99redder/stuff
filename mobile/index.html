@@ -217,17 +217,20 @@
       if(state.view==='savings' && (force||!state.data.savings)) state.data.savings=(await api({action:'get_savings'})).data||{};
       // Cached read only snapshot only. Never call refresh_net_worth_plaid from the PWA.
       if(state.view==='networth' && (force||!state.data.netWorth)) state.data.netWorth=(await api({action:'get_net_worth'})).data||{};
-      if(state.view==='cashflow' && (force||!state.data.cashflow||!state.data.savings||!state.data.netWorth||!state.data.moveIn||!state.data.investments||!state.data.tax)){
+      if(state.view==='cashflow' && (force||!state.data.cashflow||!state.data.savings||!state.data.netWorth||!state.data.moveIn||!state.data.investments||!state.data.tax||!state.data.maintenance)){
         const [cashflow,savings,netWorth,moveIn,tax,...invs]=await Promise.all([
           api({action:'get_cash_flow',year:String(YEAR)}),
           api({action:'get_savings'}),
           api({action:'get_net_worth'}),
           api({action:'get_move_in_purchases',property:'4781MC'}),
           api({action:'get_tax_planning',year:String(YEAR)}),
-          ...CASH_FLOW_AUTO_PROPS.map(prop=>api({action:'get_investment',property:prop}))
+          ...CASH_FLOW_AUTO_PROPS.map(prop=>api({action:'get_investment',property:prop})),
+          ...[...RENTALS].map(prop=>api({action:'get_maintenance',property:prop}))
         ]);
         state.data.cashflow=cashflow.data||{};state.data.savings=savings.data||{};state.data.netWorth=netWorth.data||{};state.data.moveIn=moveIn.entries||[];state.data.tax=tax.data||{};
         state.data.investments=Object.fromEntries(CASH_FLOW_AUTO_PROPS.map((p,i)=>[p,invs[i]?.config||null]));
+        const maint=invs.slice(CASH_FLOW_AUTO_PROPS.length);
+        state.data.maintenance=Object.fromEntries([...RENTALS].map((p,i)=>[p,maint[i]?.entries||[]]));
       }
       if(state.view==='savings' && (force||!state.data.robinhood)){state.robinhoodLoading=true;pullRobinhood=true;}
       if(state.view==='mom' && (force||!state.data.mom)) state.data.mom=(await api({action:'get_mom_budget'})).data||{};
@@ -272,7 +275,21 @@
   // Quarterly estimated-tax due date for a sale realized on saleIso.
   function estTaxDueDate(saleIso){if(!/^\d{4}-\d{2}-\d{2}$/.test(saleIso||''))return '';const [y,m]=saleIso.split('-').map(Number);if(m<=3)return`${y}-04-15`;if(m<=5)return`${y}-06-15`;if(m<=8)return`${y}-09-15`;return`${y+1}-01-15`;}
   // AGI/NIIT/MD-surcharge snapshot, so sale-tax reserves match the desktop.
-  function cfTaxSnapshot(){const tp=state.data.tax||{},rental=[...RENTALS].map(prop=>({prop,...txnTotals(yearTxns(prop))}));return mobileTaxCalc(tp,rental);}
+  // Mirror desktop currentYearRentalOperatingTotals: improvements (by category, or a
+  // repair matching a maintenance entry marked Improvement) are capital, not expense.
+  function improvementKey(e){return `${String(e?.date||'').slice(0,10)}|${n(e?.amount??e?.cost).toFixed(2)}`;}
+  function rentalOperatingRows(){
+    return [...RENTALS].map(prop=>{
+      const marked=new Set((state.data.maintenance?.[prop]||[]).filter(e=>e.capitalImprovement).map(improvementKey));
+      let income=0,expenses=0;
+      for(const t of yearTxns(prop)){
+        if(t.type==='income')income+=n(t.amount);
+        else if(t.category!=='improvements'&&!marked.has(improvementKey(t)))expenses+=n(t.amount);
+      }
+      return {prop,income,expenses,net:income-expenses};
+    });
+  }
+  function cfTaxSnapshot(){return mobileTaxCalc(state.data.tax||{},rentalOperatingRows());}
   // Mirror desktop cfPropertySaleTaxItems: a single finalized sale reserves fed + state tax.
   function cfSaleTaxItems(prop,tax){
     const sc=state.data.investments?.[prop]?.saleCloseout;
@@ -291,7 +308,10 @@
   function cfSaleGainComponents(prop){
     const sc=state.data.investments?.[prop]?.saleCloseout;
     if(sc?.closedAt){
-      return {prop,projected:false,taxableGain:n(sc.taxableCapitalGain),recapture:n(sc.depreciationRecaptureTax)/0.25};
+      const tp=state.data.tax||{};
+      const pfx=['property_sale','property_sale_2'].find(p=>tp[`${p}_imported`]&&tp[`${p}_property`]===prop);
+      if(pfx)return {prop,projected:false,saleDate:sc.saleDate||'',taxableGain:n(tp[`${pfx}_taxable_gain`]),recapture:Math.max(0,n(tp[`${pfx}_depr_recapture`]))};
+      return {prop,projected:false,saleDate:sc.saleDate||'',taxableGain:n(sc.taxableCapitalGain),recapture:Math.max(0,n(sc.depreciationRecaptureTax)/0.25)};
     }
     const asset=(state.data.netWorth?.propertyAssets||[]).find(a=>a.id===`property-${prop}`);
     if(!asset||n(asset.salePrice)<=0)return null;
@@ -302,7 +322,7 @@
   // desktop cfComputeCombinedSaleTax) run on the full return with both sales folded in.
   function cfCombinedSaleTax(parts){
     if(!parts.length)return [];
-    const tp=state.data.tax||{},rental=[...RENTALS].map(prop=>({prop,...txnTotals(yearTxns(prop))}));
+    const tp=state.data.tax||{},rental=rentalOperatingRows();
     const withSales={...tp};
     ['property_sale','property_sale_2'].forEach(pfx=>{withSales[`${pfx}_imported`]=false;withSales[`${pfx}_property`]='';withSales[`${pfx}_taxable_gain`]=0;withSales[`${pfx}_depr_recapture`]=0;});
     parts.slice(0,2).forEach((p,i)=>{const pfx=i===0?'property_sale':'property_sale_2';withSales[`${pfx}_imported`]=true;withSales[`${pfx}_property`]=p.prop;withSales[`${pfx}_taxable_gain`]=p.taxableGain;withSales[`${pfx}_depr_recapture`]=p.recapture;});
@@ -315,20 +335,20 @@
     const fedTax=r.federalTax,fedPaid=r.federalPaid;
     const fedSafe=priorFed>0?Math.min(fedTax*0.90,priorFed*factor):fedTax*0.90;
     const fedOwed=Math.max(0,fedTax-fedPaid),fedSep15=Math.min(fedOwed,Math.max(0,fedSafe-fedPaid)),fedApril=Math.max(0,fedOwed-fedSep15);
-    const mdTax=r.mdTax,mdPaid=r.mdWithheld;
-    const mdSafe=priorMd>0?Math.min(mdTax*0.90,priorMd*factor):mdTax*0.90;
+    const mdTax=r.mdTax,mdPaid=r.mdPaid;
+    const mdSafe=priorMd>0?Math.min(mdTax*0.90,priorMd*1.10):mdTax*0.90;
     const mdOwed=Math.max(0,mdTax-mdPaid),mdSep15=mdOwed<500?0:Math.min(mdOwed,Math.max(0,mdSafe-mdPaid)),mdApril=Math.max(0,mdOwed-mdSep15);
-    const label=parts.map(p=>p.prop).join(' + '),sep='2026-09-15',apr='2027-04-15',items=[];
+    const label=parts.map(p=>p.prop).join(' + '),sep=parts.map(p=>estTaxDueDate(p.saleDate)).filter(Boolean).sort().at(-1)||'2026-09-15',apr='2027-04-15',items=[];
     items.push({id:'auto-tax-fed-sep15',name:'Federal Estimated Tax — Safe Harbor',amount:fedSep15,date:sep,note:fedSep15>0.005?`Minimum federal estimate (safe harbor ${money(fedSafe)} − ${money(fedPaid)} withholding); ${money(fedApril)} due at filing`:`$0 — withholding already clears the federal safe harbor (${money(fedSafe)}); balance deferred to Apr return`});
     items.push({id:'auto-tax-state-sep15',name:'Maryland Estimated Tax — Safe Harbor',amount:mdSep15,date:sep,note:mdSep15>0.005?`Minimum MD estimate (safe harbor ${money(mdSafe)} − ${money(mdPaid)} withholding); ${money(mdApril)} due at filing`:`$0 — MD safe harbor met by withholding; balance deferred to Apr return`});
     if(fedApril>0.005)items.push({id:'auto-tax-fed-april',name:'Federal Tax Balance Due (2026 return)',amount:fedApril,date:apr,note:`Remaining federal: ${money(fedTax)} tax − ${money(fedPaid)} withholding − ${money(fedSep15)} Sept-15 estimate`});
     if(mdApril>0.005)items.push({id:'auto-tax-state-april',name:'Maryland Tax Balance Due (2026 return)',amount:mdApril,date:apr,note:`Remaining MD: ${money(mdTax)} tax − ${money(mdPaid)} withholding − ${money(mdSep15)} Sept-15 estimate`});
     return items;
   }
-  // Combined lines once a projected sale exists; otherwise original per-property lines.
+  // Combined full-return lines once a 6AL/95EB sale exists (actual or projected), like desktop.
   function cfSaleTaxExpenseItems(tax){
     const parts=CASH_FLOW_AUTO_PROPS.filter(p=>CF_COMBINED_SALE_TAX_PROPS.includes(p)).map(cfSaleGainComponents).filter(Boolean);
-    if(!parts.some(p=>p.projected))return CASH_FLOW_AUTO_PROPS.flatMap(prop=>cfSaleTaxItems(prop,tax));
+    if(!parts.length)return CASH_FLOW_AUTO_PROPS.flatMap(prop=>cfSaleTaxItems(prop,tax));
     const otherProps=CASH_FLOW_AUTO_PROPS.filter(p=>!CF_COMBINED_SALE_TAX_PROPS.includes(p));
     return [...cfCombinedSaleTax(parts),...otherProps.flatMap(prop=>cfSaleTaxItems(prop,tax))];
   }
@@ -396,21 +416,21 @@
     const wages=n(tp.navy_gross)+n(tp.wife_gross),business=n(tp.fmg_sp)+n(tp.fmg)+n(tp.esai),rentalNet=sum(rentalRows,x=>x.net),rentalDepr=n(tp.rental_depr),rentalTaxInc=rentalNet-rentalDepr;
     const interest=n(tp.treasury_int)+n(tp.ally_int)+n(tp.rh_int)+n(tp.ibkr_int),dividends=n(tp.rh_div)+n(tp.ibkr_div),cryptoIncome=n(tp.crypto_income);
     const propertyGain=n(tp.property_sale_taxable_gain)+n(tp.property_sale_2_taxable_gain),recapture=n(tp.property_sale_depr_recapture)+n(tp.property_sale_2_depr_recapture);
-    const shortGains=n(tp.crypto_st)+n(tp.rh_st)+n(tp.ibkr_st),longGains=n(tp.crypto_lt)+n(tp.rh_lt)+n(tp.ibkr_lt)+propertyGain;
+    const shortGains=n(tp.crypto_st)+n(tp.rh_st)+n(tp.megan_rh_st)+n(tp.ibkr_st),longGains=n(tp.crypto_lt)+n(tp.rh_lt)+n(tp.ibkr_lt)+propertyGain;
     const netSe=Math.max(0,business)*.9235,seTax=Math.min(netSe,184500)*.124+netSe*.029,halfSe=seTax/2;
-    const gross=wages+business+rentalTaxInc+interest+dividends+cryptoIncome+shortGains+longGains+recapture,ira=Math.min(n(tp.ira),15000),agi=Math.max(0,gross-ira-halfSe);
-    const std=n(tp.std_ded)||32200,qbiCap=.2*Math.max(0,(agi-std)-(Math.max(0,longGains)+recapture)),qbi=tp.use_qbi===false?0:Math.min(Math.max(0,business-halfSe)*.2,qbiCap),taxable=Math.max(0,agi-std-qbi);
+    const gross=wages+business+rentalTaxInc+interest+dividends+cryptoIncome+shortGains+longGains+recapture,ira=Math.min(n(tp.ira),15000),solo401k=Math.max(0,n(tp.fmg_solo_401k)),agi=Math.max(0,gross-ira-solo401k-halfSe);
+    const std=n(tp.std_ded)||32200,qbiCap=.2*Math.max(0,(agi-std)-(Math.max(0,longGains)+recapture)),qbi=tp.use_qbi===false?0:Math.min(Math.max(0,business-halfSe-solo401k)*.2,qbiCap),taxable=Math.max(0,agi-std-qbi);
     const ltcgTaxable=Math.min(Math.max(0,longGains),taxable),recaptureTaxable=Math.min(Math.max(0,recapture),Math.max(0,taxable-ltcgTaxable)),ordinaryTaxable=Math.max(0,taxable-ltcgTaxable-recaptureTaxable);
     const ordinaryTax=bracketTax(ordinaryTaxable,FED_BRACKETS),ltcgTax=capitalTax(ordinaryTaxable+recaptureTaxable,ltcgTaxable),recaptureTax=recaptureTaxable*.25;
     const investmentIncome=interest+dividends+longGains+shortGains+cryptoIncome+recapture+Math.max(0,rentalTaxInc),niit=agi>250000?Math.min(investmentIncome,agi-250000)*.038:0;
     const addlMedicare=Math.max(0,n(tp.wife_gross)+Math.max(0,netSe)-250000)*.009,grossFederal=ordinaryTax+ltcgTax+recaptureTax+seTax+niit+addlMedicare,ctc=Math.max(0,4400-Math.max(0,Math.ceil((agi-400000)/1000))*50),federalTax=Math.max(0,grossFederal-ctc);
-    const federalWithheld=n(tp.navy_fed)+n(tp.wife_fed),estimated=sum(tp.estimated_payments||[]),federalPaid=federalWithheld+estimated,federalOwed=federalTax-federalPaid;
+    const federalWithheld=n(tp.navy_fed)+n(tp.wife_fed),estimated=sum((tp.estimated_payments||[]).filter(p=>p.type!=='state')),federalPaid=federalWithheld+estimated,federalOwed=federalTax-federalPaid;
     const navyExempt=Math.min(n(tp.navy_gross),12500),md529=n(tp.md_529),mdAgi=Math.max(0,agi-navyExempt-md529),mdPerExempt=agi<=150000?3200:agi<=175000?1600:agi<=200000?800:0,mdExempt=mdPerExempt*4,mdTaxable=Math.max(0,mdAgi-6700-mdExempt);
     const mdState=bracketTax(mdTaxable,MD_BRACKETS),county=tp.md_county||'Wicomico',countyTax=mdTaxable*(MD_COUNTY[county]||0);
-    const st=n(tp.crypto_st)+n(tp.rh_st)+n(tp.ibkr_st);let mdLt=n(tp.crypto_lt)+n(tp.rh_lt)+n(tp.ibkr_lt);
+    const st=shortGains;let mdLt=n(tp.crypto_lt)+n(tp.rh_lt)+n(tp.ibkr_lt);
     for(const prefix of ['property_sale','property_sale_2'])if(tp[`${prefix}_imported`]){const primary=['731WO','4781MC'].includes(tp[`${prefix}_property`])&&n(tp[`${prefix}_price`])<1500000;if(!primary)mdLt+=n(tp[`${prefix}_taxable_gain`])+n(tp[`${prefix}_depr_recapture`])}
-    const surchargeBase=agi>350000?Math.max(0,mdLt+Math.min(0,st)):0,surcharge=surchargeBase*.02,mdTax=mdState+countyTax+surcharge,mdWithheld=n(tp.navy_state)+n(tp.wife_state),mdOwed=mdTax-mdWithheld;
-    return {wages,business,rentalNet,rentalDepr,rentalTaxInc,interest,dividends,cryptoIncome,shortGains,longGains,recapture,gross,ira,halfSe,agi,std,qbi,taxable,ordinaryTax,ltcgTax,recaptureTax,seTax,niit,ctc,federalTax,federalWithheld,estimated,federalPaid,federalOwed,navyExempt,md529,mdAgi,mdExempt,mdTaxable,mdState,county,countyTax,surcharge,mdTax,mdWithheld,mdOwed};
+    const surchargeBase=agi>350000?Math.max(0,mdLt+Math.min(0,st)):0,surcharge=surchargeBase*.02,mdTax=mdState+countyTax+surcharge,mdWithheld=n(tp.navy_state)+n(tp.wife_state),mdEstimated=sum((tp.estimated_payments||[]).filter(p=>p.type==='state')),mdPaid=mdWithheld+mdEstimated,mdOwed=mdTax-mdPaid;
+    return {wages,business,rentalNet,rentalDepr,rentalTaxInc,interest,dividends,cryptoIncome,shortGains,longGains,recapture,gross,ira,solo401k,halfSe,agi,std,qbi,taxable,ordinaryTax,ltcgTax,recaptureTax,seTax,niit,ctc,federalTax,federalWithheld,estimated,federalPaid,federalOwed,navyExempt,md529,mdAgi,mdExempt,mdTaxable,mdState,county,countyTax,surcharge,mdTax,mdWithheld,mdEstimated,mdPaid,mdOwed};
   }
   function renderSavings(){
     const s=state.data.savings||{}; const accounts=s.accounts||{}; const obligations=s.obligations||[]; const paidMap=s.payments?.[String(YEAR)]||{};
