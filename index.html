@@ -82,21 +82,6 @@
     }
     .theme-toggle:hover { background: var(--border); }
 
-    .btn-signout {
-      background: var(--danger);
-      color: white;
-      border: 1px solid var(--danger);
-      border-radius: var(--radius);
-      padding: 0.35rem 0.7rem;
-      cursor: pointer;
-      font-size: 0.8rem;
-      font-weight: 600;
-      line-height: 1;
-      transition: background 0.15s;
-      flex-shrink: 0;
-    }
-    .btn-signout:hover { background: #dc2626; }
-
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
@@ -1590,7 +1575,6 @@
         </div>
       </details>
       <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Toggle dark mode">🌙</button>
-      <button class="btn-signout" id="signout-btn" onclick="signOut()" title="Sign out">Sign Out</button>
     </div>
   </div>
   <div class="view-nav" id="view-nav" style="display:none">
@@ -1980,7 +1964,7 @@
  *   Solar ROI          renderSolar(): solar panel ROI tracking + billing cycle calculator
  *   Security           escHtml(), escAttr() — always use on user-supplied content
  *   Password Gate      session-based auth via sessionStorage; callApi() auto-redirects on 401
- *   Theme / Sign Out / Init
+ *   Theme / Init
  */
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -18407,26 +18391,6 @@ function toggleTheme() {
 
 // Apply persisted theme on load (icon sync — data-theme already set by <head> script)
 applyTheme(localStorage.getItem('theme') || 'light');
-
-// ── Sign Out ─────────────────────────────────────────────────────────────────
-
-async function signOut() {
-  try {
-    await fetch(`${API}/api/data`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: sessionAuthHeaders(),
-      body: JSON.stringify({ action: 'logout' })
-    });
-  } catch { /* ignore logout network errors */ }
-  sessionStorage.removeItem(SESSION_KEY);
-  sessionStorage.removeItem(SESSION_TOKEN_KEY);
-  clearSensitiveRuntimeState();
-  state.password = '';
-  showPasswordGate();
-}
-
-window.signOut = signOut;
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
