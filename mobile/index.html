@@ -117,6 +117,11 @@
     input[type=date]::-webkit-date-and-time-value{text-align:left}
     .mom-del{border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:10px;min-height:0;padding:6px 10px;font-weight:800;font-size:.78rem;margin-left:10px}
     .mom-del.armed{border-color:var(--bad);color:var(--bad)}
+    .mom-edit-row{padding:12px 0;border-bottom:1px solid var(--line)}
+    .mom-edit-row input{min-height:46px;margin-bottom:8px}
+    .mom-edit-actions{display:flex;gap:8px}
+    .mom-edit-actions .h-mini{flex:1}
+    .mom-edit-actions .mom-save{background:var(--green2);border-color:var(--green2);color:#fff}
     .h-nums{display:flex;gap:8px}
     .h-nums input{margin-bottom:0;text-align:center;padding:0 6px}
     .h-mini{min-height:46px;padding:0 16px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);font-weight:800;flex:0 0 auto}
@@ -555,15 +560,46 @@
       </form></section>`;
   }
   // Two-tap delete: the first tap arms the button ("Delete?"), the second removes.
-  let _momDeleteArmed='',_momDeletePending='';
+  // Edit swaps the row for an inline form (one row at a time).
+  let _momDeleteArmed='',_momDeletePending='',_momEditId='',_momEditPending=false,_momEditError='',_momEditDraft=null;
   function momDiscretionaryRow(item,key){
     const id=String(item.id||''),armed=_momDeleteArmed===id,busy=_momDeletePending===id;
-    const btn=id?`<button class="mom-del ${armed?'armed':''}" ${busy?'disabled':''} data-id="${esc(id)}" data-month="${esc(key)}" onclick="momDeleteDiscretionary(this.dataset.id,this.dataset.month)" aria-label="Delete ${esc(item.name||'purchase')}">${busy?'…':armed?'Delete?':'✕'}</button>`:'';
-    return `<div class="row"><div><div class="row-name">${esc(item.name||'Discretionary')}</div><div class="row-note">${esc(item.date||'')}</div></div><div style="display:flex;align-items:center"><div class="row-value">${esc(fullMoney(item.amount))}</div>${btn}</div></div>`;
+    if(id&&_momEditId===id){
+      const v=_momEditDraft||item;
+      return `<form class="mom-edit-row" data-id="${esc(id)}" data-month="${esc(key)}" onsubmit="momSaveDiscretionaryEdit(event,this.dataset.id,this.dataset.month)">
+        <input id="mom-edit-date" type="date" value="${esc(v.date||'')}" min="${MOM_TRACKING_START_MONTH}-01" required>
+        <input id="mom-edit-name" type="text" maxlength="160" value="${esc(v.name||'')}" placeholder="Description" autocomplete="off" required>
+        <input id="mom-edit-amount" type="number" inputmode="decimal" step="0.01" min="0.01" value="${esc(v.amount??'')}" placeholder="Amount" required>
+        <div class="mom-edit-actions"><button class="h-mini" type="button" onclick="momCancelEdit()" ${_momEditPending?'disabled':''}>Cancel</button><button class="h-mini mom-save" type="submit" ${_momEditPending?'disabled':''}>${_momEditPending?'Saving…':'Save'}</button></div>
+        ${_momEditError?`<div class="row-note" style="color:var(--bad);margin-top:8px">${esc(_momEditError)}</div>`:''}
+      </form>`;
+    }
+    const btns=id?`<button class="mom-del" data-id="${esc(id)}" onclick="momEditDiscretionary(this.dataset.id)" aria-label="Edit ${esc(item.name||'purchase')}">Edit</button><button class="mom-del ${armed?'armed':''}" ${busy?'disabled':''} data-id="${esc(id)}" data-month="${esc(key)}" onclick="momDeleteDiscretionary(this.dataset.id,this.dataset.month)" aria-label="Delete ${esc(item.name||'purchase')}">${busy?'…':armed?'Delete?':'✕'}</button>`:'';
+    return `<div class="row"><div><div class="row-name">${esc(item.name||'Discretionary')}</div><div class="row-note">${esc(item.date||'')}</div></div><div style="display:flex;align-items:center"><div class="row-value">${esc(fullMoney(item.amount))}</div>${btns}</div></div>`;
+  }
+  function momEditDiscretionary(id){if(_momEditPending)return;_momEditId=id;_momEditDraft=null;_momEditError='';_momDeleteArmed='';render();}
+  function momCancelEdit(){_momEditId='';_momEditDraft=null;_momEditError='';render();}
+  async function momSaveDiscretionaryEdit(event,id,key){
+    event.preventDefault();
+    if(_momEditPending)return;
+    const date=$('#mom-edit-date').value,name=$('#mom-edit-name').value.trim(),rawAmount=$('#mom-edit-amount').value,amount=Math.round(Number(rawAmount)*100)/100;
+    _momEditDraft={date,name,amount:rawAmount};   // survives a re-render if the save fails
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!name||!(amount>0)){_momEditError='Enter a date, description, and amount.';return render();}
+    _momEditPending=true;_momEditError='';render();
+    try{
+      const res=await api({action:'update_mom_budget_entry',section:'discretionary',month:key,id,entry:{date,name,amount}});
+      if(res.data)state.data.mom=res.data;
+      _momEditId='';_momEditDraft=null;state.momMonth=date.slice(0,7);state.lastSync=new Date();updateSync();
+    }catch(err){
+      _momEditError=err.message||'Could not save the change.';
+      // Entry deleted elsewhere → close the form; otherwise keep it open with the draft.
+      try{const fresh=(await api({action:'get_mom_budget'})).data;if(fresh){if(!(fresh.months?.[key]?.discretionary||[]).some(e=>e.id===id)){_momEditId='';_momEditDraft=null;}state.data.mom=fresh;}}catch{}
+    }
+    finally{_momEditPending=false;if(state.view==='mom')render();}
   }
   async function momDeleteDiscretionary(id,key){
     if(_momDeletePending)return;
-    if(_momDeleteArmed!==id){_momDeleteArmed=id;render();return;}
+    if(_momDeleteArmed!==id){_momDeleteArmed=id;_momEditId='';render();return;}
     _momDeletePending=id;_momAddError='';render();
     try{
       const res=await api({action:'delete_mom_budget_entry',section:'discretionary',month:key,id});

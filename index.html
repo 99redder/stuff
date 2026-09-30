@@ -9011,29 +9011,35 @@ async function mbToggleVariableLock(key) {
 
 async function _saveMomBudget() {
   try {
-    // Reconcile with changes made elsewhere (the phone app) since this copy
-    // loaded: keep entries added there, and drop entries deleted there, so a
-    // full save never erases or resurrects them. Entries this editor saw and
-    // then deleted are in _mbKnownEntryIds and stay deleted.
+    // Reconcile ledgers with changes made elsewhere (the phone app adds, edits,
+    // and deletes entries) since this copy loaded. The editor never edits an
+    // existing entry, so for every entry it already knew about the server copy
+    // wins — including one moved to another month. On top of that, keep this
+    // editor's own additions (ids it never saw on the server) and its own
+    // deletions (known ids it no longer has). A full save therefore never
+    // erases, resurrects, or reverts a change made on the phone.
     let merged = false;
     try {
       const latest = (await callApi({ action: 'get_mom_budget' })).data || {};
       const serverIds = mbLedgerIds(latest);
-      for (const month of Object.values(state.momBudget.months || {})) {
+      const localIds = mbLedgerIds(state.momBudget);
+      const deletedHere = new Set([..._mbKnownEntryIds].filter(id => !localIds.has(id)));
+      const keys = new Set([...Object.keys(state.momBudget.months || {}), ...Object.keys(latest.months || {})]);
+      for (const key of keys) {
         for (const section of MB_LEDGER_SECTIONS) {
-          if (!Array.isArray(month?.[section])) continue;
-          const kept = month[section].filter(e => !(e?.id && _mbKnownEntryIds.has(e.id) && !serverIds.has(e.id)));
-          if (kept.length !== month[section].length) { month[section] = kept; merged = true; }
-        }
-      }
-      for (const [key, month] of Object.entries(latest.months || {})) {
-        for (const section of MB_LEDGER_SECTIONS) {
-          const extra = (month?.[section] || []).filter(e => e?.id && !_mbKnownEntryIds.has(e.id));
-          if (!extra.length) continue;
+          const localList = state.momBudget.months[key]?.[section] || [];
+          const serverList = latest.months?.[key]?.[section] || [];
+          const next = [
+            ...localList.filter(e => !e?.id),                                        // legacy id-less rows
+            ...serverList.filter(e => e?.id && !deletedHere.has(e.id)),              // server is current
+            ...localList.filter(e => e?.id && !_mbKnownEntryIds.has(e.id) && !serverIds.has(e.id)), // added here
+          ];
+          const same = next.length === localList.length &&
+            next.every(e => localList.some(l => l === e || JSON.stringify(l) === JSON.stringify(e)));
+          if (same) continue;
           const local = state.momBudget.months[key] || (state.momBudget.months[key] = mbBlankMonth());
-          if (!Array.isArray(local[section])) local[section] = [];
-          const have = new Set(local[section].map(e => e.id));
-          extra.filter(e => !have.has(e.id)).forEach(e => { local[section].push(e); merged = true; });
+          local[section] = next;
+          merged = true;
         }
       }
     } catch { /* couldn't check — save what we have */ }

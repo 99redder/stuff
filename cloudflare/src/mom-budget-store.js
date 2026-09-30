@@ -59,6 +59,31 @@ export class MomBudgetStore extends DurableObject {
     });
   }
 
+  // Update one ledger entry's fields, atomically. A new date in another month
+  // moves the entry into that month's ledger (ledgers are keyed by month).
+  async updateLedgerEntry(monthKey, section, id, fields) {
+    const current = await this.getBudget();
+    return this.ctx.storage.transaction(async txn => {
+      const data = (await txn.get('budget')) ?? current ?? {};
+      const list = data.months?.[monthKey]?.[section];
+      const index = Array.isArray(list) ? list.findIndex(e => e?.id === id) : -1;
+      if (index < 0) return { data, updated: false };
+      const entry = { ...list[index], ...fields, id };
+      const targetKey = String(entry.date || '').slice(0, 7) || monthKey;
+      if (targetKey === monthKey) {
+        list[index] = entry;
+      } else {
+        list.splice(index, 1);
+        const target = data.months[targetKey] || (data.months[targetKey] = {});
+        if (!Array.isArray(target[section])) target[section] = [];
+        target[section].push(entry);
+      }
+      await txn.put('budget', data);
+      await txn.setAlarm(Date.now() + 1000);
+      return { data, updated: true, entry };
+    });
+  }
+
   async alarm() {
     const data = await this.ctx.storage.get('budget');
     if (data !== undefined) {

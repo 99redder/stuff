@@ -313,6 +313,7 @@ async function handleDataApi(request, env) {
   if (action === 'save_mom_budget') return handleSaveMomBudget(env, body.data);
   if (action === 'add_mom_budget_entry') return handleAddMomBudgetEntry(env, body);
   if (action === 'delete_mom_budget_entry') return handleDeleteMomBudgetEntry(env, body);
+  if (action === 'update_mom_budget_entry') return handleUpdateMomBudgetEntry(env, body);
 
   if (action === 'get_solar_config')     return handleGetSolarConfig(env);
   if (action === 'save_solar_config')    return handleSaveSolarConfig(env, body.config);
@@ -1718,18 +1719,45 @@ async function handleSaveMomBudget(env, data) {
 // Append a single Discretionary purchase (used by the snapshot phone app). The
 // entry is validated here and appended inside the Durable Object transaction.
 const MB_ADDABLE_SECTIONS = new Set(['discretionary']);
+// Validates { date, name, amount } for an add or an edit; returns an error string.
+function momLedgerFieldsError(fields) {
+  if (!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(fields.date)) return 'Invalid date';
+  if (!fields.name) return 'Description is required';
+  if (!Number.isFinite(fields.amount) || fields.amount <= 0 || fields.amount > 100000) return 'Invalid amount';
+  return '';
+}
+function momLedgerFields(entry) {
+  return {
+    date: String(entry?.date || ''),
+    name: String(entry?.name || '').trim().slice(0, 160),
+    amount: Math.round(Number(entry?.amount) * 100) / 100,
+  };
+}
+
 async function handleAddMomBudgetEntry(env, body) {
   const section = String(body.section || '');
-  const date = String(body.entry?.date || '');
-  const name = String(body.entry?.name || '').trim().slice(0, 160);
-  const amount = Math.round(Number(body.entry?.amount) * 100) / 100;
+  const { date, name, amount } = momLedgerFields(body.entry);
   if (!MB_ADDABLE_SECTIONS.has(section)) return jsonResponse({ error: 'Unsupported section' }, 400);
-  if (!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(date)) return jsonResponse({ error: 'Invalid date' }, 400);
-  if (!name) return jsonResponse({ error: 'Description is required' }, 400);
-  if (!Number.isFinite(amount) || amount <= 0 || amount > 100000) return jsonResponse({ error: 'Invalid amount' }, 400);
+  const invalid = momLedgerFieldsError({ date, name, amount });
+  if (invalid) return jsonResponse({ error: invalid }, 400);
   const entry = { id: `${section}-${crypto.randomUUID()}`, date, amount, name };
   const data = await env.MOM_BUDGET_STORE.getByName('mom_budget').addLedgerEntry(date.slice(0, 7), section, entry);
   return jsonResponse({ success: true, entry, data });
+}
+
+async function handleUpdateMomBudgetEntry(env, body) {
+  const section = String(body.section || '');
+  const month = String(body.month || '');
+  const id = String(body.id || '').slice(0, 120);
+  const fields = momLedgerFields(body.entry);
+  if (!MB_ADDABLE_SECTIONS.has(section)) return jsonResponse({ error: 'Unsupported section' }, 400);
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return jsonResponse({ error: 'Invalid month' }, 400);
+  if (!id) return jsonResponse({ error: 'Missing id' }, 400);
+  const invalid = momLedgerFieldsError(fields);
+  if (invalid) return jsonResponse({ error: invalid }, 400);
+  const result = await env.MOM_BUDGET_STORE.getByName('mom_budget').updateLedgerEntry(month, section, id, fields);
+  if (!result.updated) return jsonResponse({ error: 'That purchase was removed elsewhere.', data: result.data }, 404);
+  return jsonResponse({ success: true, entry: result.entry, data: result.data });
 }
 
 async function handleDeleteMomBudgetEntry(env, body) {
