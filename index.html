@@ -9011,12 +9011,21 @@ async function mbToggleVariableLock(key) {
 
 async function _saveMomBudget() {
   try {
-    // Carry over entries added elsewhere (the phone app) since this copy loaded,
-    // so a full save never erases them. Entries this editor saw and then deleted
-    // are in _mbKnownEntryIds and stay deleted.
+    // Reconcile with changes made elsewhere (the phone app) since this copy
+    // loaded: keep entries added there, and drop entries deleted there, so a
+    // full save never erases or resurrects them. Entries this editor saw and
+    // then deleted are in _mbKnownEntryIds and stay deleted.
     let merged = false;
     try {
       const latest = (await callApi({ action: 'get_mom_budget' })).data || {};
+      const serverIds = mbLedgerIds(latest);
+      for (const month of Object.values(state.momBudget.months || {})) {
+        for (const section of MB_LEDGER_SECTIONS) {
+          if (!Array.isArray(month?.[section])) continue;
+          const kept = month[section].filter(e => !(e?.id && _mbKnownEntryIds.has(e.id) && !serverIds.has(e.id)));
+          if (kept.length !== month[section].length) { month[section] = kept; merged = true; }
+        }
+      }
       for (const [key, month] of Object.entries(latest.months || {})) {
         for (const section of MB_LEDGER_SECTIONS) {
           const extra = (month?.[section] || []).filter(e => e?.id && !_mbKnownEntryIds.has(e.id));

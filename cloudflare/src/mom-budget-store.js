@@ -43,6 +43,22 @@ export class MomBudgetStore extends DurableObject {
     });
   }
 
+  // Remove one ledger entry by id, atomically (see addLedgerEntry).
+  async removeLedgerEntry(monthKey, section, id) {
+    const current = await this.getBudget();
+    return this.ctx.storage.transaction(async txn => {
+      const data = (await txn.get('budget')) ?? current ?? {};
+      const list = data.months?.[monthKey]?.[section];
+      const removed = Array.isArray(list) && list.some(e => e?.id === id);
+      if (removed) {
+        data.months[monthKey][section] = list.filter(e => e?.id !== id);
+        await txn.put('budget', data);
+        await txn.setAlarm(Date.now() + 1000);
+      }
+      return { data, removed };
+    });
+  }
+
   async alarm() {
     const data = await this.ctx.storage.get('budget');
     if (data !== undefined) {
