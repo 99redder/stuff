@@ -27,6 +27,22 @@ export class MomBudgetStore extends DurableObject {
     });
   }
 
+  // Append one ledger entry atomically, so an add from the phone snapshot app
+  // can never be lost to (or clobber) a concurrent full save from the editor.
+  async addLedgerEntry(monthKey, section, entry) {
+    const current = await this.getBudget();
+    return this.ctx.storage.transaction(async txn => {
+      const data = (await txn.get('budget')) ?? current ?? {};
+      if (!data.months || typeof data.months !== 'object') data.months = {};
+      const month = data.months[monthKey] || (data.months[monthKey] = {});
+      if (!Array.isArray(month[section])) month[section] = [];
+      month[section].push(entry);
+      await txn.put('budget', data);
+      await txn.setAlarm(Date.now() + 1000);
+      return data;
+    });
+  }
+
   async alarm() {
     const data = await this.ctx.storage.get('budget');
     if (data !== undefined) {

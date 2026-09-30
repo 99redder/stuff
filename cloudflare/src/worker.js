@@ -274,9 +274,6 @@ async function handleDataApi(request, env) {
   if (action === 'verify_password') {
     return handleVerifyPassword(request, env, body.password, body.rememberDevice === true, body.code);
   }
-  if (action === 'logout') {
-    return handleLogout(request, env);
-  }
   if (action === 'verify_session') {
     const ok = await isAuthenticated(request, env);
     return jsonResponse({ ok }, ok ? 200 : 401);
@@ -314,6 +311,7 @@ async function handleDataApi(request, env) {
   if (action === 'refresh_usda_food_benchmark') return handleRefreshUsdaFoodBenchmark();
   if (action === 'get_mom_budget') return handleGetMomBudget(env);
   if (action === 'save_mom_budget') return handleSaveMomBudget(env, body.data);
+  if (action === 'add_mom_budget_entry') return handleAddMomBudgetEntry(env, body);
 
   if (action === 'get_solar_config')     return handleGetSolarConfig(env);
   if (action === 'save_solar_config')    return handleSaveSolarConfig(env, body.config);
@@ -547,14 +545,6 @@ async function handleVerifyPassword(request, env, password, rememberDevice = fal
 
   return jsonResponse({ ok: true, sessionToken:token, expiresIn:sessionTtl }, 200, {
     'Set-Cookie': `${SESSION_COOKIE}=${token}; Max-Age=${sessionTtl}; Path=/; HttpOnly; Secure; SameSite=None`,
-  });
-}
-
-async function handleLogout(request, env) {
-  const token = getSessionToken(request);
-  if (token) await env.RENTALS.delete(`session:${await sha256Hex(token)}`);
-  return jsonResponse({ success: true }, 200, {
-    'Set-Cookie': `${SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=None`,
   });
 }
 
@@ -1722,6 +1712,23 @@ async function handleSaveMomBudget(env, data) {
   }
   await env.MOM_BUDGET_STORE.getByName('mom_budget').saveBudget(data);
   return jsonResponse({ success: true });
+}
+
+// Append a single Discretionary purchase (used by the snapshot phone app). The
+// entry is validated here and appended inside the Durable Object transaction.
+const MB_ADDABLE_SECTIONS = new Set(['discretionary']);
+async function handleAddMomBudgetEntry(env, body) {
+  const section = String(body.section || '');
+  const date = String(body.entry?.date || '');
+  const name = String(body.entry?.name || '').trim().slice(0, 160);
+  const amount = Math.round(Number(body.entry?.amount) * 100) / 100;
+  if (!MB_ADDABLE_SECTIONS.has(section)) return jsonResponse({ error: 'Unsupported section' }, 400);
+  if (!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(date)) return jsonResponse({ error: 'Invalid date' }, 400);
+  if (!name) return jsonResponse({ error: 'Description is required' }, 400);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 100000) return jsonResponse({ error: 'Invalid amount' }, 400);
+  const entry = { id: `${section}-${crypto.randomUUID()}`, date, amount, name };
+  const data = await env.MOM_BUDGET_STORE.getByName('mom_budget').addLedgerEntry(date.slice(0, 7), section, entry);
+  return jsonResponse({ success: true, entry, data });
 }
 
 // Only called after the separate, read-only phone session has been verified.

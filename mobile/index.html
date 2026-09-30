@@ -527,9 +527,42 @@
       <div class="hero"><div class="hero-label">Left to spend this month</div><div class="hero-value">${money(x.left)}</div><div class="hero-note">${money(x.budget)} budget minus ${money(x.spent+x.emergencySpent)} spending and ${money(x.overages)} overages</div></div>
       <div class="grid">${stat('Discretionary left',money(x.discretionaryLeft),`${money(x.spent)} of ${money(x.discretionary)} spent`,x.discretionaryLeft<0?'bad':'good')}${stat('Emergency left',money(x.emergencyLeft),`${money(x.emergencySpent)} of ${money(x.emergency)} spent`,x.emergencyLeft<0?'bad':'good')}${stat('Overages',money(x.overages),'fixed and other',x.overages?'bad':'good')}</div>
       ${card('Fixed monthly spending',fixedRows,label)}
+      ${momAddDiscretionaryCard(key,todayMonth)}
       ${card('Discretionary spending',discretionaryRows,label)}
       ${card('Emergencies / unplanned',emergencyRows,label)}
       ${otherRows?card('Other expense overages',otherRows,label):''}`;
+  }
+
+  // The one Mom Budget write the snapshot app makes: append a Discretionary
+  // purchase via add_mom_budget_entry (atomic on the server, so it can't clobber
+  // or be clobbered by the desktop editor). Her phone reads the same record.
+  let _momAddError='',_momAddPending=false,_momAddDraft=null;
+  function momAddDiscretionaryCard(key,todayMonth){
+    const now=new Date(),today=`${todayMonth}-${String(now.getDate()).padStart(2,'0')}`;
+    const last=new Date(Number(key.slice(0,4)),Number(key.slice(5,7)),0).getDate();
+    const d=_momAddDraft&&_momAddDraft.date.slice(0,7)===key?_momAddDraft:null,value=d?d.date:key===todayMonth?today:`${key}-01`;
+    return `<section class="card"><div class="card-head"><div class="card-title">Add discretionary purchase</div></div>
+      <form class="h-form" id="mom-add-form" onsubmit="momAddDiscretionary(event)" style="border-top:0">
+        <input id="mom-add-date" type="date" value="${value}" min="${key}-01" max="${key}-${String(last).padStart(2,'0')}" required>
+        <input id="mom-add-name" type="text" maxlength="160" placeholder="Description" autocomplete="off" value="${esc(d?.name||'')}" required>
+        <div class="h-nums"><input id="mom-add-amount" type="number" inputmode="decimal" step="0.01" min="0.01" placeholder="Amount" value="${esc(d?.amount||'')}" style="text-align:left;padding:0 15px" required><button class="h-mini" type="submit" ${_momAddPending?'disabled':''}>${_momAddPending?'Adding…':'Add'}</button></div>
+        ${_momAddError?`<div class="row-note" style="color:var(--bad);margin-top:8px">${esc(_momAddError)}</div>`:''}
+      </form></section>`;
+  }
+  async function momAddDiscretionary(event){
+    event.preventDefault();
+    if(_momAddPending)return;
+    const date=$('#mom-add-date').value,name=$('#mom-add-name').value.trim(),rawAmount=$('#mom-add-amount').value,amount=Math.round(Number(rawAmount)*100)/100;
+    _momAddDraft={date,name,amount:rawAmount};
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!name||!(amount>0)){_momAddError='Enter a date, description, and amount.';render();return;}
+    _momAddPending=true;_momAddError='';render();
+    try{
+      const res=await api({action:'add_mom_budget_entry',section:'discretionary',entry:{date,name,amount}});
+      if(res.data)state.data.mom=res.data;
+      _momAddDraft=null;
+      state.momMonth=date.slice(0,7);state.lastSync=new Date();updateSync();
+    }catch(err){_momAddError=err.message||'Could not add the purchase.';}
+    finally{_momAddPending=false;if(state.view==='mom')render();}
   }
 
   function renderProperties(){

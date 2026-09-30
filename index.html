@@ -7948,10 +7948,26 @@ function mbNormalize(raw) {
   return data;
 }
 
+// Ledger entries can also be added from the snapshot phone app
+// (add_mom_budget_entry), so the editor reloads on every visit and tracks which
+// entry ids it has seen. _saveMomBudget uses that to keep outside additions.
+const MB_LEDGER_SECTIONS = ['discretionary', 'emergency', 'otherExpenses'];
+let _mbKnownEntryIds = new Set();
+function mbLedgerIds(data) {
+  const ids = new Set();
+  for (const month of Object.values(data?.months || {})) {
+    for (const section of MB_LEDGER_SECTIONS) (month?.[section] || []).forEach(e => e?.id && ids.add(e.id));
+  }
+  return ids;
+}
+
 async function renderMomBudget() {
-  if (!state.momBudget) {
+  try {
     const result = await callApi({ action: 'get_mom_budget' });
     state.momBudget = mbNormalize(result.data || {});
+    _mbKnownEntryIds = mbLedgerIds(state.momBudget);
+  } catch (err) {
+    if (!state.momBudget) throw err;   // offline — keep showing the last loaded copy
   }
   // Household reimbursement is auto-valued from Monthly Budget.
   try { await ensureBudgetLoaded(); } catch { /* offline — keep last synced value */ }
@@ -8994,9 +9010,31 @@ async function mbToggleVariableLock(key) {
 }
 
 async function _saveMomBudget() {
-  try { await callApi({ action: 'save_mom_budget', data: state.momBudget }); }
+  try {
+    // Carry over entries added elsewhere (the phone app) since this copy loaded,
+    // so a full save never erases them. Entries this editor saw and then deleted
+    // are in _mbKnownEntryIds and stay deleted.
+    let merged = false;
+    try {
+      const latest = (await callApi({ action: 'get_mom_budget' })).data || {};
+      for (const [key, month] of Object.entries(latest.months || {})) {
+        for (const section of MB_LEDGER_SECTIONS) {
+          const extra = (month?.[section] || []).filter(e => e?.id && !_mbKnownEntryIds.has(e.id));
+          if (!extra.length) continue;
+          const local = state.momBudget.months[key] || (state.momBudget.months[key] = mbBlankMonth());
+          if (!Array.isArray(local[section])) local[section] = [];
+          const have = new Set(local[section].map(e => e.id));
+          extra.filter(e => !have.has(e.id)).forEach(e => { local[section].push(e); merged = true; });
+        }
+      }
+    } catch { /* couldn't check — save what we have */ }
+    await callApi({ action: 'save_mom_budget', data: state.momBudget });
+    _mbKnownEntryIds = mbLedgerIds(state.momBudget);
+    if (merged && state.currentView === 'mom-budget') _renderMomBudgetHtml();
+  }
   catch { /* non-critical — data is in memory */ }
 }
+
 
 // ── Solar ROI ────────────────────────────────────────────────────────────────
 
@@ -18391,6 +18429,15 @@ function toggleTheme() {
 
 // Apply persisted theme on load (icon sync — data-theme already set by <head> script)
 applyTheme(localStorage.getItem('theme') || 'light');
+
+// Pick up purchases added from the phone when returning to this tab — unless
+// something on the page is being edited.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || state.currentView !== 'mom-budget') return;
+  const active = document.activeElement;
+  if (active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return;
+  renderMomBudget().catch(() => {});
+});
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
