@@ -309,3 +309,15 @@ test('Month Math drops the Fixed bills paid row and the ledger cards carry icons
   assert.match(html, /icon: MB_VARIABLE_META\.discretionary\.icon/);
   assert.match(html, /icon: MB_VARIABLE_META\.emergency\.icon/);
 });
+
+test('the emergency fund carries unused money forward through the year', () => {
+  const a = app();
+  a.state.momBudget = a.mbNormalize(legacyRecord());
+  // October: $200 set aside, $240 spent — $40 short, nothing carried in.
+  assert.equal(a.mbLedgerYearStat('emergency', 'emergency', '2026').diff, -40);
+  const october = a.mbLedgerTotalHtml('emergency', a.state.momBudget.months['2026-10'].emergency, 'emergency');
+  assert.match(october, /2026 fund available/);
+  assert.match(october, /\$40\.00/);
+  // Discretionary stays a plain monthly budget.
+  assert.doesNotMatch(a.mbLedgerTotalHtml('discretionary', [], 'discretionary'), /fund available/);
+});

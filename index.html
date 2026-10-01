@@ -7632,7 +7632,10 @@ const MB_VARIABLE_META = {
   emergency: {
     label: 'Emergencies / Unplanned',
     icon: '\u{1F6A8}',
-    ledgerNote: 'Set aside for emergencies and unplanned costs. Kept separate so a surprise expense does not eat the month\u2019s discretionary budget.'
+    // A fund rather than a monthly cap: whatever a month doesn't use carries
+    // forward through the rest of the calendar year.
+    carryover: true,
+    ledgerNote: 'Set aside for emergencies and unplanned costs. Kept separate so a surprise expense does not eat the month\u2019s discretionary budget. Unused money carries over and builds up through the year.'
   }
 };
 const MB_VARIABLE_FIXED_BILL_IDS = new Set(['electric', 'water', 'gas-heat']);
@@ -8776,6 +8779,23 @@ function mbLedgerTotalHtml(section, entries, budgetKey) {
   const spent = entries.reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
   const budget = mbVariableAmount(budgetKey, _mbMonth);
   const left = budget - spent;
+  if (MB_VARIABLE_META[budgetKey]?.carryover) {
+    // Year to date through the month on screen: everything set aside so far
+    // this year, less everything spent from it.
+    const ytd = mbLedgerYearStat(section, budgetKey, _mbMonth.slice(0, 4));
+    const carriedIn = ytd.diff - left;
+    return `
+    <div class="mb-ledger-total">
+      <div>
+        <div class="mb-ledger-total-label">${escHtml(_mbMonth.slice(0, 4))} fund available</div>
+        <div class="mb-ledger-total-value" style="color:${ytd.diff < 0 ? 'var(--danger)' : 'var(--success)'}">${ytd.diff < 0 ? '−' : ''}${fmt(Math.abs(ytd.diff))}</div>
+      </div>
+      <div class="mb-ledger-total-meta">
+        <div><strong>${carriedIn < 0 ? '−' : ''}${fmt(Math.abs(carriedIn))}</strong> carried in + <strong>${fmt(budget)}</strong> this month</div>
+        <div><strong>${fmt(spent)}</strong> spent in ${escHtml(mbMonthLabel(_mbMonth, 'long'))}</div>
+      </div>
+    </div>`;
+  }
   return `
     <div class="mb-ledger-total">
       <div>
