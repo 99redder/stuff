@@ -342,9 +342,6 @@ async function handleDataApi(request, env) {
   if (action === 'get_savings')  return handleGetSavings(env);
   if (action === 'save_savings') return handleSaveSavings(env, body.data);
 
-  // Health — global (workouts, diet/calories, weight loss, rewards)
-  if (action === 'get_health')  return handleGetHealth(env);
-  if (action === 'save_health') return handleSaveHealth(env, body.data);
   if (action === 'get_robinhood_balance') return handleGetRobinhoodBalance(env, body.refresh === true, 'client', ROBINHOOD_ACCOUNTS.checking);
   if (action === 'get_robinhood_brokerage_balance') return handleGetRobinhoodBalance(env, body.refresh === true, 'client', ROBINHOOD_ACCOUNTS.brokerage);
   if (action === 'get_net_worth') return handleGetNetWorth(env);
@@ -2632,28 +2629,6 @@ async function acknowledgeTaxUpdate(env) {
 async function handleGetSavings(env) {
   const data = await env.RENTALS.get('savings', 'json') || {};
   return jsonResponse({ data });
-}
-
-// ── Health ───────────────────────────────────────────────────────────────────
-// Single global KV record `health` holding the whole tracker (profile/targets,
-// food database, workout + meal plan templates, reward schedule, per-day logs,
-// weekly weigh-ins). The frontend owns the shape; the save is a full overwrite
-// with a top-level whitelist so stray keys don't accumulate.
-async function handleGetHealth(env) {
-  const data = await env.RENTALS.get('health', 'json') || {};
-  return jsonResponse({ data });
-}
-
-async function handleSaveHealth(env, data) {
-  if (!data || typeof data !== 'object') {
-    return jsonResponse({ error: 'Missing data object' }, 400);
-  }
-  const clean = {};
-  for (const key of ['profile', 'foods', 'workoutPlan', 'mealPlan', 'rewardSchedule', 'days', 'weighIns']) {
-    if (data[key] !== undefined) clean[key] = data[key];
-  }
-  await env.RENTALS.put('health', JSON.stringify(clean));
-  return jsonResponse({ success: true, data: clean });
 }
 
 // ── Net Worth ────────────────────────────────────────────────────────────────

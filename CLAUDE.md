@@ -58,14 +58,13 @@ A full table of contents is in the `NAVIGATION GUIDE` block comment at the very 
 
 ### Navigation (two-tier)
 ```
-Header buttons: [❤️ Health]  [🏠 Properties]  [Monthly Budget]  [Cash Flow]  [Tax Planning]  [More ▸ Net Worth · 💰 Savings · ☀️ Solar · Deductions · Mom Budget]
+Header buttons: [🏠 Properties]  [Monthly Budget]  [Cash Flow]  [Tax Planning]  [More ▸ Net Worth · 💰 Savings · ☀️ Solar · Deductions · Mom Budget]
 Property tabs:  [6AL]  [95EB]  [446BB]  [731WO]  [4781MC]     ← shown ONLY in property mode (behind 🏠 Properties)
 View tabs:      [Current Year]  [Tax Summary]  [Investment Return]  [Historical]  [Maintenance]  [Move-In Purchases]  [Later List]  [All Properties]
 ```
-- **Health is the default landing view** on load (`state.currentView` initializes to `'health'`; the header/tabs chrome is set by calling `switchView(state.currentView)` — not bare `renderView()` — in `initApp` and after login so the correct buttons/tabs are active).
-- The **❤️ Health** header button is deliberately styled **red** (`.tp-header-btn.health-btn`) to stand out from the green tools.
-- **The per-property tabs live behind the `🏠 Properties` header button** — they are **not** always displayed. `switchToProperties()` enters "property mode": it shows `#property-tabs` + `#view-nav`, marks `#properties-btn` active, and lands on the last-used property view (`_lastPropertyView`, tracked in `switchView`/`switchProperty`) or the current property's `defaultViewForProperty`. `isPropertyMode(view)` = `!GLOBAL_HEADER_VIEWS.has(view)` is the single source of truth: `switchView` shows the property tabs + toggles `#properties-btn` active only in property mode, and hides both `#property-tabs` and `#view-nav` for global header views. Initial HTML has `#property-tabs`/`#view-nav` at `display:none` and `#health-btn` pre-marked `active` to avoid a flash before JS runs.
-- Global header views (`GLOBAL_HEADER_VIEWS`: `tax-planning`, `net-worth`, `budget`, `cash-flow`, `mom-budget`, `solar`, `deductions`, `savings`, `health`) hide the property tabs and the view-nav. **All Properties** (`portfolio`) is a property view (tabs shown, no single tab highlighted).
+- **Cash Flow is the default landing view** on load (`state.currentView` initializes to `'cash-flow'`; the header/tabs chrome is set by calling `switchView(state.currentView)` — not bare `renderView()` — in `initApp` and after login so the correct buttons/tabs are active).
+- **The per-property tabs live behind the `🏠 Properties` header button** — they are **not** always displayed. `switchToProperties()` enters "property mode": it shows `#property-tabs` + `#view-nav`, marks `#properties-btn` active, and lands on the last-used property view (`_lastPropertyView`, tracked in `switchView`/`switchProperty`) or the current property's `defaultViewForProperty`. `isPropertyMode(view)` = `!GLOBAL_HEADER_VIEWS.has(view)` is the single source of truth: `switchView` shows the property tabs + toggles `#properties-btn` active only in property mode, and hides both `#property-tabs` and `#view-nav` for global header views. Initial HTML has `#property-tabs`/`#view-nav` at `display:none` and `#cash-flow-btn` pre-marked `active` to avoid a flash before JS runs.
+- Global header views (`GLOBAL_HEADER_VIEWS`: `tax-planning`, `net-worth`, `budget`, `cash-flow`, `mom-budget`, `solar`, `deductions`, `savings`) hide the property tabs and the view-nav. **All Properties** (`portfolio`) is a property view (tabs shown, no single tab highlighted).
 - **731WO** and **4781MC** are primary residences — only show Investment Return and Maintenance views (`PRIMARY_PROPERTIES` / `PRIMARY_VIEWS` constants).
 - **Move-In Purchases** and **Later List** are available only on **4781MC** (`MOVE_IN_PURCHASE_PROPERTY` / `LATER_LIST_PROPERTY`).
 - Switching property tabs reloads the current view for the new property.
@@ -88,7 +87,6 @@ View tabs:      [Current Year]  [Tax Summary]  [Investment Return]  [Historical]
 | Move-In Purchases | `move-in-purchases` | **4781MC only** — move-in shopping list with per-item categories, price totals, and an edit mode |
 | Later List | `later-list` | **4781MC only** — same setup as Move-In Purchases, for purchases planned *after* move-in; independent KV records |
 | Net Worth | `net-worth` | Assets minus liabilities — linked bank balances, manual items, vehicles, property equity, treasury portfolio; includes the bank-sync warning banner + **Reconnect** flow |
-| Health | `health` | Global workouts / diet / weight-loss / rewards tracker. Four sub-views (Daily · Weekly · History · Setup) selected in-view; state persists in `localStorage` key `rentals_health_view`. See the **Health** section below. |
 
 ### State Model
 ```javascript
@@ -379,9 +377,7 @@ The service worker is intentionally network-first and calls `registration.update
 
 ### Mobile Snapshot PWA (`mobile/index.html`)
 
-Separate **authenticated** phone PWA ("Red's Stuff Snapshot") — distinct from the public Mom Budget phone page. It logs in with the same password/session as the desktop app and shows **Budget, Cash Flow, Tax, Savings, Net Worth, Mom, Properties** (all read-only) plus **Health** (read-**write** — the one exception) in a bottom-tab layout (8 tabs, `grid-template-columns:repeat(8,1fr)`).
-
-**Health tab (read-write, daily-only)** — `renderHealth` + `h*` helpers (`hToggleWorkout`/`hToggleReward`/`hBumpHabit`/`hToggleHabit`/`hAddFood`/`hEditFood`/`hSaveFood`/`hDeleteFood`/`hQuickFood`), all routed through `healthMutate(fn)` which mutates `state.data.health`, re-renders optimistically, then persists the whole record via **`save_health`** (reloading on failure). Loads `get_health`. Shows **today only** (ET via `healthTodayISO`): the day's workout (checkable), an editable food log (quick-add chips from `foods` + add/edit/delete, calorie/protein target from a mirrored `healthTargets`), a view-only **weight** card (`healthWeightChart` + weigh-in log), AM/PM **rewards** (Mon–Fri, PM gated via `hUnlocked`), and **daily habits** (counter steppers / checkboxes, Wed water bumped via `healthHabitGoal`). Deliberately **omits** Setup, Weekly, and History — the desktop owns setup/normalization; this is a thin client that relies on the record already being populated/normalized (shows a "set up on desktop" banner if empty). Like the other mobile views it **mirrors desktop logic and can go stale** — keep `healthTargets`/`healthHabitGoal`/reward+habit shapes in sync with `index.html`.
+Separate **authenticated** phone PWA ("Red's Stuff Snapshot") — distinct from the public Mom Budget phone page. It logs in with the same password/session as the desktop app and shows **Budget, Cash Flow, Tax, Savings, Net Worth, Mom, Properties** (all read-only) in a bottom-tab layout.
 
 **It reimplements the desktop view math in its own `<script>`** (`renderCashFlow`, `renderNetWorth`, `mobileTaxCalc`, `momMonth`, etc.) reading the same Worker actions. **This is a parallel implementation that silently goes stale when desktop logic changes** — when you change a calculation in `index.html` (cash-flow derivations, net-worth asset building, tax brackets, Mom Budget math), mirror it here or the PWA shows different numbers. Known mirrors already in place:
 - **Cash Flow "4781MC Move In Stuff"** derives from the 4781MC Move-In Purchases total (`cfExpenseAmount` / `CF_MOVE_IN_STUFF_LABEL`); the cashflow load path fetches `get_move_in_purchases`.
@@ -392,7 +388,7 @@ Separate **authenticated** phone PWA ("Red's Stuff Snapshot") — distinct from 
 
 **Mom tab can add, edit, and delete Discretionary purchases** (date / description / amount; inline **Edit** form; two-tap `✕` → `Delete?`) via `add_mom_budget_entry` / `update_mom_budget_entry` / `delete_mom_budget_entry` — an atomic server-side append, not a full save, so it never clobbers the desktop editor. Desktop reloads Mom Budget on every visit and on tab re-focus, and `_saveMomBudget` reconciles ledgers before every full save: desktop never edits an existing entry, so for any entry it already knew (`_mbKnownEntryIds`) the server copy wins (phone edits and month moves are kept); on top of that it keeps its own additions and its own deletions. A stale desktop copy therefore can't erase, resurrect, or revert a phone change. Her phone PWA reads the same Durable Object record (5s poll), so it shows the purchase as quickly as a desktop edit.
 
-Apart from the Health tab and that one Mom add, it only reads; it never calls `refresh_net_worth_plaid` or any other save/editing action. Network-first SW (`mobile/sw.js`) with `reg.update()` on launch — **bump `CACHE_NAME` on any `mobile/` change** so installed apps pull the new page.
+Apart from the Mom tab's Discretionary add/edit/delete, it only reads; it never calls `refresh_net_worth_plaid` or any other save/editing action. Network-first SW (`mobile/sw.js`) with `reg.update()` on launch — **bump `CACHE_NAME` on any `mobile/` change** so installed apps pull the new page.
 
 ### Savings View
 
@@ -430,36 +426,6 @@ On load, if no obligation has a `kind` field, a one-time migration backfills `ki
 **Outstanding math:** Each obligation has `paymentsPerYear` "slots." Each slot = `amount / paymentsPerYear`. Outstanding = sum across all obligations of `slotAmount × (paymentsPerYear − paidCount)`.
 
 **Sort:** `_savSort` controls obligation order in the table — `default` (input order), `amount` (largest first), `alpha` (A→Z by name), `status` (unpaid/highest-outstanding first).
-
----
-
-### Health View
-
-Global (not per-property) tracker for **workouts, diet/calories, weight loss, and daily rewards**. One KV record `health` via `get_health` / `save_health` (full overwrite, mirroring budget/mom_budget/savings). Frontend state is `state.health`; **every mutation saves the whole record then re-renders**.
-
-**Primary anchors in `index.html`:** section starts at `// ── View: Health`. Seed defaults in `healthDefault()` (calls `healthDefaultMeals(kind)`); normalize/merge in `healthNormalize(raw)`; load/save `loadHealth()` / `saveHealth()`; render dispatch `renderHealth()` → `_renderHealthHtml()`.
-
-**Four sub-views** (segmented control in the header; active view persists in `localStorage` `rentals_health_view`, module var `_healthView`):
-- **Daily** (`healthDailyHtml`) — date nav (`_healthDate`), calorie ring + macro bars, that weekday's **workout** and **meal plan** with check-offs, a **food log** (quick-add chips of most-used foods + manual add with optional "save to database"; per-row edit/delete), a **reward** row, and **Close Day →** (snapshots `day.totals`, sets `closed:true`). Mondays show a **weigh-in** card (required).
-- **Weekly** (`healthWeeklyHtml`) — 7-day Mon–Sun grid (`_healthWeekMon`), weekly averages, and the week's weigh-in with week-over-week delta. Clicking a day jumps to Daily.
-- **History** (`healthHistoryHtml`) — weight-loss progress (start→current→goal) with an inline-SVG trend line (`healthWeightChart`), the full weigh-in log, and the **closed-days** historical table.
-- **Setup** (`healthSetupHtml`) — goals/profile + computed targets, per-weekday workout & meal-plan editors, the reward schedule, and the **food database** manager.
-
-**Targets math** (`healthTargets`, editable overrides): Mifflin-St Jeor (male) BMR → ×`activityFactor` (default 1.375, light/walking) = TDEE → minus `ratePerWeek`×500 = auto calorie goal (floor 1500). Auto macros from current weight: protein ≈ 0.9 g/lb, fat ≈ 25% kcal, carbs = remainder. Current weight = latest weigh-in, else `startWeight`. `profile.calorieGoal` / `profile.macros.{protein,carbs,fat}` are `null` = auto, or a number = manual override. Seed profile: 43M, 5'5" (65 in), 185→155 lb.
-
-**Workout plan** is a staged Mon–Fri progression (Sat/Sun rest via `HEALTH_REST_DAYS`). The official restart is Monday **2026-09-14**. A one-time `profile.sept142026ResetV1` migration clears dated days and weigh-ins while preserving reusable goals, foods, meal plans, rewards, and workout setup. A follow-up `profile.healthEquipmentV1` migration applies the available-equipment rules: regular push-ups throughout, bench press instead of a chest press machine, lat pull-down, ab wheel, and bands only for bicep curls. The first fortnight is intentionally simple: one-set regular push-ups plus a 10-minute easy walk on Monday and Thursday, one-set lat pull-down plus the walk on Tuesday and Friday, and a 10-minute walk on Wednesday. New exercises arrive every two weeks through week 11; sets increase gradually to a maximum of three and walking tops out at 30 minutes. `healthWorkoutsForDate(iso, h)` is the single source of truth for daily checkboxes, adherence, rewards, weekly/history views, and the mobile mirror. Setup shows each exercise's starting week. Built for the user's home gym and age-conscious recovery. Weekdays are keyed `'1'`–`'5'` (0=Sun … 6=Sat) in `workoutPlan` / `mealPlan` / `rewardSchedule`. Meal plan seeds Factor 75 lunches Mon/Wed/Fri and a post-workout protein shake on training days.
-
-**Dates** use UTC-based helpers (`healthAddDays` / `healthWeekday` / `healthMondayOf`) so calendar math never shifts across time zones. Weigh-ins are stored once per week, dated that week's **Monday**.
-
-**Program start date** (`profile.startDate`, default `2026-09-14`, a Monday): the view lands there until the program begins, and **navigation is clamped** so you can't view dates before it (Daily ◀/date-`min`/Today and Weekly ◀ Prev are disabled; `healthSetDate`/`healthShiftDay`/`healthShiftWeek`/`healthThisWeek` hard-clamp). **Start weight** ties to the first weigh-in on/after the start date (`healthStartWeight`) — the first Sep 14 weigh-in becomes the baseline.
-
-**Streaks & adherence** (`healthDayAdherence` / `healthStreak` / `healthRewardUnlocked`): a day is "on plan" when its workout is fully done (rest days auto-pass), calories are logged and at/under goal, and habit goals are met. Daily shows 🔥 on-plan / 🏋️ workout / 🍽️ on-calorie **streak** tiles (an in-progress today with no data doesn't break a streak); Weekly shows an **On-Plan %** tile. **Reward gating** (`profile.rewardGated`, off by default): when on, the daily reward checkbox stays 🔒 locked until the day's workout + calorie targets are met.
-
-**Daily habits** — a **configurable list** `profile.habits` (each `{id,name,icon,type,goal,unit}`; `type:'counter'` renders a −/+ stepper toward `goal`, `type:'check'` renders a checkbox). Per-day values in `day.habits` keyed by habit id (counter = count, check = 0/1). Default seed: **Water** (counter, 8 glasses), **Stretch / mobility** (check), **Supplements** (check). Edited in the Setup **Daily Habits** card (`healthAddHabit`/`healthDeleteHabit`/`healthUpdateHabit`); logged via `healthBumpHabit`/`healthToggleHabitCheck`. All habits meeting their goal is part of `habitsOk` in adherence; they surface compactly (icon+value / icon+✓) in the Weekly grid cells. `healthNormHabit` normalizes; `mbNormalize`… n/a — a one-time migration in `healthNormalize` converts the old `profile.habitGoals` (water/steps/sleep) to the list, preserving a custom water goal and dropping steps/sleep.
-
-**Band exercise demos** (`healthExerciseDemoHtml` / `HEALTH_BAND_DEMOS` / `healthBandDemo`): every resistance-band exercise (detected via `/band/i` on the name) gets a collapsible **"🔍 Show me how"** panel under it in the Daily workout list — minimized by default, open state tracked in `_healthDemoOpen` (UI-only, via `<details ontoggle>`). Each shows a **looping animated demonstration GIF** at `health-demos/{img}.gif` (a Start↔Finish morph built with ImageMagick from `{img}-1.jpg`/`-2.jpg`; the jpgs are kept as source/fallback) — same-origin so the strict CSP `img-src 'self'` allows it (external hosts blocked; `data:` also allowed). `loading="lazy"` defers the load until the panel opens. Below the GIF: numbered band-setup cues and a **"More photos & videos ↗"** web-image link. Add a move by pushing to `HEALTH_BAND_DEMOS` (`{ test:/regex/, img:'basename', label, steps:[…] }`) and dropping `basename-1/2.jpg` + a generated `basename.gif` into `health-demos/` (regen command in that folder's README); order matters (specific before generic `row`/`curl`/`press`). Images are openly-licensed (Everkinetic via free-exercise-db, CC BY-SA 3.0) — see `health-demos/README.md`; some moves use the closest equivalent (dumbbell/cable) equipment. The old inline-SVG schematic (`healthDemoSvg`/`hArrow`/`hLine`/`hHand`) remains only as the generic fallback for an unmatched band exercise.
-
-**Not on the mobile PWA** yet — desktop `index.html` only (parallel read-only mirror to be added in a later pass if wanted).
 
 ---
 
@@ -752,12 +718,6 @@ All of these reject any property other than `4781MC` (`requireLaterListProperty`
 | `get_tax_planning` | `year` (4-digit string) | `{ data: { ... } }` |
 | `save_tax_planning` | `year`, `data: {...}` | `{ success: true }` |
 
-#### Health (global — not per-property)
-| Action | Extra payload | Returns |
-|---|---|---|
-| `get_health` | — | `{ data: {...} }` — the whole health record (empty `{}` on first use → frontend seeds defaults and saves) |
-| `save_health` | `data: {...}` | `{ success: true, data }` — full overwrite; the worker whitelists top-level keys (`profile`, `foods`, `workoutPlan`, `mealPlan`, `rewardSchedule`, `days`, `weighIns`) but keeps nested structure as-is. The frontend owns the shape. |
-
 #### Savings (global — not per-property)
 | Action | Extra payload | Returns |
 |---|---|---|
@@ -801,7 +761,6 @@ solar:summaries            →  { [year]: { ... } }
 deductions                 →  Array of deduction entry objects
 tax_planning:{year}        →  Tax planning inputs for that year
 savings                    →  { accounts: {robinhoodChecking, robinhoodBrokerage}, obligations: [...], payments: { [year]: { [oid]: [bool, ...] } } }
-health                     →  { profile:{startDate,startWeight,goalWeight,habits:[{id,name,icon,type:'counter'|'check',goal,unit,note}],rewardGated,fasting:{weekday,cutoffLabel,waterGoal},…}, foods:[...], workoutPlan:{[wd]:[...]}, mealPlan:{[wd]:[...]}, rewardSchedule:{[1-5]:{am,pm}}, days:{[YYYY-MM-DD]:{workoutsDone,mealsDone,foodLog,habits:{[habitId]:number},rewardAm,rewardPm,rewardTextAm,rewardTextPm,closed,…}}, weighIns:[{date,weight}] }
 net_worth                  →  { manualItems, vehicles, propertyAssets, plaidAccounts, treasuryPortfolio, plaidRefreshedAt, history }
 move_in_purchases:{property}  →  Array of move-in purchase objects (4781MC only)
 move_in_categories:{property} →  Array of category name strings (4781MC only)
@@ -876,6 +835,11 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ## Recent Updates
 
+### 2026-10-01 — Health tab removed
+
+- **The Health tracker (workouts / diet / weight / rewards / habits) is gone from both apps.** Desktop: the `❤️ Health` header button, the whole `// ── View: Health` section, `state.health`, the `health` view case and its CSS. Mobile PWA: the Health nav tab, `renderHealth` + every `h*` helper and its health-only `.h-*` styles (`.h-form` / `.h-nums` / `.h-mini` stay — the Mom tab uses them); nav grid is 4 columns; `CACHE_NAME` → `v43`. The mobile app's only write path is now the Mom tab's Discretionary add/edit/delete.
+- **Worker:** `get_health` / `save_health` and their handlers removed from the shared `rentals-api` worker (redeployed). The `health` KV record was deleted from the `RENTALS` namespace. `health-demos/` and `tests/health-progression.test.mjs` were deleted.
+
 ### 2026-09-22 — Mom Budget: September stays an $800 lump, October starts the split
 
 - **September 2026 is pinned as a single `$800` discretionary budget with `$0` emergency**, so the Month Math rows add up to the $800 it was tracked against all month — it is the only month that runs as a lump. **October 1 flips to `$400` discretionary + `$200` emergencies = `$600`.** Applied by the one-time `octoberSplitV2` migration (app + worker), which supersedes `octoberBudgetV1`: the first pass could leave the emergency budget effective from September if the amount was typed with September on screen.
@@ -899,49 +863,6 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 - **Mirrored everywhere:** worker public summary (new `discretionaryBudget` / `emergencyBudget` / `emergencySpent` / `emergencyRemaining` fields, emergency transactions group), `mom-budget-phone.html` (dynamic allowance text + Discretionary / Emergencies cards, `CACHE_NAME` → `v20`), and `mobile/index.html` (`momVariable()`, emergency stat + card, `CACHE_NAME` → `v35`). New `tests/mom-budget-variable-budgets.test.mjs` pins app/worker/mobile to the same numbers.
 - **Fixed a latent footgun:** editing `mom-budget-phone.html`'s inline script invalidated its pinned CSP sha256 hash, which silently blocked the whole page. Hash regenerated and now guarded by a test.
 - **Worker deploy required** for the phone to show the new allowance and emergency figures.
-
-### 2026-08-14 — Health: completion celebration (confetti + toast + haptic)
-
-- Checking off a **workout item** or **daily habit** (or a counter habit reaching its goal) fires a satisfying burst: a Web-Animations-API **confetti** spray from the tapped control + an encouragement **toast** (random `HEALTH_CHEERS`, or a bigger "🎉 Workout complete!" / "🌟 All habits done!" when it's the last one) + a `navigator.vibrate` haptic on mobile. Only on marking **done**, never on un-checking. Elements live in a fixed `#h-fx-layer` overlay so the view re-render doesn't kill them; they self-remove on animation finish. Honors `prefers-reduced-motion` (skips confetti, keeps a fade-only toast). Desktop (`index.html`: `healthCelebrate`/`healthConfettiBurst`/`healthToast`, event threaded through the toggle handlers) and mobile (`mobile/index.html`: `hCelebrate`, `sw` → `v22`) both implement it; no external libs (CSP-safe).
-
-### 2026-08-14 — Health tab added to the mobile PWA (read-write, daily)
-
-- **`mobile/index.html` gains a Health tab** (8th nav button) — the **first read-write** view in the otherwise read-only Snapshot PWA. Daily-only: today's workout (check off), editable **food log** (quick-add chips + add/edit/delete), view-only **weight** (line chart + weigh-in log), AM/PM **rewards** (Mon–Fri, PM gating), and **daily habits** (counters/checkboxes, Wed fasting water bump). All edits go through `healthMutate` → `save_health` (optimistic render, reload on failure). No Setup/Weekly/History — desktop owns those; empty record → "set up on desktop" banner. Nav grid 7→8 cols; `CACHE_NAME` → `v21`. It re-mirrors desktop `healthTargets`/`healthHabitGoal`/reward+habit shapes, so keep them in sync.
-
-### 2026-08-14 — Health: AM/PM rewards (Mon–Fri) + Wednesday IF day
-
-- **Two rewards per day (☀️ AM + 🌙 PM), Mon–Fri only** — weekends have none. `rewardSchedule[1-5] = {am,pm}`; day-level `rewardAm`/`rewardPm` (+ `rewardTextAm`/`rewardTextPm` overrides). Reward-gating (`rewardGated`) now applies to **PM only** (AM is always free). Setup editor has AM+PM inputs per weekday; weekly "Rewards Earned" is out of 10; weekly cells show `🎁 ☀️/· 🌙/·`. `healthNormRewardSchedule` migrates the old single-string-per-weekday shape (value→AM) and drops weekend entries; the day-level `rewardEarned`/`rewardText` migrate to the AM slot in `healthEnsureDay`.
-- **Wednesday is the intermittent-fasting day** (`profile.fasting = {weekday:3, cutoffLabel:'10 AM', waterGoal:12}`): eat breakfast, stop by 10 AM, fast to next morning. Its meal plan is the new `healthDefaultMeals('fasting')` (breakfast + "⛔ Kitchen closed at 10 AM"); the Daily meal card shows an ⏳ IF banner. **Higher water goal on Wed** via `healthHabitGoal(hb,wd)` (used in the habits card + adherence; shows "↑ fasting day"). Wednesday's reward is **Red Bull (sugar-free)** — no calories, doesn't break the fast. A guarded one-time `profile.wedFastingV1` migration swaps an unmodified default Wednesday meal plan to the fasting one.
-
-### 2026-08-14 — Health: Monday is a front-loaded "weekend reset"
-
-- **Monday's older front-loaded workout migration** (superseded by the Sep 14 gradual restart) placed regular push-ups, bench press, lat pull-down, ab wheel, extra core, and a longer walk first. The current plan starts much smaller and adds those movements over time.
-- Applied to existing saved plans via a guarded one-time `profile.mondayFrontloadedV1` migration in `healthNormalize` — rewrites Monday **only if it's still the unmodified original** (by exercise ids), never clobbering custom edits; `loadHealth` persists it on first apply.
-
-### 2026-09-08 — Health: Sep 14 gradual restart
-
-- Restarted the official program date at Monday, Sep 14, 2026 and cleared date-specific days and weigh-ins once while retaining reusable Health setup.
-- Added a shared dated workout progression used by desktop and mobile: regular pushups are part of the first week, the opening checklist is short, and movements/sets/walk duration increase every two weeks through week 11. Closed days snapshot their dated requirements for stable history. The equipment migration keeps bench press, lat pull-down, ab wheel, and bands for bicep curls only.
-
-### 2026-08-14 — Health: configurable daily habits (drop steps/sleep)
-
-- **Daily habits are now a configurable list** (`profile.habits`, each `{id,name,icon,type,goal,unit}`) instead of the hardcoded water/steps/sleep. `type:'counter'` = −/+ stepper toward a goal; `type:'check'` = checkbox. Per-day values live in `day.habits` keyed by habit id. Editable in the Setup **Daily Habits** card (add/delete/rename/goal). `healthNormalize` migrates old `habitGoals` records (keeps a custom water goal, drops steps/sleep).
-- **Removed Steps** (covered by the walking cardio) and **Sleep** (not fully controllable with a toddler). **Default seed:** Water (8 glasses), Stretch / mobility (✓), Supplements (✓). All still feed streaks/adherence and show in the weekly grid.
-
-### 2026-08-14 — Health: start-date locking, streaks/adherence, daily habits
-
-- **Program start date** `profile.startDate = 2026-08-17` (a Monday; weeks already run Mon→Sun). The view lands there until the program starts, and **navigation before it is blocked** — Daily ◀/date-`min`/Today and Weekly ◀ Prev disable at the boundary, and all four nav mutators hard-clamp.
-- **Start weight ties to the first weigh-in** on/after the start date (`healthStartWeight`); logging the Aug 17 weigh-in auto-sets `profile.startWeight`, and History measures progress from it.
-- **Streaks & adherence** — `healthDayAdherence` defines "on plan" (workout fully done / calories at-or-under goal / habit goals met); `healthStreak` powers 🔥/🏋️/🍽️ streak tiles on Daily (an untouched today doesn't break a streak) and an **On-Plan %** tile on Weekly. Optional **reward gating** (`profile.rewardGated`) locks the daily reward until workout + calorie targets are met (`healthRewardUnlocked`, enforced in UI + `healthToggleReward`).
-- **Daily habit trackers** — `day.habits = {water,steps,sleep}` with goals in `profile.habitGoals` (default 8 glasses / 8000 steps / 7 hrs). Daily Habits card (water stepper, steps, sleep) with per-goal ✓; habits show compactly in Weekly cells and count toward adherence. Habit goals + gating are editable in Setup.
-
-### 2026-08-14 — Health tab (workouts / diet / weight loss / rewards)
-
-- **New global `❤️ Health` view** (red header button so it stands out from the green tools; `.tp-header-btn.health-btn`). Backed by one KV record `health` via new worker actions `get_health` / `save_health` (full overwrite, top-level whitelist). Added to `GLOBAL_HEADER_VIEWS`, `state.health`, `switchView`, and the `renderView` dispatch. **Worker deploy required** (done).
-- **Four sub-views** — Daily, Weekly, History, Setup (see the **Health View** section above). Daily gives a calorie ring + macro bars, the day's workout + meal plan with check-offs, an editable food log with a recallable food database (quick-add chips of most-used items), a daily reward, and a **Close Day** action that snapshots totals into the permanent historical record. Mondays require a weigh-in (one per week, dated the Monday).
-- **Auto calorie/macro targets** from Mifflin-St Jeor (editable overrides): seed profile 43M · 5'5" · 185→155 lb · walking-only cardio → BMR 1661, TDEE 2284, **~1785 kcal/day** target, 167P / 167C / 50F. `healthTargets()` recomputes from the latest weigh-in.
-- **Workout plan** uses the user's equipment (lat pull-down, bench press, ab wheel, resistance bands for bicep curls, regular push-ups + abs) — a Mon–Fri split with age-conscious recovery, **weekends rest**, push-ups featured as the primary lift, and walking as the only cardio. Meal plan seeds Factor 75 lunches (Mon/Wed/Fri) + post-workout protein shakes.
-- Desktop `index.html` only for now — not mirrored into the read-only mobile PWA yet.
 
 ### 2026-08-12 — Tax Planning projection: 6AL sale proceeds interest; repair line removed
 

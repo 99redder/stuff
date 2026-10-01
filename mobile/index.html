@@ -92,24 +92,13 @@
     .property-strip::-webkit-scrollbar{display:none}
     .property-chip{flex:0 0 auto;border:1px solid var(--line);background:var(--card);color:var(--muted);padding:10px 15px;border-radius:999px;font-weight:800}
     .property-chip.active{background:var(--green);border-color:var(--green);color:white}
-    .nav{position:fixed;z-index:20;left:0;right:0;bottom:0;background:rgba(15,25,43,.95);border-top:1px solid var(--line);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);padding:7px 3px max(7px,env(safe-area-inset-bottom));display:grid;grid-template-columns:repeat(5,1fr)}
+    .nav{position:fixed;z-index:20;left:0;right:0;bottom:0;background:rgba(15,25,43,.95);border-top:1px solid var(--line);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);padding:7px 3px max(7px,env(safe-area-inset-bottom));display:grid;grid-template-columns:repeat(4,1fr)}
     .nav-btn{border:0;background:transparent;color:var(--muted);padding:5px 0 3px;font-size:.53rem;font-weight:750;min-width:0}
     .nav-icon{display:block;font-size:1.25rem;line-height:1.3;filter:grayscale(1);opacity:.7}
     .nav-btn.active{color:var(--green)}.nav-btn.active .nav-icon{filter:none;opacity:1}
     .loading{padding:80px 20px;text-align:center;color:var(--muted);font-weight:700}
     .spinner{width:30px;height:30px;border:3px solid var(--line);border-top-color:var(--green2);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 14px}@keyframes spin{to{transform:rotate(360deg)}}
     .banner{border-radius:15px;padding:12px 14px;margin-bottom:12px;background:#3a2d16;color:#f4cf83;font-size:.78rem;font-weight:650;line-height:1.4}
-    .h-banner{border-radius:15px;padding:12px 14px;margin-bottom:12px;background:var(--mint);color:var(--good);font-size:.78rem;font-weight:700;line-height:1.4}
-    .h-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;padding:12px 0;border-top:1px solid var(--line);align-items:center;margin:0}
-    .h-row:first-child{border-top:0}
-    .h-check{width:26px;height:26px;min-height:0;flex:0 0 auto;accent-color:var(--green2);margin:0;padding:0;border-radius:7px}
-    .h-name{font-size:.9rem;font-weight:750;overflow-wrap:anywhere}
-    .h-done .h-name{color:var(--muted);text-decoration:line-through}
-    .h-sub{font-size:.72rem;color:var(--muted);font-weight:500;margin-top:3px}
-    .h-step{width:42px;height:42px;min-height:0;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font-size:1.3rem;font-weight:800;display:grid;place-items:center;padding:0}
-    .h-count{min-width:40px;text-align:center;font-weight:850;font-size:1.15rem;font-variant-numeric:tabular-nums}
-    .h-chips{display:flex;flex-wrap:wrap;padding:2px 17px 10px}
-    .h-chip{border:1px solid var(--line);background:#101c2f;color:var(--ink);padding:9px 13px;border-radius:999px;font-weight:750;font-size:.78rem;margin:0 7px 7px 0}
     .h-form{padding:12px 17px 16px;border-top:1px solid var(--line)}
     .h-form input{min-height:46px;margin-bottom:8px}
     /* iOS Safari gives date inputs an intrinsic min-width that ignores width:100% */
@@ -125,7 +114,6 @@
     .h-nums{display:flex;gap:8px}
     .h-nums input{margin-bottom:0;text-align:center;padding:0 6px}
     .h-mini{min-height:46px;padding:0 16px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);font-weight:800;flex:0 0 auto}
-    .h-del{border:0;background:transparent;color:var(--muted);font-size:1.05rem;padding:8px 6px;min-height:0}
     @media (min-width:500px){main{padding-left:22px;padding-right:22px}.grid{grid-template-columns:repeat(3,1fr)}}
   </style>
 </head>
@@ -158,7 +146,6 @@
       <button class="nav-btn" data-view="cashflow"><span class="nav-icon">↗</span>Cash Flow</button>
       <button class="nav-btn" data-view="networth"><span class="nav-icon">◎</span>Net Worth</button>
       <button class="nav-btn" data-view="mom"><span class="nav-icon">♡</span>Mom</button>
-      <button class="nav-btn" data-view="health"><span class="nav-icon">❤</span>Health</button>
     </nav>
   </div>
 
@@ -172,7 +159,7 @@
   const CASH_FLOW_AUTO_PROPS = ['6AL','95EB','731WO'];
   const CF_COMBINED_SALE_TAX_PROPS = ['6AL','95EB'];  // netted into one Fed + State line
   const EXPENSE_CATS = ['Weekly Spending','Retirement Savings','School Savings','Investments','Misc Savings','Utilities','Services','Mortgage','Cars','Insurance','Travel'];
-  const TITLES = {budget:'Monthly Budget',cashflow:'2026 Cash Flow',tax:'Tax Planning',savings:'Savings',networth:'Net Worth',mom:'Mom Budget',properties:'Properties',health:'Health'};
+  const TITLES = {budget:'Monthly Budget',cashflow:'2026 Cash Flow',tax:'Tax Planning',savings:'Savings',networth:'Net Worth',mom:'Mom Budget',properties:'Properties'};
   const CAT_NAMES = {rent:'Rent Received',deposit:'Security Deposit',late_fee:'Late Fees',other_income:'Other Income',taxes:'Property Taxes',insurance:'Insurance',repairs:'Repairs & Maintenance',improvements:'Improvements',utilities:'Utilities',hoa:'HOA Fees',management:'Property Management',auto:'Auto',legal:'Legal & Professional',marketing:'Advertising',other_expense:'Other Expenses'};
   const state = {view:'budget',property:'6AL',momMonth:'',data:{},loading:false,robinhoodLoading:false,lastSync:null};
   const $ = s => document.querySelector(s);
@@ -239,11 +226,6 @@
       }
       if(state.view==='savings' && (force||!state.data.robinhood)){state.robinhoodLoading=true;pullRobinhood=true;}
       if(state.view==='mom' && (force||!state.data.mom)) state.data.mom=(await api({action:'get_mom_budget'})).data||{};
-      if(state.view==='health' && (force||!state.data.health)) {
-        const health=(await api({action:'get_health'})).data||{};
-        if(healthApplySept14Restart(health) || healthApplyEquipmentV1(health)) await api({action:'save_health',data:health});
-        state.data.health=health;
-      }
       if((state.view==='cashflow'||state.view==='properties') && (force||!state.data.transactions)){
         const results=await Promise.all(PROPERTIES.map(property=>api({action:'get_transactions',property})));
         state.data.transactions=Object.fromEntries(PROPERTIES.map((p,i)=>[p,results[i].transactions||[]]));
@@ -634,361 +616,10 @@
       ${card('Recent transactions',recent.map(t=>row(t.description||CAT_NAMES[t.category]||t.category,`${t.type==='expense'?'−':'+'}${fullMoney(t.amount)}`,t.date,t.type==='expense'?'bad':'good')).join(''))}`;
   }
 
-  // ── Health (daily · editable) ─────────────────────────────────────────────
-  // Read-write mirror of the desktop Health tab, today only. The desktop owns
-  // setup/normalization; this reads the `health` record, lets you check off the
-  // workout, add/edit/delete food, view weight, and mark rewards/habits, then
-  // saves the whole record back via save_health.
-// ── Health gradual restart (keep this block identical in desktop + mobile) ──
-const HEALTH_RESTART_DATE = '2026-09-14';
-const HEALTH_RAMP_STAGES = [
-  { week: 1, title: 'Start easy', walkMinutes: 10, note: 'One easy strength exercise on Mon, Tue, Thu and Fri. Wednesday is just a walk.' },
-  { week: 3, title: 'Build the habit', walkMinutes: 15, note: 'Add a short plank, curls or bench press. Each new movement starts with one set.' },
-  { week: 5, title: 'Add a little variety', walkMinutes: 20, note: 'Add one more movement on strength days and a gentle dead bug on Wednesday.' },
-  { week: 7, title: 'Build steadily', walkMinutes: 25, note: 'Add Monday pull-downs, Thursday twists and Friday planks.' },
-  { week: 9, title: 'Round out the routine', walkMinutes: 30, note: 'Introduce short-range ab wheel work on Monday and Wednesday leg raises.' },
-  { week: 11, title: 'Keep it consistent', walkMinutes: 30, note: 'Bring in the remaining movements. Sets grow gradually to a maximum of three; walks stay at 30 minutes.' },
-];
-const HEALTH_RAMP_EXERCISES = {
-  'mo-pu': [1, 'push'], 'mo-plank': [3, 'plank'], 'mo-cp': [5, 'bench'], 'mo-lpd': [7, 'lat'], 'mo-roll': [9, 'abwheel'], 'mo-bike': [11, 'bicycle'], 'mo-walk': [1, 'walk'],
-  'tu-lpd': [1, 'lat'], 'tu-curl': [3, 'curl'], 'tu-bike': [5, 'bicycle'], 'tu-walk': [1, 'walk'],
-  'we-walk': [1, 'walk'], 'we-db': [5, 'deadbug'], 'we-lr': [9, 'leg'], 'we-roll': [11, 'abwheel'],
-  'th-pu': [1, 'push'], 'th-cp': [3, 'bench'], 'th-roll': [5, 'abwheel'], 'th-twist': [7, 'twist'], 'th-walk': [1, 'walk'],
-  'fr-lpd': [1, 'lat'], 'fr-curl': [3, 'curl'], 'fr-lr': [5, 'leg'], 'fr-plank': [7, 'plank'], 'fr-pu': [11, 'push'], 'fr-walk': [1, 'walk'],
-};
-function healthApplySept14Restart(h) {
-  if (!h.profile || h.profile.sept142026ResetV1) return false;
-  h.profile.startDate = HEALTH_RESTART_DATE;
-  h.profile.sept2026ResetV1 = true; // supersedes the earlier Sep 7 reset
-  h.profile.sept142026ResetV1 = true;
-  h.days = {};
-  h.weighIns = [];
-  for (const [wd, exercises] of Object.entries(h.workoutPlan || {})) {
-    if (!Array.isArray(exercises)) continue;
-    h.workoutPlan[wd] = exercises.filter(e => e && (!/band/i.test(e.name || '') || /biceps curl/i.test(e.name || ''))).map((e, i) => {
-      const rule = HEALTH_RAMP_EXERCISES[e.id];
-      // Keep custom movements and their instructions, introducing them later.
-      return rule ? { ...e, ramp: { startWeek: rule[0], kind: rule[1] } }
-        : { ...e, startWeek: Math.min(11, 3 + i * 2) };
-    });
-  }
-  return true;
-}
-function healthApplyEquipmentV1(h) {
-  if (!h.profile || h.profile.healthEquipmentV1) return false;
-  const byId = HEALTH_RAMP_EXERCISES;
-  for (const [wd, exercises] of Object.entries(h.workoutPlan || {})) {
-    if (!Array.isArray(exercises)) continue;
-    h.workoutPlan[wd] = exercises
-      .filter(e => e && (!/band/i.test(e.name || '') || /biceps\s*curl/i.test(e.name || '')))
-      .map(e => {
-        const rule = byId[e.id];
-        if (!rule) return e;
-        const next = { ...e, ramp: { startWeek: rule[0], kind: rule[1] } };
-        if (rule[1] === 'push') { next.name = 'Push-Ups'; next.detail = next.detail || 'Regular push-ups'; }
-        if (rule[1] === 'bench') next.name = 'Bench Press';
-        if (rule[1] === 'abwheel') next.name = 'Ab Wheel';
-        if (rule[1] === 'curl') next.name = 'Band Biceps Curl';
-        return next;
-      });
-  }
-  h.profile.healthEquipmentV1 = true;
-  return true;
-}
-function healthProgramWeek(iso, h) {
-  const start = h.profile.startDate || HEALTH_RESTART_DATE;
-  return Math.max(0, Math.floor((Date.parse(iso + 'T12:00:00Z') - Date.parse(start + 'T12:00:00Z')) / 604800000) + 1);
-}
-function healthRampStage(week) {
-  return [...HEALTH_RAMP_STAGES].reverse().find(s => week >= s.week) || HEALTH_RAMP_STAGES[0];
-}
-function healthExerciseForWeek(e, week) {
-  const startWeek = Number(e.ramp ? e.ramp.startWeek : e.startWeek) || 1;
-  if (week < startWeek) return null;
-  if (!e.ramp) return { ...e };
-  const age = Math.floor((week - startWeek) / 2);
-  const inferredKind = !e.ramp && /push[- ]?ups?/i.test(e.name || '') ? 'push'
-    : (!e.ramp && /bench\s*press/i.test(e.name || '') ? 'bench'
-      : (!e.ramp && /ab\s*(roller|wheel)/i.test(e.name || '') ? 'abwheel' : null));
-  const kind = e.ramp ? e.ramp.kind : inferredKind;
-  if (kind === 'walk') {
-    const minutes = healthRampStage(week).walkMinutes;
-    return { ...e, name: week < 5 ? 'Easy Walk' : 'Steady Walk', sets: 1, detail: `${minutes} min at a comfortable pace — splitting it into shorter walks counts` };
-  }
-  const sets = Math.min(3, 1 + Math.floor(age / 2));
-  const reps = age === 0 ? '5' : (age === 1 ? '6–8' : '8–10');
-  const details = {
-    push: `${sets} × ${reps} — regular push-ups; stop with a few comfortable reps left`,
-    bench: `${sets} × ${age < 2 ? '8' : '8–10'} — light bench press weight, controlled movement`,
-    lat: `${sets} × ${age < 2 ? '8' : '8–10'} — light lat pull-down weight, controlled movement`,
-    curl: `${sets} × ${age < 2 ? '8' : '10–12'} — light band, controlled movement`,
-    plank: `${sets} × ${age === 0 ? '10' : (age < 3 ? '15–20' : '20–30')} sec — front plank; knees down is fine`,
-    abwheel: `${sets} × ${age < 2 ? '3–5' : '5–8'} — kneeling, short comfortable range`,
-    bicycle: `${sets} × ${age < 2 ? '8' : '12'} total — slow and controlled`,
-    deadbug: `${sets} × ${age < 2 ? '5' : '8'} / side — slow and controlled`,
-    leg: `${sets} × ${age < 2 ? '5' : '8–10'} — bend knees if needed`,
-    twist: `${sets} × ${age < 2 ? '8' : '12'} total — feet on floor, no added weight`,
-  };
-  const displayName = kind === 'push' ? 'Push-Ups' : (kind === 'bench' ? 'Bench Press' : (kind === 'abwheel' ? 'Ab Wheel' : (kind === 'plank' ? 'Front Plank' : (kind === 'curl' ? 'Band Biceps Curl' : e.name))));
-  return { ...e, name: displayName, sets, detail: details[kind] || e.detail };
-}
-function healthWorkoutsForDate(iso, h) {
-  const snapshot = h.days && h.days[iso] && h.days[iso].workoutSnapshot;
-  if (Array.isArray(snapshot)) return snapshot.map(e => ({ ...e }));
-  const week = healthProgramWeek(iso, h);
-  const wd = new Date(iso + 'T12:00:00Z').getUTCDay();
-  if (!week || wd === 0 || wd === 6) return [];
-  return ((h.workoutPlan && h.workoutPlan[wd]) || []).map(e => healthExerciseForWeek(e, week)).filter(Boolean);
-}
-// ── End Health gradual restart ──────────────────────────────────────────────
-
-  const H_WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  const H_WD_LONG=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  const M_ABBR=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  let healthEditFoodId=null;
-  const hid=()=>crypto.randomUUID?crypto.randomUUID():'h_'+Math.random().toString(36).slice(2);
-  const healthTodayISO=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York'}).format(new Date());
-  // Mirror desktop: before the program starts, land on the start date (a Monday); once underway, use today.
-  const HEALTH_DEFAULT_START=HEALTH_RESTART_DATE;
-  function healthActiveISO(h){const t=healthTodayISO(),s=(h&&h.profile&&h.profile.startDate)||HEALTH_DEFAULT_START;return t>=s?t:s;}
-  function healthWeekday(iso){const [y,m,d]=String(iso).split('-').map(Number);return new Date(Date.UTC(y,m-1,d)).getUTCDay();}
-  function fmtDay(iso){const [,m,d]=String(iso).split('-');return `${M_ABBR[+m-1]||''} ${+d}`;}
-  function healthDay(h,iso){
-    h.days=h.days||{};
-    if(!h.days[iso])h.days[iso]={closed:false,workoutsDone:{},foodLog:[],rewardAm:false,rewardPm:false,habits:{}};
-    const d=h.days[iso];d.workoutsDone=d.workoutsDone||{};d.foodLog=d.foodLog||[];d.habits=d.habits||{};
-    if(d.rewardAm===undefined)d.rewardAm=!!d.rewardEarned;if(d.rewardPm===undefined)d.rewardPm=false;
-    return d;
-  }
-  function healthTargets(h){
-    const p=h.profile||{},w=(h.weighIns||[]).slice().sort((a,b)=>String(b.date).localeCompare(String(a.date)));
-    const wLb=w.length?n(w[0].weight):(n(p.startWeight)||185),kg=wLb/2.2046226,cm=(n(p.heightIn)||65)*2.54;
-    const bmr=10*kg+6.25*cm-5*(n(p.age)||43)+5,tdee=bmr*(n(p.activityFactor)||1.375);
-    const autoCals=Math.max(1500,Math.round((tdee-(n(p.ratePerWeek)||1)*500)/5)*5);
-    const cals=n(p.calorieGoal)>0?n(p.calorieGoal):autoCals;
-    const m=p.macros||{},protein=n(m.protein)>0?n(m.protein):Math.round(wLb*0.9);
-    return {calories:cals,protein,weight:wLb};
-  }
-  function healthHabitGoal(h,hb,wd){const f=h.profile&&h.profile.fasting;if(f&&f.weekday===wd&&hb.id==='water'&&n(f.waterGoal)>0)return n(f.waterGoal);return n(hb.goal)||1;}
-  // Use the same dated requirements for display, checkboxes, rewards and history.
-  function hPlanFor(h,iso){return healthWorkoutsForDate(iso,h);}
-  function hUnlocked(h,iso){
-    const wd=healthWeekday(iso),d=healthDay(h,iso),exs=hPlanFor(h,iso),isRest=wd===0||wd===6;
-    const wDone=exs.filter(e=>healthExDone(d,e)).length,workoutOk=isRest?true:(exs.length>0&&wDone===exs.length);
-    const consumed=sum(d.foodLog,x=>n(x.calories));return workoutOk&&consumed>0&&consumed<=healthTargets(h).calories;
-  }
-  async function healthMutate(fn){
-    const h=state.data.health;if(!h)return;fn(h);render();
-    try{await api({action:'save_health',data:h});state.lastSync=new Date();updateSync();}
-    catch(err){try{state.data.health=(await api({action:'get_health'})).data||{};}catch{}render();}
-  }
-  const H_CHEERS=['💪 Nice work!','🔥 Crushing it!','✅ Done!','👏 Keep it up!','⚡ Boom!','🙌 Yes!','🌱 Progress!','🚀 Let’s go!'];
-  const hCheer=()=>H_CHEERS[Math.floor(Math.random()*H_CHEERS.length)];
-  function hAllHabits(h,iso){const wd=healthWeekday(iso),d=healthDay(h,iso),list=(h.profile&&h.profile.habits)||[];return list.length>0&&list.every(hb=>hb.type==='counter'?n(d.habits[hb.id])>=healthHabitGoal(h,hb,wd):n(d.habits[hb.id])>=1);}
-  function hFxLayer(){let l=document.getElementById('h-fx-layer');if(!l){l=document.createElement('div');l.id='h-fx-layer';l.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:9999;overflow:hidden';document.body.appendChild(l);}return l;}
-  function hConfetti(x,y,count){const layer=hFxLayer(),colors=['#43b9a1','#53d3b1','#e9b85f','#2563eb','#a855f7','#ff837b','#ec4899'];
-    for(let i=0;i<count;i++){const p=document.createElement('div');const size=6+Math.random()*7,ang=Math.random()*Math.PI*2,dist=50+Math.random()*100;
-      const dx=Math.cos(ang)*dist,dy=Math.sin(ang)*dist-(50+Math.random()*70),fall=140+Math.random()*150;
-      p.style.cssText='position:absolute;left:'+x+'px;top:'+y+'px;width:'+size.toFixed(1)+'px;height:'+(size*0.6).toFixed(1)+'px;background:'+colors[i%colors.length]+';border-radius:2px;transform:translate(-50%,-50%)';layer.appendChild(p);
-      p.animate([{transform:'translate(-50%,-50%) translate(0,0) rotate(0deg)',opacity:1},{transform:'translate(-50%,-50%) translate('+dx.toFixed(1)+'px,'+dy.toFixed(1)+'px) rotate(200deg)',opacity:1,offset:.35},{transform:'translate(-50%,-50%) translate('+(dx*1.15).toFixed(1)+'px,'+(dy+fall).toFixed(1)+'px) rotate(520deg)',opacity:0}],{duration:950+Math.random()*550,easing:'cubic-bezier(.2,.7,.3,1)'}).onfinish=function(){p.remove();};}}
-  function hCelebrate(ev,message,big){
-    if(navigator.vibrate){try{navigator.vibrate(big?[15,45,20]:14);}catch(e){}}
-    const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    let x=window.innerWidth/2,y=window.innerHeight*0.4;const el=ev&&(ev.currentTarget||ev.target);
-    if(el&&el.getBoundingClientRect){const r=el.getBoundingClientRect();if(r.width||r.height){x=r.left+r.width/2;y=r.top+r.height/2;}}
-    if(!reduce)hConfetti(x,y,big?36:18);
-    const t=document.createElement('div');t.textContent=message;
-    t.style.cssText='position:fixed;left:50%;top:'+(big?'38%':'42%')+';z-index:10000;background:var(--green);color:#fff;font-weight:800;padding:'+(big?'11px 20px':'8px 15px')+';border-radius:999px;box-shadow:0 12px 30px rgba(0,0,0,.4);font-size:'+(big?'1.05rem':'.9rem')+';pointer-events:none;white-space:nowrap;transform:translate(-50%,-50%)';document.body.appendChild(t);
-    const frames=reduce?[{opacity:0},{opacity:1,offset:.15},{opacity:1,offset:.75},{opacity:0}]:[{opacity:0,transform:'translate(-50%,-50%) scale(.7)'},{opacity:1,transform:'translate(-50%,-50%) scale(1.06)',offset:.2},{opacity:1,transform:'translate(-50%,-50%) scale(1)',offset:.7},{opacity:0,transform:'translate(-50%,-50%) scale(.95) translateY(-16px)'}];
-    t.animate(frames,{duration:big?1600:1150,easing:'ease-out'}).onfinish=function(){t.remove();};
-  }
-  function hToggleWorkout(exId,ev){healthMutate(h=>{const iso=healthActiveISO(h),d=healthDay(h,iso),exs=hPlanFor(h,iso),e=exs.find(x=>x.id===exId);if(!e)return;const nowDone=!healthExDone(d,e);d.workoutsDone[exId]=nowDone;
-    if(nowDone){const all=exs.every(e=>healthExDone(d,e));hCelebrate(ev,all?'🎉 Workout complete!':hCheer(),all);}});}
-  // ── Per-set workout tracking (mirrors desktop) ──
-  function healthExerciseSets(e){if(e&&n(e.sets)>0)return Math.min(12,Math.round(n(e.sets)));const d=String((e&&e.detail)||'');const m=d.match(/(\d+)\s*sets?\b/i)||d.match(/(\d+)\s*[×x]/i);return Math.min(12,Math.max(1,m?parseInt(m[1],10):1));}
-  function healthSetStates(day,e){const total=healthExerciseSets(e),arr=new Array(total).fill(false),v=day&&day.workoutsDone?day.workoutsDone[e.id]:undefined;if(v===true)arr.fill(true);else if(Array.isArray(v))for(let i=0;i<total;i++)arr[i]=!!v[i];else if(n(v)>0){const k=Math.min(total,Math.round(n(v)));for(let i=0;i<k;i++)arr[i]=true;}return arr;}
-  function healthExDone(day,e){const s=healthSetStates(day,e);return s.length>0&&s.every(Boolean);}
-  function healthExAny(day,e){return healthSetStates(day,e).some(Boolean);}
-  function hToggleSet(exId,idx,ev){healthMutate(h=>{const iso=healthActiveISO(h),d=healthDay(h,iso),exs=hPlanFor(h,iso),e=exs.find(x=>x.id===exId);if(!e)return;const arr=healthSetStates(d,e);if(idx<0||idx>=arr.length)return;const becoming=!arr[idx];arr[idx]=becoming;const all=arr.every(Boolean),any=arr.some(Boolean);d.workoutsDone[exId]=all?true:(any?arr:false);if(becoming){const wDone=exs.length>0&&exs.every(x=>healthExDone(d,x));if(wDone)hCelebrate(ev,'🎉 Workout complete!',true);else if(all)hCelebrate(ev,hCheer(),false);}});}
-  function hMarkAllSets(exId,ev){healthMutate(h=>{const iso=healthActiveISO(h),d=healthDay(h,iso),exs=hPlanFor(h,iso),e=exs.find(x=>x.id===exId);if(!e)return;const was=healthExDone(d,e);d.workoutsDone[exId]=was?false:true;if(!was){const wDone=exs.length>0&&exs.every(x=>healthExDone(d,x));hCelebrate(ev,wDone?'🎉 Workout complete!':hCheer(),wDone);}});}
-  function hMarkWorkout(ev){healthMutate(h=>{const iso=healthActiveISO(h),d=healthDay(h,iso),exs=hPlanFor(h,iso);if(!exs.length)return;const all=exs.every(e=>healthExDone(d,e));exs.forEach(e=>d.workoutsDone[e.id]=all?false:true);if(!all)hCelebrate(ev,'🎉 Workout complete!',true);});}
-  // ── Close Day: achievement summary (mirrors desktop) ──
-  function hAddDays(iso,delta){const [y,m,dd]=String(iso).split('-').map(Number);return new Date(Date.UTC(y,m-1,dd+delta)).toISOString().slice(0,10);}
-  function hDayTotals(day){return (day.foodLog||[]).reduce((t,f)=>{const q=Math.max(1,n(f.qty)||1);t.calories+=n(f.calories)*q;t.protein+=n(f.protein)*q;t.carbs+=n(f.carbs)*q;t.fat+=n(f.fat)*q;return t;},{calories:0,protein:0,carbs:0,fat:0});}
-  function hDayAdherence(h,iso){const wd=healthWeekday(iso),isRest=wd===0||wd===6,d=(h.days&&h.days[iso])||null,t=healthTargets(h);const totals=d?hDayTotals(d):{calories:0,protein:0};const exs=isRest?[]:hPlanFor(h,iso);const wDone=d?exs.filter(e=>healthExDone(d,e)).length:0;const anyW=!!d&&exs.some(e=>healthExAny(d,e));const workoutOk=isRest?true:(exs.length>0&&wDone===exs.length);const hasFood=totals.calories>0,calOk=hasFood&&totals.calories<=t.calories;const list=(h.profile&&h.profile.habits)||[],dh=(d&&d.habits)||{};const habitsMet=list.filter(hb=>hb.type==='counter'?n(dh[hb.id])>=healthHabitGoal(h,hb,wd):n(dh[hb.id])>=1).length;const habitsOk=list.length>0&&habitsMet===list.length;const proteinMet=t.protein>0&&totals.protein>=t.protein;const hasData=!!d&&(hasFood||anyW||Object.values(dh).some(v=>v)||d.rewardAm||d.rewardPm);return{wd,isRest,workoutOk,calOk,habitsOk,habitsMet,habitsTotal:list.length,proteinMet,hasData,wDone,wTotal:exs.length,totals,goal:t.calories,t};}
-  function hStreak(h){let d=healthActiveISO(h),streak=0,first=true;const start=(h.profile&&h.profile.startDate)||HEALTH_DEFAULT_START;for(let i=0;i<400;i++){if(start&&d<start)break;const a=hDayAdherence(h,d);if(a.workoutOk&&a.calOk)streak++;else if(first&&!a.hasData){}else break;first=false;d=hAddDays(d,-1);}return streak;}
-  function hWeightProjection(h){const start=(h.profile&&h.profile.startDate)||HEALTH_DEFAULT_START,goal=n(h.profile&&h.profile.goalWeight)||155;const w=(h.weighIns||[]).slice().sort((a,b)=>String(b.date).localeCompare(String(a.date)));const cur=w.length?n(w[0].weight):(n(h.profile&&h.profile.startWeight)||185);const lbToGo=+(cur-goal).toFixed(1);const ins=(h.weighIns||[]).filter(x=>!start||x.date>=start).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));if(lbToGo<=0)return{status:'reached',goal,lbToGo:0};if(ins.length<2)return{status:'need-data',goal,lbToGo,have:ins.length};const f=ins[0],l=ins[ins.length-1];const weeks=(Date.parse(l.date+'T12:00:00Z')-Date.parse(f.date+'T12:00:00Z'))/(7*86400000);const rate=weeks>0?(n(f.weight)-n(l.weight))/weeks:0;const target=n(h.profile&&h.profile.ratePerWeek)||1;if(rate<=0.05)return{status:'stalled',goal,lbToGo,rate};const weeksToGoal=lbToGo/rate;return{status:'ok',goal,lbToGo,rate,proj:hAddDays(healthTodayISO(),Math.ceil(weeksToGoal*7)),weeksToGoal,target};}
-  function hStrengthOutlook(week){const w=Math.max(1,week),stage=healthRampStage(w);return `Week ${w} · <b>${esc(stage.title)}</b>. Completing today’s smaller checklist counts as a full workout. Build consistency and comfortable movement as the plan gradually grows.`;}
-  const H_TIERS={perfect:{emoji:'🏆',head:'Perfect Day!',grad:'linear-gradient(135deg,#e9b85f,#c68a2e)',conf:60,sub:'You hit every goal today. Elite discipline. 🔥'},gold:{emoji:'🥇',head:'Great day!',grad:'linear-gradient(135deg,#43b9a1,#176b5b)',conf:40,sub:'Almost everything checked off — you are crushing this.'},silver:{emoji:'🥈',head:'Solid effort!',grad:'linear-gradient(135deg,#4a8fe0,#2563eb)',conf:24,sub:'Real progress today. Grab one more goal tomorrow.'},bronze:{emoji:'🥉',head:'On the board',grad:'linear-gradient(135deg,#a855f7,#7c3aed)',conf:12,sub:'You showed up and logged it. That is how it starts.'},seed:{emoji:'🌱',head:'Tomorrow’s a fresh start',grad:'linear-gradient(135deg,#5b6b82,#3a4759)',conf:0,sub:'No perfect days required. Reset and go again.'}};
-  function hDaySummary(h,iso){const a=hDayAdherence(h,iso),d=healthDay(h,iso),wd=a.wd,totals=a.totals;const ach=[];ach.push(a.isRest?{icon:'😌',label:'Rested & recovered',earned:true}:{icon:'🏋️',label:`Workout complete (${a.wDone}/${a.wTotal})`,earned:a.workoutOk});ach.push({icon:'🍽️',label:a.calOk?'Ate on-target':(totals.calories>0?(totals.calories>a.goal?'Over calories':'Logged your food'):'No food logged'),earned:a.calOk});ach.push({icon:'💪',label:'Protein goal',earned:a.proteinMet});ach.push({icon:'✅',label:`Habits (${a.habitsMet}/${a.habitsTotal})`,earned:a.habitsTotal>0&&a.habitsOk});if(wd>=1&&wd<=5)ach.push({icon:'🎁',label:'Reward earned',earned:!!(d.rewardAm||d.rewardPm)});const possible=ach.length,earned=ach.filter(x=>x.earned).length;let tier;if(earned>=possible)tier='perfect';else if(earned>=possible-1)tier='gold';else if(earned>=Math.ceil(possible/2))tier='silver';else if(earned>=1)tier='bronze';else tier='seed';return{a,ach,possible,earned,tier,streak:hStreak(h)};}
-  function hCloseDay(){const h=state.data.health;if(h)hShowDaySummary(healthActiveISO(h));}
-  function hReopenDay(){healthMutate(h=>{healthDay(h,healthActiveISO(h)).closed=false;});}
-  function hCloseSummary(){document.getElementById('h-summary')?.remove();}
-  function hConfirmClose(){document.getElementById('h-summary')?.remove();healthMutate(h=>{const iso=healthActiveISO(h),d=healthDay(h,iso);d.workoutSnapshot=hPlanFor(h,iso);d.closed=true;d.totals=hDayTotals(d);});}
-  function hShowDaySummary(iso){document.getElementById('h-summary')?.remove();const h=state.data.health;if(!h)return;const s=hDaySummary(h,iso),tier=H_TIERS[s.tier],a=s.a,t=a.t,totals=a.totals;
-    const stat=(icon,label,val,sub,color)=>`<div style="flex:1;min-width:70px;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:8px 6px;text-align:center"><div style="font-size:1rem">${icon}</div><div style="font-size:1.05rem;font-weight:800;color:${color||'var(--ink)'};line-height:1.2">${val}</div><div style="font-size:.58rem;color:var(--muted);text-transform:uppercase;font-weight:800;letter-spacing:.03em">${label}</div>${sub?`<div style="font-size:.58rem;color:var(--muted)">${sub}</div>`:''}</div>`;
-    const stats=`<div style="display:flex;gap:7px;flex-wrap:wrap;margin:12px 0 4px">${stat('🔥','Cal',Math.round(totals.calories),'of '+Math.round(a.goal),a.calOk?'var(--good)':(totals.calories>a.goal?'var(--bad)':'var(--ink)'))}${stat('💪','Protein',Math.round(totals.protein)+'g','of '+Math.round(t.protein),a.proteinMet?'var(--good)':'var(--ink)')}${a.isRest?stat('😌','Train','Rest','recovery'):stat('🏋️','Workout',a.wDone+'/'+a.wTotal,'exercises',a.workoutOk?'var(--good)':'var(--ink)')}${stat('✅','Habits',a.habitsMet+'/'+a.habitsTotal,'',(a.habitsTotal>0&&a.habitsOk)?'var(--good)':'var(--ink)')}</div>`;
-    const achHtml=s.ach.map((x,i)=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 2px;opacity:0;animation:hAchIn .45s ease forwards;animation-delay:${(0.2+i*0.13).toFixed(2)}s"><span style="font-size:1.3rem;${x.earned?'':'filter:grayscale(1);opacity:.4'}">${x.icon}</span><span style="flex:1;font-weight:700;${x.earned?'':'color:var(--muted)'}">${esc(x.label)}</span><span style="font-weight:800;color:${x.earned?'var(--good)':'var(--muted)'}">${x.earned?'✓':'—'}</span></div>`).join('');
-    const streakHtml=s.streak>0?`<div style="text-align:center;margin-top:8px;font-weight:800;color:var(--amber)">🔥 ${s.streak}-day on-plan streak</div>`:'';
-    const startIso=(h.profile&&h.profile.startDate)||iso;const weekNum=Math.max(1,Math.floor((Date.parse(iso+'T12:00:00Z')-Date.parse(startIso+'T12:00:00Z'))/(7*86400000))+1);
-    const pr=hWeightProjection(h);let wMsg;
-    if(pr.status==='reached')wMsg=`You've reached ${pr.goal} lb — <b>goal met!</b> 🎉 Shift to maintaining.`;
-    else if(pr.status==='need-data'){const nn=2-pr.have;wMsg=`${pr.lbToGo.toFixed(1)} lb to go to ${pr.goal} lb. Log ${nn} more weekly weigh-in${nn===1?'':'s'} for a projected date.`;}
-    else if(pr.status==='stalled')wMsg=`${pr.lbToGo.toFixed(1)} lb to go to ${pr.goal} lb — no clear downward trend yet, keep going.`;
-    else{const dt=new Date(pr.proj+'T12:00:00Z');const lbl=isNaN(dt.getTime())?pr.proj:dt.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});wMsg=`On pace for <b>${pr.goal} lb around ${lbl}</b> — ${pr.lbToGo.toFixed(1)} lb to go at ${pr.rate.toFixed(1)} lb/wk.`;}
-    const orow=(icon,html)=>`<div style="display:flex;gap:10px;align-items:flex-start;padding:5px 0"><span style="font-size:1.15rem;line-height:1.3">${icon}</span><div style="flex:1;font-size:.82rem;line-height:1.4;color:var(--ink)">${html}</div></div>`;
-    const outlook=`<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:9px"><div style="font-weight:800;font-size:.62rem;text-transform:uppercase;color:var(--muted);letter-spacing:.04em;margin-bottom:2px">Your outlook</div>${orow('🎯',wMsg)}${orow('💪',hStrengthOutlook(weekNum))}</div>`;
-    const ov=document.createElement('div');ov.id='h-summary';
-    ov.style.cssText='position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center';
-    ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    ov.innerHTML=`<style>@keyframes hAchIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}@keyframes hSumUp{from{transform:translateY(100%)}to{transform:none}}</style>
-      <div style="background:var(--card);color:var(--ink);width:100%;max-width:460px;max-height:92vh;overflow:auto;border-radius:20px 20px 0 0;box-shadow:var(--shadow);animation:hSumUp .3s cubic-bezier(.2,.8,.3,1) both">
-        <div style="background:${tier.grad};color:#fff;padding:22px 16px 20px;text-align:center;border-radius:20px 20px 0 0">
-          <div style="font-size:3rem;line-height:1">${tier.emoji}</div>
-          <div style="font-size:1.5rem;font-weight:900;margin-top:4px">${tier.head}</div>
-          <div style="font-size:.85rem;font-weight:600;opacity:.95;margin-top:4px">${esc(tier.sub)}</div>
-          <div style="font-size:.7rem;opacity:.85;margin-top:6px">${H_WD_LONG[a.wd]}, ${fmtDay(iso)} · ${s.earned}/${s.possible} goals</div>
-        </div>
-        <div style="padding:14px 16px 18px">
-          ${stats}
-          <div style="font-weight:800;font-size:.62rem;text-transform:uppercase;color:var(--muted);letter-spacing:.04em;margin:10px 0 2px">Today’s achievements</div>
-          ${achHtml}${streakHtml}${outlook}
-          <div style="display:flex;gap:8px;margin-top:16px">
-            <button onclick="hCloseSummary()" style="flex:0 0 auto;padding:12px 16px;border-radius:12px;border:1px solid var(--line);background:transparent;color:var(--muted);font-weight:700">Not yet</button>
-            <button onclick="hConfirmClose()" style="flex:1;padding:12px;border-radius:12px;border:none;background:var(--green);color:#fff;font-weight:800">✓ Close out day</button>
-          </div>
-        </div>
-      </div>`;
-    document.body.appendChild(ov);
-    const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if(!reduce&&tier.conf>0){if(navigator.vibrate){try{navigator.vibrate(s.tier==='perfect'?[15,45,20]:14);}catch(e){}}const cx=window.innerWidth/2,cy=window.innerHeight*0.3;setTimeout(()=>hConfetti(cx,cy,tier.conf),120);if(s.tier==='perfect')setTimeout(()=>hConfetti(cx,cy,tier.conf),520);}
-  }
-  function hToggleReward(slot){healthMutate(h=>{const iso=healthActiveISO(h),d=healthDay(h,iso),key=slot==='pm'?'rewardPm':'rewardAm';
-    if(!d[key]&&slot==='pm'&&h.profile&&h.profile.rewardGated&&!hUnlocked(h,iso))return;d[key]=!d[key];});}
-  function hBumpHabit(id,delta,ev){healthMutate(h=>{const iso=healthActiveISO(h),d=healthDay(h,iso),before=n(d.habits[id]);d.habits[id]=Math.max(0,before+delta);
-    if(delta>0){const hb=((h.profile&&h.profile.habits)||[]).find(x=>x.id===id),g=hb?healthHabitGoal(h,hb,healthWeekday(iso)):Infinity;if(before<g&&d.habits[id]>=g){const all=hAllHabits(h,iso);hCelebrate(ev,all?'🌟 All habits done!':hCheer(),all);}}});}
-  function hToggleHabit(id,ev){healthMutate(h=>{const iso=healthActiveISO(h),d=healthDay(h,iso),nowDone=n(d.habits[id])<1;d.habits[id]=nowDone?1:0;
-    if(nowDone){const all=hAllHabits(h,iso);hCelebrate(ev,all?'🌟 All habits done!':hCheer(),all);}});}
-  function hDeleteFood(logId){healthMutate(h=>{const d=healthDay(h,healthActiveISO(h));d.foodLog=d.foodLog.filter(f=>f.id!==logId);});}
-  function hSetFoodQty(logId,delta){healthMutate(h=>{const d=healthDay(h,healthActiveISO(h)),f=(d.foodLog||[]).find(x=>x.id===logId);if(f)f.qty=Math.max(1,Math.max(1,n(f.qty)||1)+delta);});}
-  function hQuickFood(foodId){healthMutate(h=>{const food=(h.foods||[]).find(f=>f.id===foodId);if(!food)return;const d=healthDay(h,healthActiveISO(h));
-    d.foodLog.push({id:hid(),name:food.name,calories:n(food.calories),protein:n(food.protein),carbs:n(food.carbs),fat:n(food.fat),foodId:food.id});food.uses=n(food.uses)+1;});}
-  function hAddFood(){
-    const name=($('#h-food-name').value||'').trim();if(!name)return;
-    const cal=n($('#h-food-cal').value),p=n($('#h-food-p').value),c=n($('#h-food-c').value),f=n($('#h-food-f').value),save=$('#h-food-save').checked;
-    healthMutate(h=>{const d=healthDay(h,healthActiveISO(h));d.foodLog.push({id:hid(),name,calories:cal,protein:p,carbs:c,fat:f});
-      if(save){h.foods=h.foods||[];const ex=h.foods.find(x=>String(x.name).toLowerCase()===name.toLowerCase());
-        if(ex){ex.calories=cal;ex.protein=p;ex.carbs=c;ex.fat=f;ex.uses=n(ex.uses)+1;}else h.foods.push({id:hid(),name,calories:cal,protein:p,carbs:c,fat:f,uses:1});}});
-  }
-  function hEditFood(logId){healthEditFoodId=logId;render();}
-  function hCancelFood(){healthEditFoodId=null;render();}
-  function hSaveFood(logId){
-    const name=($('#h-ef-name').value||'').trim(),cal=n($('#h-ef-cal').value),p=n($('#h-ef-p').value),c=n($('#h-ef-c').value),f=n($('#h-ef-f').value);
-    healthEditFoodId=null;
-    healthMutate(h=>{const d=healthDay(h,healthActiveISO(h));const it=d.foodLog.find(x=>x.id===logId);if(it){it.name=name||it.name;it.calories=cal;it.protein=p;it.carbs=c;it.fat=f;}});
-  }
-  function healthWeightChart(weighIns,goal){
-    const rows=(weighIns||[]).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
-    if(rows.length<2)return '<div class="empty">Two weekly weigh-ins needed for a trend line.</div>';
-    const vals=rows.map(r=>n(r.weight)),g=n(goal),min=Math.min(...vals,g)-2,max=Math.max(...vals,g)+2,range=max-min||1;
-    const X=i=>30+i*(740/(vals.length-1)),Y=v=>25+(max-v)*(155/range),gy=Y(g).toFixed(1);
-    const pts=vals.map((v,i)=>`${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
-    return `<svg class="nw-chart" viewBox="0 0 800 215" role="img" aria-label="Weight trend"><line x1="30" y1="${gy}" x2="770" y2="${gy}" stroke="var(--good)" stroke-dasharray="6 6"/><text x="766" y="${(+gy-6)}" text-anchor="end" fill="var(--good)" font-size="12">Goal ${esc(g)}</text><polyline points="${pts}" fill="none" stroke="var(--green2)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><text x="34" y="20" fill="var(--muted)" font-size="12">${esc(max.toFixed(0))}</text><text x="34" y="205" fill="var(--muted)" font-size="12">${esc(min.toFixed(0))}</text></svg>`;
-  }
-  function renderHealth(){
-    const h=state.data.health;
-    if(!h||(!h.workoutPlan&&!h.profile))return `<div class="h-banner">Open the Health tab on the desktop app once to set up your plan — then your daily workout, food log, weight, rewards, and habits show up here.</div>`;
-    const iso=healthActiveISO(h),wd=healthWeekday(iso),day=healthDay(h,iso),t=healthTargets(h);
-    const notStarted=iso>healthTodayISO();
-    const startBanner=notStarted?`<div class="h-banner">🗓️ Your program starts ${H_WD_LONG[wd]}, ${fmtDay(iso)} — showing your first day.</div>`:'';
-    const fQty=f=>Math.max(1,n(f.qty)||1);
-    const consumed=sum(day.foodLog,f=>n(f.calories)*fQty(f)),proteinC=sum(day.foodLog,f=>n(f.protein)*fQty(f)),remaining=t.calories-consumed,over=consumed>t.calories;
-
-    const isRest=wd===0||wd===6,exs=hPlanFor(h,iso),wDone=exs.filter(e=>healthExDone(day,e)).length;
-    const totalSets=exs.reduce((s,e)=>s+healthExerciseSets(e),0),doneSets=exs.reduce((s,e)=>s+healthSetStates(day,e).filter(Boolean).length,0);
-    const setPip=(exId,on,i,tot)=>`<label style="display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border-radius:999px;border:1px solid ${on?'var(--green2)':'var(--line)'};background:${on?'var(--mint)':'transparent'};color:${on?'var(--good)':'var(--muted)'};font-size:.8rem;font-weight:700"><input type="checkbox" ${on?'checked':''} onchange="hToggleSet('${exId}',${i},event)" style="width:19px;height:19px;accent-color:var(--green2);margin:0">${tot>1?'Set '+(i+1):'Done'}</label>`;
-    const workoutRows=isRest?`<div class="empty">😌 Rest & recovery day. An easy walk is fine.</div>`
-      :(exs.length?exs.map(e=>{const st=healthSetStates(day,e),tot=st.length,sd=st.filter(Boolean).length,exDone=sd===tot;
-        const pips=st.map((on,i)=>setPip(e.id,on,i,tot)).join('')+(tot>1?`<button onclick="hMarkAllSets('${e.id}',event)" style="padding:7px 12px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--muted);font-size:.8rem;font-weight:700">${exDone?'clear':'all'}</button>`:'');
-        const rowStyle=exDone?'background:var(--mint);border:1px solid var(--green2);border-radius:12px;padding:12px;margin:6px 0':'';
-        return `<div class="h-row" style="${rowStyle}"><div style="width:100%"><div class="h-name" style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><span style="${exDone?'color:var(--good);font-weight:700':''}">${esc(e.name)}${exDone?' ✓':''}</span><span class="${exDone?'good':''}" style="font-weight:800;white-space:nowrap;font-size:.85rem">${sd}/${tot}${exDone?' ✓':''}</span></div>${e.detail?`<div class="h-sub">${esc(e.detail)}</div>`:''}<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">${pips}</div></div></div>`;
-      }).join(''):'<div class="empty">No workout set for today.</div>');
-    const allExDone=exs.length>0&&wDone===exs.length;
-    const week=healthProgramWeek(iso,h),stage=healthRampStage(week),next=HEALTH_RAMP_STAGES.find(s=>s.week>week);
-    const progression=isRest?'':`<div class="h-banner"><strong>🌱 Week ${Math.max(1,week)} · ${esc(stage.title)}</strong><div>Only the items shown are required. New movements start at one set and gain a set every four weeks, up to three.</div>${next?`<div style="margin-top:5px">Next step: ${fmtDay(hAddDays(h.profile.startDate,(next.week-1)*7))} · ${esc(next.title)}</div>`:''}</div>`;
-    const workoutCard=`<section class="card"><div class="card-head"><div class="card-title">🏋️ Workout · ${H_WD[wd]}</div>${isRest?'':`<span class="pill">${wDone}/${exs.length} · ${doneSets}/${totalSets} sets</span>`}</div>${isRest||!exs.length?'':`<div style="padding:0 12px 6px"><button onclick="hMarkWorkout(event)" style="width:100%;padding:10px;border-radius:12px;border:1px solid var(--line);background:transparent;color:var(--ink);font-weight:800;font-size:.9rem">${allExDone?'Clear all':'✓ Mark all done'}</button></div>`}<div class="rows">${workoutRows}</div></section>`;
-
-    const topFoods=(h.foods||[]).slice().sort((a,b)=>n(b.uses)-n(a.uses)||String(a.name).localeCompare(String(b.name))).slice(0,6);
-    const chips=topFoods.map(f=>`<button class="h-chip" onclick="hQuickFood('${f.id}')">+ ${esc(f.name)}</button>`).join('');
-    const foodRows=day.foodLog.map(f=>{
-      if(healthEditFoodId===f.id)return `<div class="h-row"><span></span><div style="width:100%">
-        <input id="h-ef-name" value="${esc(f.name)}" placeholder="Food">
-        <div class="h-nums" style="margin-top:8px"><input id="h-ef-cal" type="number" inputmode="numeric" value="${n(f.calories)}" placeholder="Cal"><input id="h-ef-p" type="number" value="${n(f.protein)}" placeholder="P"><input id="h-ef-c" type="number" value="${n(f.carbs)}" placeholder="C"><input id="h-ef-f" type="number" value="${n(f.fat)}" placeholder="F"></div>
-        <div style="display:flex;gap:8px;margin-top:10px"><button class="primary" style="margin:0;flex:1" onclick="hSaveFood('${f.id}')">Save</button><button class="h-mini" onclick="hCancelFood()">Cancel</button></div>
-      </div><span></span></div>`;
-      const q=Math.max(1,n(f.qty)||1);
-      const step=`<div style="display:flex;flex-direction:column;align-items:center;gap:3px;margin-right:4px"><button class="h-step" onclick="hSetFoodQty('${f.id}',1)">+</button><span style="font-weight:800;font-size:.8rem;min-width:24px;text-align:center">×${q}</span><button class="h-step" onclick="hSetFoodQty('${f.id}',-1)">−</button></div>`;
-      return `<div class="h-row">${step}<div><div class="h-name">${esc(f.name)}</div><div class="h-sub">${Math.round(n(f.calories)*q)} cal · ${Math.round(n(f.protein)*q)}p ${Math.round(n(f.carbs)*q)}c ${Math.round(n(f.fat)*q)}f</div></div><div style="display:flex;gap:2px"><button class="h-del" onclick="hEditFood('${f.id}')">✎</button><button class="h-del" onclick="hDeleteFood('${f.id}')">✕</button></div></div>`;
-    }).join('');
-    const foodCard=`<section class="card"><div class="card-head"><div class="card-title">📋 Food Log</div><span class="pill">${Math.round(consumed)} cal</span></div>
-      ${chips?`<div class="h-chips">${chips}</div>`:''}
-      <div class="rows">${foodRows||'<div class="empty">Nothing logged yet.</div>'}</div>
-      <div class="h-form">
-        <input id="h-food-name" placeholder="Food name">
-        <div class="h-nums"><input id="h-food-cal" type="number" inputmode="numeric" placeholder="Cal"><input id="h-food-p" type="number" placeholder="P"><input id="h-food-c" type="number" placeholder="C"><input id="h-food-f" type="number" placeholder="F"></div>
-        <label style="display:flex;align-items:center;gap:9px;margin:12px 0 12px;text-transform:none;letter-spacing:0;font-weight:600;color:var(--muted)"><input type="checkbox" id="h-food-save" class="h-check" checked style="width:22px;height:22px">Save to my food list</label>
-        <button class="primary" style="margin:0" onclick="hAddFood()">Add food</button>
-      </div></section>`;
-
-    const goal=n(h.profile&&h.profile.goalWeight)||155,weighIns=(h.weighIns||[]).slice().sort((a,b)=>String(b.date).localeCompare(String(a.date)));
-    const weightRows=weighIns.slice(0,6).map((w,i)=>{const next=weighIns[i+1],chg=next?n(w.weight)-n(next.weight):null;return row(fmtDay(w.date),`${n(w.weight)} lb`,chg==null?'':`${chg<=0?'▼':'▲'} ${Math.abs(chg).toFixed(1)} lb`,chg==null?'':(chg<=0?'good':'bad'));}).join('');
-    const startW=(function(){const s=h.profile&&h.profile.startDate;const inp=(h.weighIns||[]).filter(x=>!s||x.date>=s).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));return inp.length?n(inp[0].weight):(n(h.profile&&h.profile.startWeight)||185);})();
-    const curW=weighIns.length?n(weighIns[0].weight):startW,toGoW=curW-goal,lostW=startW-curW,totLose=startW-goal,pctW=totLose>0?Math.max(0,Math.min(100,lostW/totLose*100)):0;
-    const prW=hWeightProjection(h);let projLine='';
-    if(prW.status==='ok'){const dt=new Date(prW.proj+'T12:00:00Z');const lbl=isNaN(dt.getTime())?prW.proj:dt.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});projLine=`📉 On pace for <b>${goal} lb around ${lbl}</b> · ${prW.lbToGo.toFixed(1)} lb to go at ${prW.rate.toFixed(1)} lb/wk`;}
-    else if(prW.status==='reached')projLine='🎉 Goal reached — maintain!';
-    else if(prW.status==='need-data'){const nn=2-prW.have;projLine=`Log ${nn} more weekly weigh-in${nn===1?'':'s'} for a projected goal date.`;}
-    else if(prW.status==='stalled')projLine=`${prW.lbToGo.toFixed(1)} lb to go — no downward trend yet, keep going.`;
-    const wStat=(lbl,val,col)=>`<div><div style="font-size:.58rem;color:var(--muted);text-transform:uppercase;font-weight:800;letter-spacing:.03em">${lbl}</div><div style="font-size:1.1rem;font-weight:800;${col?'color:'+col:''}">${val}</div></div>`;
-    const progHtml=`<div style="padding:11px 12px 0"><div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:9px">${wStat('Start',startW+' lb')}${wStat('Current',curW+' lb','var(--green2)')}${wStat('Goal',goal+' lb','var(--good)')}${wStat('To Go',Math.max(0,toGoW).toFixed(1)+' lb')}</div><div style="height:9px;background:var(--line);border-radius:6px;overflow:hidden;margin-bottom:8px"><div style="width:${pctW}%;height:100%;background:linear-gradient(90deg,#43b9a1,#176b5b)"></div></div>${projLine?`<div style="font-size:.78rem;color:var(--muted);line-height:1.4">${projLine}</div>`:''}</div>`;
-    const weightCard=`<section class="card"><div class="card-head"><div class="card-title">⚖️ Weight</div><span class="pill">Goal ${goal}</span></div>${progHtml}<div style="padding:8px 12px 0">${healthWeightChart(h.weighIns,goal)}</div><div class="rows">${weightRows||'<div class="empty">No weigh-ins yet.</div>'}</div></section>`;
-
-    let rewardCard;
-    if(!(wd>=1&&wd<=5))rewardCard=`<section class="card"><div class="card-head"><div class="card-title">🎁 Rewards</div></div><div class="rows"><div class="empty">Mon–Fri only — enjoy the weekend. 😌</div></div></section>`;
-    else{
-      const sched=(h.rewardSchedule&&h.rewardSchedule[wd])||{am:'',pm:''},gated=h.profile&&h.profile.rewardGated,unlocked=hUnlocked(h,iso);
-      const amText=day.rewardTextAm||sched.am||'Morning reward',pmText=day.rewardTextPm||sched.pm||'Evening reward',pmLocked=gated&&!unlocked&&!day.rewardPm;
-      rewardCard=`<section class="card"><div class="card-head"><div class="card-title">🎁 Rewards</div></div><div class="rows">
-        <label class="h-row ${day.rewardAm?'h-done':''}"><input type="checkbox" class="h-check" ${day.rewardAm?'checked':''} onchange="hToggleReward('am')"><div><div class="h-name">☀️ AM — ${esc(amText)}</div></div><span></span></label>
-        <label class="h-row ${day.rewardPm?'h-done':''}" style="${pmLocked?'opacity:.55':''}"><input type="checkbox" class="h-check" ${day.rewardPm?'checked':''} ${pmLocked?'disabled':''} onchange="hToggleReward('pm')"><div><div class="h-name">🌙 PM — ${esc(pmText)}${pmLocked?' 🔒':''}</div>${gated&&!unlocked?'<div class="h-sub">Unlocks after workout + calories</div>':''}</div><span></span></label>
-      </div></section>`;
-    }
-
-    const habits=(h.profile&&h.profile.habits)||[];
-    const habitBox='background:var(--mint);border:1px solid var(--green2);border-radius:12px;padding:12px;margin:6px 0';
-    const habitRows=habits.map(hb=>{
-      const v=n(day.habits[hb.id]);
-      if(hb.type==='counter'){const g=healthHabitGoal(h,hb,wd),met=v>=g;
-        return `<div class="h-row" style="${met?habitBox:''}"><span style="font-size:1.2rem">${esc(hb.icon)}</span><div><div class="h-name" style="${met?'color:var(--good)':''}">${esc(hb.name)} ${met?'<span class="good">✓</span>':''}</div><div class="h-sub">${v} of ${g}${hb.unit?' '+esc(hb.unit):''}</div></div><div style="display:flex;gap:8px;align-items:center"><button class="h-step" onclick="hBumpHabit('${hb.id}',-1)">−</button><span class="h-count">${v}</span><button class="h-step" onclick="hBumpHabit('${hb.id}',1,event)">+</button></div></div>`;}
-      const done=v>=1;
-      return `<label class="h-row" style="${done?habitBox:''}"><input type="checkbox" class="h-check" ${done?'checked':''} onchange="hToggleHabit('${hb.id}',event)"><div><div class="h-name" style="${done?'color:var(--good);font-weight:700':''}">${esc(hb.icon)} ${esc(hb.name)}${done?' ✓':''}</div>${hb.note?`<div class="h-sub">${esc(hb.note)}</div>`:''}</div><span></span></label>`;
-    }).join('');
-    const habitsCard=habits.length?`<section class="card"><div class="card-head"><div class="card-title">✅ Daily Habits</div></div><div class="rows">${habitRows}</div></section>`:'';
-
-    const fasting=h.profile&&h.profile.fasting&&h.profile.fasting.weekday===wd;
-    const fastBanner=fasting?`<div class="h-banner">⏳ Intermittent fasting day — eat breakfast, stop by ${esc(h.profile.fasting.cutoffLabel||'10 AM')}, fast until tomorrow morning. Water, black coffee &amp; sugar-free Red Bull are fine.</div>`:'';
-
-    const closeCard=`<section class="card"><div style="padding:12px">${day.closed
-      ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><span style="font-weight:800;color:var(--good)">✓ Day closed</span><button onclick="hReopenDay()" style="padding:9px 14px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--muted);font-weight:700">Reopen</button></div>`
-      : `<button onclick="hCloseDay()" style="width:100%;padding:13px;border-radius:12px;border:none;background:var(--green);color:#fff;font-weight:800;font-size:1rem">Close Day →</button>`}</div></section>`;
-    return `<div class="hero"><div class="hero-label">${H_WD_LONG[wd]} · ${over?'Over by':'Calories left'}</div><div class="hero-value">${over?'−':''}${Math.abs(Math.round(remaining))}</div><div class="hero-note">${Math.round(consumed)} eaten of ${t.calories} kcal · ${Math.round(proteinC)}/${t.protein}g protein</div></div>
-      ${startBanner}${fastBanner}${progression}${workoutCard}${foodCard}${weightCard}${rewardCard}${habitsCard}${closeCard}`;
-  }
-
   function render(){
     $('#page-title').textContent=TITLES[state.view];
-    $('#eyebrow').textContent=state.view==='health'?'Daily · editable':state.view==='mom'?'Discretionary · editable':'Read only';
-    const fn={budget:renderBudget,cashflow:renderCashFlow,savings:renderSavings,networth:renderNetWorth,mom:renderMom,properties:renderProperties,health:renderHealth}[state.view];
+    $('#eyebrow').textContent=state.view==='mom'?'Discretionary · editable':'Read only';
+    const fn={budget:renderBudget,cashflow:renderCashFlow,savings:renderSavings,networth:renderNetWorth,mom:renderMom,properties:renderProperties}[state.view];
     $('#content').innerHTML=fn();
     document.querySelectorAll('[data-property]').forEach(btn=>btn.addEventListener('click',()=>{state.property=btn.dataset.property;render()}));
     document.querySelectorAll('[data-mom-month]').forEach(btn=>btn.addEventListener('click',()=>{if(btn.dataset.momMonth){state.momMonth=btn.dataset.momMonth;render()}}));
