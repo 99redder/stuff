@@ -835,6 +835,10 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ## Recent Updates
 
+### 2026-10-01 — Money Left phone PWA tracks discretionary only
+
+- **Her phone showed $600 left on Oct 1 instead of $400** — the public summary reported the full itemized allowance (discretionary + emergencies). The worker's phone summary now runs every figure through `momPhoneTracking(c)`, which subtracts the emergency budget and emergency spending: `month.trackingAllowance` / `trackingUsed` / `overallSpendingRemaining` / percents, the `year` roll-up (`calcMomBudgetYear`), and the transaction list (`momBudgetMonthTransactions` no longer emits the `Emergencies / Unplanned` group). `calcMomBudgetMonth` itself is untouched and still mirrors the app's `mbCalcMonth`; desktop and the mobile Snapshot Mom tab still show the full $600. Worker-only change — no phone page or cache bump.
+
 ### 2026-10-01 — Health tab removed
 
 - **The Health tracker (workouts / diet / weight / rewards / habits) is gone from both apps.** Desktop: the `❤️ Health` header button, the whole `// ── View: Health` section, `state.health`, the `health` view case and its CSS. Mobile PWA: the Health nav tab, `renderHealth` + every `h*` helper and its health-only `.h-*` styles (`.h-form` / `.h-nums` / `.h-mini` stay — the Mom tab uses them); nav grid is 4 columns; `CACHE_NAME` → `v43`. The mobile app's only write path is now the Mom tab's Discretionary add/edit/delete.

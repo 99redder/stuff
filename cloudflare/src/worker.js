@@ -1800,6 +1800,7 @@ async function handleGetMomBudgetPhoneSummary(request, env, requestedMonth) {
   const data = normalizeMomBudget(raw);
   syncMomHouseholdTransfers(data, fairShare);
   const month = calcMomBudgetMonth(data, monthKey);
+  const phone = momPhoneTracking(month);
   const transactions = momBudgetMonthTransactions(data, monthKey);
   const yearSummary = calcMomBudgetYear(data, monthKey);
 
@@ -1809,12 +1810,12 @@ async function handleGetMomBudgetPhoneSummary(request, env, requestedMonth) {
     trackingStartedAt: MB_TRACKING_START_DATE,
     updatedAt: new Date().toISOString(),
     month: {
-      overallSpendingRemaining: month.overallSpendingRemaining,
-      trackingAllowance: month.trackingAllowance,
-      trackingUsed: month.trackingUsed,
-      trackingRemaining: month.trackingRemaining,
-      trackingUsedPercent: month.trackingUsedPercent,
-      trackingRemainingPercent: month.trackingRemainingPercent,
+      overallSpendingRemaining: phone.trackingRemaining,
+      trackingAllowance: phone.trackingAllowance,
+      trackingUsed: phone.trackingUsed,
+      trackingRemaining: phone.trackingRemaining,
+      trackingUsedPercent: phone.trackingUsedPercent,
+      trackingRemainingPercent: phone.trackingRemainingPercent,
       discretionaryRemaining: month.discretionaryRemaining,
       otherOverages: month.otherOverages,
       discretionarySpent: month.discretionarySpent,
@@ -2081,6 +2082,22 @@ function calcMomBudgetMonth(data, monthKey) {
   };
 }
 
+// Her phone tracks discretionary spending only. The emergencies / unplanned
+// budget is the owner's planning bucket, so its allowance and its spending are
+// both left out of every figure the phone shows.
+function momPhoneTracking(c) {
+  const trackingAllowance = c.trackingAllowance - c.emergency;
+  const trackingUsed = c.trackingUsed - c.emergencySpent;
+  const trackingRemaining = trackingAllowance - trackingUsed;
+  return {
+    trackingAllowance,
+    trackingUsed,
+    trackingRemaining,
+    trackingUsedPercent: trackingAllowance ? (trackingUsed / trackingAllowance) * 100 : 0,
+    trackingRemainingPercent: trackingAllowance ? (trackingRemaining / trackingAllowance) * 100 : 0
+  };
+}
+
 function momBudgetMonthTransactions(data, monthKey) {
   const t = data.template;
   const m = data.months[monthKey] || blankMomBudgetMonth();
@@ -2120,17 +2137,7 @@ function momBudgetMonthTransactions(data, monthKey) {
     });
   }
 
-  for (const entry of m.emergency || []) {
-    const amount = Number(entry.amount) || 0;
-    if (amount <= 0) continue;
-    entries.push({
-      id: entry.id || `emergency-${entry.date || defaultDate}-${entry.name || entry.description || amount}`,
-      date: validDateString(entry.date) ? entry.date : defaultDate,
-      name: entry.name || entry.description || 'Emergency',
-      amount,
-      group: 'Emergencies / Unplanned'
-    });
-  }
+  // Emergency / unplanned entries are deliberately omitted — see momPhoneTracking.
 
   for (const entry of m.otherExpenses || []) {
     const amount = Number(entry.amount) || 0;
@@ -2174,7 +2181,7 @@ function calcMomBudgetYear(data, throughMonth) {
     months.push(`${year}-${String(month).padStart(2, '0')}`);
   }
   const summary = months.reduce((s, key) => {
-    const c = calcMomBudgetMonth(data, key);
+    const c = momPhoneTracking(calcMomBudgetMonth(data, key));
     s.months += 1;
     s.planned += c.trackingAllowance;
     s.actual += c.trackingUsed;

@@ -183,16 +183,24 @@ test('the Worker feeding the phone computes the same numbers as the app', () => 
       assert.equal(fromWorker[field], fromApp[field], `${month}.${field}`);
     }
   }
-  // The year adds up each month's own allowance ($800 Sept + $600 Oct).
-  assert.equal(w.calcMomBudgetYear(data, '2026-10').planned, 1400);
 });
 
-test('emergency spending reaches the phone as its own transaction group', () => {
+test('the phone tracks discretionary spending only, never the emergency budget', () => {
   const w = worker();
   const data = w.normalizeMomBudget(legacyRecord());
+  const october = w.calcMomBudgetMonth(data, '2026-10');
+  const phone = w.momPhoneTracking(october);
+  assert.equal(phone.trackingAllowance, 400);
+  assert.equal(phone.trackingUsed, october.trackingUsed - 240);
+  assert.equal(phone.trackingRemaining, 400 - phone.trackingUsed);
+  // September ran as an $800 discretionary lump, so it is unchanged.
+  assert.equal(w.momPhoneTracking(w.calcMomBudgetMonth(data, '2026-09')).trackingAllowance, 800);
+  // The year adds up each month's discretionary budget ($800 Sept + $400 Oct).
+  const year = w.calcMomBudgetYear(data, '2026-10');
+  assert.equal(year.planned, 1200);
+  assert.equal(year.variance, year.planned - year.actual);
   const transactions = w.momBudgetMonthTransactions(data, '2026-10');
-  const emergency = transactions.find(entry => entry.group === 'Emergencies / Unplanned');
-  assert.deepEqual([String(emergency.name), Number(emergency.amount)], ['Urgent care', 240]);
+  assert.ok(!transactions.some(entry => entry.group === 'Emergencies / Unplanned'), 'no emergency entries on her phone');
   assert.ok(!transactions.some(entry => entry.id === 'fixed-fair-share'), 'Fair Share stays a reference transfer');
 });
 
