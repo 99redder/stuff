@@ -318,6 +318,11 @@ test('the emergency fund carries unused money forward through the year', () => {
   const october = a.mbLedgerTotalHtml('emergency', a.state.momBudget.months['2026-10'].emergency, 'emergency');
   assert.match(october, /2026 fund available/);
   assert.match(october, /\$40\.00/);
+  // One budgeted month so far (October), so the pace is $240/mo, $2,880/yr.
+  const history = a.mbLedgerHistoryHtml('emergency', 'emergency');
+  assert.match(history, /Actual pace/);
+  assert.match(history, /\$2880\.00/);
+  assert.doesNotMatch(a.mbLedgerHistoryHtml('discretionary', 'discretionary'), /Actual pace/);
   // Discretionary stays a plain monthly budget.
   assert.doesNotMatch(a.mbLedgerTotalHtml('discretionary', [], 'discretionary'), /fund available/);
 });

@@ -8750,6 +8750,10 @@ function mbLedgerHistoryHtml(section, budgetKey) {
     .reverse();
   const ytd = mbLedgerYearStat(section, budgetKey, year);
   if (!prior.length && !ytd.months) return '';
+  // Months this year in which the budget actually existed — the divisor for the
+  // carry-over fund's real monthly pace (it only started in October 2026).
+  const budgetMonths = mbTrackedMonthsThrough()
+    .filter(monthKey => monthKey.slice(0, 4) === year && mbVariableAmount(budgetKey, monthKey) > 0).length;
   const rows = prior.map(row => `
     <button type="button" class="mb-ledger-history-row" onclick="mbSetMonth('${escAttr(row.monthKey)}')">
       <span>${escHtml(mbMonthLabel(row.monthKey))}
@@ -8768,7 +8772,13 @@ function mbLedgerHistoryHtml(section, budgetKey) {
             <span class="mb-ledger-history-meta">· ${ytd.months} month${ytd.months === 1 ? '' : 's'} · ${fmt(ytd.budget)} budgeted</span>
           </span>
           <span><strong>${fmt(ytd.spent)}</strong> ${mbOverUnderHtml(ytd.diff)}</span>
-        </div>
+        </div>${MB_VARIABLE_META[budgetKey]?.carryover && budgetMonths ? `
+        <div class="mb-ledger-history-row mb-ledger-history-total">
+          <span>Actual pace
+            <span class="mb-ledger-history-meta">· averaged over ${budgetMonths} month${budgetMonths === 1 ? '' : 's'}</span>
+          </span>
+          <span><strong>${fmt(ytd.spent / budgetMonths)}</strong> / mo · about <strong>${fmt(ytd.spent / budgetMonths * 12)}</strong> / yr</span>
+        </div>` : ''}
       </div>
     </details>`;
 }

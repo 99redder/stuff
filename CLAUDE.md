@@ -837,7 +837,7 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ### 2026-10-01 — Mom Budget: Emergencies / Unplanned is a carry-over fund
 
-- **The emergency budget is a yearly fund, not a monthly cap** (`MB_VARIABLE_META.emergency.carryover: true`). Its ledger strip (`mbLedgerTotalHtml`) now leads with **`YYYY fund available`** = year-to-date budget − year-to-date spending (`mbLedgerYearStat(...).diff`), with `carried in + this month` and the month's spend beside it, so a quiet month's $200 rolls into the next. Resets with the calendar year. Discretionary keeps the plain monthly strip. Desktop only — her Money Left phone app never sees the emergency bucket. Month Math / Overall Spending Left are unchanged (still per-month).
+- **The emergency budget is a yearly fund, not a monthly cap** (`MB_VARIABLE_META.emergency.carryover: true`). Its ledger strip (`mbLedgerTotalHtml`) now leads with **`YYYY fund available`** = year-to-date budget − year-to-date spending (`mbLedgerYearStat(...).diff`), with `carried in + this month` and the month's spend beside it, so a quiet month's $200 rolls into the next. Resets with the calendar year. Its History & year-to-date panel adds an **Actual pace** row (average spent per budgeted month and the annualized figure) — the point of the fund is to learn what to budget yearly; $200/mo is a first guess. Discretionary keeps the plain monthly strip. Desktop only — her Money Left phone app never sees the emergency bucket. Month Math / Overall Spending Left are unchanged (still per-month).
 
 ### 2026-10-01 — Money Left phone PWA tracks discretionary only
 
