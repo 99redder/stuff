@@ -515,7 +515,6 @@
     const otherRows=(month.otherExpenses||[]).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))).map(item=>row(item.name||'Other expense',fullMoney(item.amount),`${item.date||''} · Overage`,'bad')).join('');
     return `<div class="month-switch"><button data-mom-month="${esc(keys[index-1]||'')}" ${index===0?'disabled':''} aria-label="Previous month">‹</button><div class="month-label">${esc(label)}</div><button data-mom-month="${esc(keys[index+1]||'')}" ${index===keys.length-1?'disabled':''} aria-label="Next month">›</button></div>
       <div class="hero"><div class="hero-label">Left to spend this month</div><div class="hero-value">${money(x.left)}</div><div class="hero-note">${money(x.budget)} discretionary budget minus ${money(x.spent)} spending and ${money(x.overages)} overages</div></div>
-      <div class="grid">${stat('Discretionary spent',money(x.spent),`of ${money(x.discretionary)} budget`,x.left<0?'bad':'good')}${stat('Overages',money(x.overages),'fixed and other',x.overages?'bad':'good')}</div>
       ${card('Fixed monthly spending',fixedRows,label)}
       ${momAddDiscretionaryCard(key,todayMonth)}
       ${card('Discretionary spending',discretionaryRows,label)}

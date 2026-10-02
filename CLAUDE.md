@@ -837,7 +837,7 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ### 2026-10-01 — Mobile Snapshot Mom tab tracks discretionary only
 
-- **"Left to spend this month" on the mobile Snapshot Mom tab is the discretionary budget alone** (`momMonth().left = discretionary − spent − overages`). The emergency budget, its `Emergency left` stat, and the `Emergencies / unplanned` card were removed from `mobile/index.html` — emergency spending is tracked on the desktop app only. The stat grid is now `Discretionary spent` + `Overages`. `mobile/sw.js` `CACHE_NAME` → `v44`. No worker change.
+- **"Left to spend this month" on the mobile Snapshot Mom tab is the discretionary budget alone** (`momMonth().left = discretionary − spent − overages`). The emergency budget, its `Emergency left` stat, and the `Emergencies / unplanned` card were removed from `mobile/index.html` — emergency spending is tracked on the desktop app only. The stat grid and the `Tracking started` banner were removed as well — the hero is the only summary figure. `mobile/sw.js` `CACHE_NAME` → `v46`. No worker change.
 
 ### 2026-10-01 — Mom Budget: Emergencies / Unplanned is a carry-over fund
 
