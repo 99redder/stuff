@@ -221,13 +221,12 @@ test('the mobile snapshot mirrors the split, including for a record saved before
   const c = mobile(raw, '2026-10');
   assert.equal(c.momVariable(raw, 'discretionary', '2026-09'), 500);
   assert.equal(c.momVariable(raw, 'discretionary', '2026-10'), 400);
-  assert.equal(c.momVariable(raw, 'emergency', '2026-10'), 200);
+  // Emergencies / unplanned is tracked on the desktop only: the snapshot's
+  // "left to spend" is the discretionary budget alone.
   const october = c.momMonth(raw, '2026-10');
-  assert.equal(october.budget, 600);
-  assert.equal(october.discretionaryLeft, 400 - 88.12);
-  assert.equal(october.emergencyLeft, 200 - 240);
-  assert.equal(october.left, 600 - 88.12 - 240);
-  assert.match(c.renderMom(), /Emergencies \/ unplanned/);
+  assert.equal(october.budget, 400);
+  assert.equal(october.left, 400 - 88.12);
+  assert.doesNotMatch(c.renderMom(), /emergenc/i);
   // A record the desktop has already re-saved uses its stored schedule instead.
   const edited = legacyRecord();
   edited.template.variableSchedule = { discretionary: [{ from: '2026-10', amount: 425 }], emergency: [{ from: '2026-10', amount: 200 }] };

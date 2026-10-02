@@ -835,13 +835,17 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ## Recent Updates
 
+### 2026-10-01 — Mobile Snapshot Mom tab tracks discretionary only
+
+- **"Left to spend this month" on the mobile Snapshot Mom tab is the discretionary budget alone** (`momMonth().left = discretionary − spent − overages`). The emergency budget, its `Emergency left` stat, and the `Emergencies / unplanned` card were removed from `mobile/index.html` — emergency spending is tracked on the desktop app only. The stat grid is now `Discretionary spent` + `Overages`. `mobile/sw.js` `CACHE_NAME` → `v44`. No worker change.
+
 ### 2026-10-01 — Mom Budget: Emergencies / Unplanned is a carry-over fund
 
 - **The emergency budget is a yearly fund, not a monthly cap** (`MB_VARIABLE_META.emergency.carryover: true`). Its ledger strip (`mbLedgerTotalHtml`) now leads with **`YYYY fund available`** = year-to-date budget − year-to-date spending (`mbLedgerYearStat(...).diff`), with `carried in + this month` and the month's spend beside it, so a quiet month's $200 rolls into the next. Resets with the calendar year. Its History & year-to-date panel adds an **Actual pace** row (average spent per budgeted month and the annualized figure) — the point of the fund is to learn what to budget yearly; $200/mo is a first guess. Discretionary keeps the plain monthly strip. Desktop only — her Money Left phone app never sees the emergency bucket. Month Math / Overall Spending Left are unchanged (still per-month).
 
 ### 2026-10-01 — Money Left phone PWA tracks discretionary only
 
-- **Her phone showed $600 left on Oct 1 instead of $400** — the public summary reported the full itemized allowance (discretionary + emergencies). The worker's phone summary now runs every figure through `momPhoneTracking(c)`, which subtracts the emergency budget and emergency spending: `month.trackingAllowance` / `trackingUsed` / `overallSpendingRemaining` / percents, the `year` roll-up (`calcMomBudgetYear`), and the transaction list (`momBudgetMonthTransactions` no longer emits the `Emergencies / Unplanned` group). `calcMomBudgetMonth` itself is untouched and still mirrors the app's `mbCalcMonth`; desktop and the mobile Snapshot Mom tab still show the full $600. Worker-only change — no phone page or cache bump.
+- **Her phone showed $600 left on Oct 1 instead of $400** — the public summary reported the full itemized allowance (discretionary + emergencies). The worker's phone summary now runs every figure through `momPhoneTracking(c)`, which subtracts the emergency budget and emergency spending: `month.trackingAllowance` / `trackingUsed` / `overallSpendingRemaining` / percents, the `year` roll-up (`calcMomBudgetYear`), and the transaction list (`momBudgetMonthTransactions` no longer emits the `Emergencies / Unplanned` group). `calcMomBudgetMonth` itself is untouched and still mirrors the app's `mbCalcMonth`; desktop still shows the full $600 (the mobile Snapshot Mom tab later went discretionary-only too — see the entry above). Worker-only change — no phone page or cache bump.
 
 ### 2026-10-01 — Health tab removed
 
