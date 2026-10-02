@@ -114,7 +114,7 @@ test('mobile Mom history stops at September and excludes earlier spending withou
   const rendered = c.renderMom();
   assert.equal(c.state.momMonth, '2026-09');
   assert.match(rendered, /September 2026/);
-  assert.match(rendered, /Tracking started September 1, 2026/);
+  assert.doesNotMatch(rendered, /Tracking started/);
   assert.match(rendered, /disabled[^>]*aria-label="Previous month"/);
   assert.match(rendered, /disabled[^>]*aria-label="Next month"/);
   assert.doesNotMatch(rendered, /August purchase|Old purchase|Old overage|Future purchase|2026-08/);
