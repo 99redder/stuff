@@ -310,6 +310,7 @@ async function handleDataApi(request, env) {
   if (action === 'save_cash_flow') return handleSaveCashFlow(env, body.year, body.data);
   if (action === 'refresh_usda_food_benchmark') return handleRefreshUsdaFoodBenchmark();
   if (action === 'get_mom_budget') return handleGetMomBudget(env);
+  if (action === 'get_fund_proxy_history') return handleGetFundProxyHistory(env, body);
   if (action === 'save_mom_budget') return handleSaveMomBudget(env, body.data);
   if (action === 'add_mom_budget_entry') return handleAddMomBudgetEntry(env, body);
   if (action === 'delete_mom_budget_entry') return handleDeleteMomBudgetEntry(env, body);
@@ -3351,6 +3352,61 @@ async function fetchYahooDailyClose(symbol, date) {
   );
   const close = index >= 0 ? Number(closes[index]) : NaN;
   return Number.isFinite(close) ? close : null;
+}
+
+// Daily dividend-adjusted closes for a public fund, from a few days before
+// `from` through today. The Mom Budget 401(k) tracker uses it to roll her last
+// statement balance forward: her plan fund is a collective trust with no public
+// price, so a publicly quoted fund with the same strategy stands in for it.
+const FUND_PROXY_CACHE_PREFIX = 'fund_proxy:';
+const FUND_PROXY_CACHE_TTL_SECONDS = 1800;
+const FUND_PROXY_MAX_LOOKBACK_DAYS = 1100;
+
+async function handleGetFundProxyHistory(env, body) {
+  const symbol = String(body?.symbol || '').trim().toUpperCase();
+  const from = String(body?.from || '');
+  if (!/^[A-Z0-9.^-]{1,10}$/.test(symbol)) return jsonResponse({ error: 'Invalid symbol' }, 400);
+  const fromMs = /^\d{4}-\d{2}-\d{2}$/.test(from) ? Date.parse(`${from}T00:00:00Z`) : NaN;
+  if (!Number.isFinite(fromMs) || fromMs > Date.now()
+      || Date.now() - fromMs > FUND_PROXY_MAX_LOOKBACK_DAYS * 86_400_000) {
+    return jsonResponse({ error: 'Invalid start date' }, 400);
+  }
+
+  const cacheKey = `${FUND_PROXY_CACHE_PREFIX}${symbol}:${from}`;
+  if (body?.refresh !== true) {
+    const cached = await env.RENTALS.get(cacheKey, 'json');
+    if (cached?.series?.length) return jsonResponse(cached);
+  }
+
+  const start = Math.floor(fromMs / 1000) - 7 * 86_400;
+  const end = Math.floor(Date.now() / 1000) + 86_400;
+  let result = null;
+  try {
+    const response = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
+      `?period1=${start}&period2=${end}&interval=1d&events=div%7Csplit`,
+      { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; rentals-api)' } }
+    );
+    if (response.ok) result = (await response.json())?.chart?.result?.[0];
+  } catch { /* handled below */ }
+  const offset = Number(result?.meta?.gmtoffset) || 0;
+  const adjusted = result?.indicators?.adjclose?.[0]?.adjclose || [];
+  const closes = result?.indicators?.quote?.[0]?.close || [];
+  const series = (result?.timestamp || []).map((timestamp, index) => {
+    const price = Number(adjusted[index] ?? closes[index]);
+    return [new Date((timestamp + offset) * 1000).toISOString().slice(0, 10), price];
+  }).filter(([, price]) => Number.isFinite(price) && price > 0);
+  if (!series.length) return jsonResponse({ error: 'Fund prices are unavailable right now.' }, 502);
+
+  const payload = {
+    symbol,
+    name: String(result?.meta?.longName || result?.meta?.shortName || symbol).slice(0, 120),
+    from,
+    series,
+    fetchedAt: new Date().toISOString(),
+  };
+  await env.RENTALS.put(cacheKey, JSON.stringify(payload), { expirationTtl: FUND_PROXY_CACHE_TTL_SECONDS });
+  return jsonResponse(payload);
 }
 
 // Appends the snapshot's close to the daily store (when it is a post-close

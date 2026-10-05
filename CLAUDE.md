@@ -297,6 +297,8 @@ Editing a budget input in the Monthly Template card applies **from the month cur
 
 **401(k) RMD calculator** (`mbRmdCard()` / `mbCalcRmd()` / `mbUpdateRmd()`): card at the bottom of the left column. It is **collapsible and starts minimized** (`mbRmdOpen()` / `mbToggleRmd()`, `localStorage` key `rentals_mom_budget_rmd_open`, default closed) — reference material rather than a daily input. While closed the header still carries the headline figure (`2026 minimum $X`, `Not required yet`, or `Balance not entered`). The same card also shows a **"Withdrawal to fund the monthly budget"** section (`mb401kIncomeItem()` / `mbCalc401kWithdrawal()`): it treats the monthly-template 401(k) income line (id `401k`, else name match) as the desired **net** and grosses it up for the 20% withholding (`gross = net ÷ 0.80`), showing monthly/annual gross, withheld, and net, plus a note comparing the annualized gross against the RMD minimum (met vs. shortfall). Live-syncs from the template amount; app-only (not on the phone PWA). Her birth date is a **fixed constant** (`MOM_RMD_BIRTH_YEAR = 1952`, born Aug 12, 1952; retired, no spouse → IRS Uniform Lifetime Table applies), so the **only editable input is the prior Dec 31 balance**, stored in `state.momBudget.rmd.balance` and saved with the record. `RMD = balance ÷ RMD_UNIFORM_LIFETIME[ageThisYear]` (IRS Uniform Lifetime Table, 2022+); shows yearly minimum + monthly equivalent. `mbRmdStartAge(birthYear)` applies SECURE Act 2.0 start ages (73 for 1951–1959, 75 for 1960+) and the card shows a "not required yet" note if below it. App-only — not surfaced on the phone PWA.
 
+**401(k) balance tracker** (top of the RMD card — `mb401kTrackerHtml()` / `mbCalc401kEstimate()` / `mbLoad401kProxy()`): estimates today's balance without logging in to the plan. Her plan (Lincoln) holds a single fund, **State Street Target Retirement Income (NL)** — a collective trust with no public price — so the last quarterly statement balance is rolled forward with the dividend-adjusted daily closes of its public twin, `MOM_401K_PROXY_SYMBOL = 'SSFOX'` (validated on Q3 2026: SSFOX −0.58% vs. statement −0.59%). Inputs live in `state.momBudget.rmd.tracker = { asOf, balance, withdrawals:[{id,date,amount}] }` (normalized by `mbNormalize401kTracker`, saved with the record): the statement closing date + balance, re-entered each quarter, plus any gross withdrawals since. `estimate = balance × P(latest)/P(asOf) − Σ withdrawal × P(latest)/P(withdrawal date)`; withdrawals dated on/before `asOf` are ignored (already in the statement). Prices come from the authenticated worker action `get_fund_proxy_history` (module cache `_mb401kProxy`, loaded un-awaited from `renderMomBudget`). The block also shows next year's RMD if the year ended at today's estimate, and how many years of budget withdrawals the balance covers; the collapsed card header carries `≈ $X today`. **The statement balance is entered in the app, never hardcoded** — this repo is public. App-only (not on either phone PWA).
+
 **Top card formulas:**
 ```javascript
 overallSpendingRemaining =
@@ -670,6 +672,11 @@ Maintenance entries use `capitalImprovement: true` when marked **Improvement** i
 | `update_mom_budget_entry` | `section: 'discretionary'`, `month: 'YYYY-MM'`, `id`, `entry: { date, name, amount }` | `{ success, entry, data }` — atomically edits one ledger entry; a date in another month moves it to that month's ledger. `404` (with `data`) if it was removed. |
 | `get_mom_budget_public_summary` | optional `month: "YYYY-MM"` | `{ monthKey, monthLabel, updatedAt, month: { overallSpendingRemaining, trackingAllowance, trackingUsed, discretionaryBudget, discretionarySpent, discretionaryRemaining, discretionaryAdjusted, emergencyBudget, emergencySpent, emergencyRemaining, otherOverages, fairShare, transactions }, year: {...} }` — public unauthenticated read-only summary for `mom-budget-phone.html`; returns calculated numbers only, never raw editable records. `month.fairShare` is computed live from the `budget` KV record (`calcFairShareFromBudget`). Guarded by a per-IP rate limit (`env.PUBLIC_RATELIMIT`, 60 req/60s → `429`, fails open) and a ~45s edge cache (synthetic GET cache key keyed by month, `Cache-Control: public, s-maxage=45`). Both are invisible to the phone and cap bot/flood abuse. |
 
+#### Fund prices (global)
+| Action | Extra payload | Returns |
+|---|---|---|
+| `get_fund_proxy_history` | `symbol`, `from: "YYYY-MM-DD"`, optional `refresh: true` | `{ symbol, name, from, series: [[date, adjClose], ...], fetchedAt }` — dividend-adjusted daily closes from ~7 days before `from` through today (Yahoo chart API), cached 30 min in KV under `fund_proxy:{symbol}:{from}`. `from` must be within ~3 years. `502` when prices are unavailable. Used by the Mom Budget 401(k) balance tracker. |
+
 #### Move-In Purchases (per-property — 4781MC only)
 All of these reject any property other than `4781MC` (`requireMoveInPurchaseProperty`) with a 400.
 
@@ -834,6 +841,10 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-10-05 — Mom Budget: 401(k) balance tracker
+
+- **The RMD card now opens with an estimated current 401(k) balance**, so the account can be followed between statements without her logging in. Enter the closing date + balance from each quarterly statement (and any gross withdrawals since); the app rolls it forward with the daily total return of `SSFOX`, the public twin of her plan's State Street Target Retirement Income collective trust. Also shows next year's RMD at today's estimate and years of budget withdrawals covered. New worker action `get_fund_proxy_history`. **Worker deploy required.** See the Mom Budget section.
 
 ### 2026-10-01 — Mobile Snapshot Mom tab tracks discretionary only
 

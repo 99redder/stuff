@@ -7720,6 +7720,88 @@ function mbCalc401kWithdrawal() {
   };
 }
 
+// ── 401(k) balance tracker ──
+// Her plan fund is a collective trust with no public price, so the balance from
+// her last quarterly statement is rolled forward with the daily total return of
+// a publicly quoted fund that runs the same strategy. It is an estimate: each
+// new statement replaces it with the real number.
+const MOM_401K_FUND_NAME = 'State Street Target Retirement Income (NL)';
+const MOM_401K_PROXY_SYMBOL = 'SSFOX';
+const MB_ISO_DATE_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+let _mb401kProxy = { from: '', series: null, name: '', fetchedAt: '', error: '', loading: false };
+
+function mbNormalize401kTracker(raw) {
+  const t = (raw && typeof raw === 'object') ? raw : {};
+  const balance = Number(t.balance);
+  return {
+    asOf: MB_ISO_DATE_RE.test(String(t.asOf || '')) ? String(t.asOf) : '',
+    balance: (Number.isFinite(balance) && balance > 0) ? balance : 0,
+    withdrawals: (Array.isArray(t.withdrawals) ? t.withdrawals : [])
+      .map(w => ({ id: String(w?.id || mbUuid('wd')), date: String(w?.date || ''), amount: Number(w?.amount) || 0 }))
+      .filter(w => MB_ISO_DATE_RE.test(w.date) && w.amount > 0)
+      .sort((a, b) => a.date.localeCompare(b.date))
+  };
+}
+
+function mb401kTracker() {
+  return state.momBudget?.rmd?.tracker || mbNormalize401kTracker(null);
+}
+
+// Last proxy close on or before `date` (prices only post on trading days).
+function mb401kProxyPrice(series, date) {
+  let found = null;
+  for (const [day, price] of series || []) {
+    if (day > date) break;
+    found = { date: day, price };
+  }
+  return found;
+}
+
+// estimate = statement balance × growth since the statement, less each later
+// withdrawal carried forward from the day it left the account.
+function mbCalc401kEstimate() {
+  const t = mb401kTracker();
+  const out = { tracker: t, ready: false, hasStatement: !!(t.asOf && t.balance) };
+  const series = _mb401kProxy.from === t.asOf ? _mb401kProxy.series : null;
+  if (!out.hasStatement || !series?.length) return out;
+  const base = mb401kProxyPrice(series, t.asOf);
+  const latest = series[series.length - 1];
+  if (!base || !latest) return out;
+  const growth = latest[1] / base.price;
+  const counted = t.withdrawals.filter(w => w.date > t.asOf);
+  const withdrawn = counted.reduce((sum, w) => sum + w.amount, 0);
+  const withdrawnToday = counted.reduce((sum, w) => {
+    const at = mb401kProxyPrice(series, w.date) || base;
+    return sum + w.amount * (latest[1] / at.price);
+  }, 0);
+  const estimate = Math.max(0, t.balance * growth - withdrawnToday);
+  const nextYear = CURRENT_YEAR + 1;
+  const nextAge = nextYear - MOM_RMD_BIRTH_YEAR;
+  const nextFactor = nextAge >= mbRmdStartAge(MOM_RMD_BIRTH_YEAR)
+    ? (RMD_UNIFORM_LIFETIME[Math.min(120, Math.max(72, nextAge))] || 0) : 0;
+  return {
+    ...out, ready: true, estimate, growth, withdrawn,
+    priceDate: latest[0],
+    marketChange: estimate + withdrawn - t.balance,
+    marketPct: (growth - 1) * 100,
+    nextYear, nextFactor, nextRmd: nextFactor ? estimate / nextFactor : 0
+  };
+}
+
+async function mbLoad401kProxy(force = false) {
+  const from = mb401kTracker().asOf;
+  if (!from || !mb401kTracker().balance || _mb401kProxy.loading) return;
+  if (!force && _mb401kProxy.from === from && _mb401kProxy.series) return;
+  _mb401kProxy = { ..._mb401kProxy, loading: true, error: '' };
+  try {
+    const result = await callApi({ action: 'get_fund_proxy_history', symbol: MOM_401K_PROXY_SYMBOL, from, refresh: force });
+    _mb401kProxy = { from, series: result.series || [], name: result.name || '', fetchedAt: result.fetchedAt || '', error: '', loading: false };
+  } catch (err) {
+    _mb401kProxy = { ..._mb401kProxy, loading: false, error: 'Fund prices could not be loaded.' };
+  }
+  if (state.currentView === 'mom-budget') _renderMomBudgetHtml();
+}
+
 // Land on the month the new budget setup starts until the calendar catches up,
 // so the tab opens on the setup that matters rather than September's one-off.
 function mbDefaultMonth() {
@@ -7921,6 +8003,7 @@ function mbNormalize(raw) {
   // without a projection year default to the current year.
   data.rmd = (data.rmd && typeof data.rmd === 'object') ? data.rmd : { balance: 0 };
   data.rmd.year = mbNormalizeRmdYear(data.rmd.year);
+  data.rmd.tracker = mbNormalize401kTracker(data.rmd.tracker);
   data.months = data.months || {};
   Object.entries(data.months).forEach(([monthKey, month]) => {
     month.fixedPaid = month.fixedPaid || {};
@@ -7964,6 +8047,7 @@ async function renderMomBudget() {
   mbSyncHouseholdTransfers();
   if (!state.momBudget.months[_mbMonth]) state.momBudget.months[_mbMonth] = mbBlankMonth();
   _renderMomBudgetHtml();
+  mbLoad401kProxy();   // not awaited — the card fills in when prices arrive
   if (_mbMigrationApplied) {
     _mbMigrationApplied = false;
     await _saveMomBudget();
@@ -8530,10 +8614,12 @@ function mbRmdCard() {
   }
 
   const open = mbRmdOpen();
-  // Keep the headline figure readable while the card is closed.
-  const collapsedNote = !c.balance ? 'Balance not entered'
+  // Keep the headline figures readable while the card is closed.
+  const est = mbCalc401kEstimate();
+  const rmdNoteText = !c.balance ? 'Balance not entered'
     : c.required ? `${c.year} minimum ${fmt(c.rmd)}`
     : 'Not required yet';
+  const collapsedNote = est.ready ? `≈ ${fmt(est.estimate)} today · ${rmdNoteText}` : rmdNoteText;
 
   return `
     <div class="card tp-card">
@@ -8543,6 +8629,12 @@ function mbRmdCard() {
         <button class="btn btn-ghost btn-sm" type="button" style="margin-left:auto" onclick="mbToggleRmd()" aria-expanded="${open ? 'true' : 'false'}">${open ? 'Minimize' : 'Expand'}</button>
       </div>
       <div class="card-body${open ? '' : ' hidden'}">
+        ${mb401kTrackerHtml(est, w)}
+        <div style="display:flex;align-items:center;gap:.6rem;margin:1rem 0 .6rem">
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Required minimum distribution</div>
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+        </div>
         <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.85rem">
           <div style="flex:0 1 130px;min-width:120px">
             <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Distribution year</label>
@@ -8574,6 +8666,117 @@ function mbRmdCard() {
         </div>
       </div>
     </div>`;
+}
+
+function mb401kTrackerHtml(est, w) {
+  const t = est.tracker;
+  const label = 'display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem';
+  let headline;
+  if (!est.hasStatement) {
+    headline = `<div style="padding:.85rem 1rem;background:var(--surface);border:1px dashed var(--border);border-radius:var(--radius);color:var(--text-muted);font-size:.85rem">
+      Enter the closing date and balance from her latest quarterly statement and this estimates what the account is worth today.</div>`;
+  } else if (!est.ready) {
+    headline = `<div style="padding:.85rem 1rem;background:var(--surface);border:1px dashed var(--border);border-radius:var(--radius);color:var(--text-muted);font-size:.85rem">
+      ${_mb401kProxy.error ? `${escHtml(_mb401kProxy.error)} The statement balance was ${fmt(t.balance)} on ${fmtDate(t.asOf)}.` : 'Loading fund prices…'}</div>`;
+  } else {
+    const up = est.marketChange >= 0;
+    const years = w.grossAnnual > 0 ? est.estimate / w.grossAnnual : 0;
+    headline = `
+      <div style="padding:1rem;background:linear-gradient(135deg,rgba(37,99,235,.08),rgba(16,185,129,.07));border:2px solid var(--primary);border-radius:var(--radius)">
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Estimated balance · prices through ${fmtDate(est.priceDate)}</div>
+        <div style="font-size:2rem;font-weight:800;line-height:1.1;margin:.15rem 0;color:var(--primary)">${fmt(est.estimate)}</div>
+        <div style="font-size:.82rem;color:var(--text-muted)">Market move since the statement:
+          <strong style="color:var(--${up ? 'success' : 'danger'})">${up ? '+' : '−'}${fmt(Math.abs(est.marketChange))} (${up ? '+' : '−'}${Math.abs(est.marketPct).toFixed(2)}%)</strong></div>
+        <div style="margin-top:.65rem;padding:.65rem .75rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:.5rem 1rem;font-size:.82rem">
+          <div><span style="display:block;color:var(--text-muted);font-size:.72rem">Statement ${fmtDate(t.asOf)}</span><strong>${fmt(t.balance)}</strong></div>
+          <div><span style="display:block;color:var(--text-muted);font-size:.72rem">Withdrawn since</span><strong>${fmt(est.withdrawn)}</strong></div>
+          ${est.nextFactor ? `<div><span style="display:block;color:var(--text-muted);font-size:.72rem">${est.nextYear} RMD if the year ended today</span><strong>${fmt(est.nextRmd)}</strong></div>` : ''}
+          ${years ? `<div><span style="display:block;color:var(--text-muted);font-size:.72rem">Years of budget withdrawals</span><strong>${years.toFixed(1)}</strong></div>` : ''}
+        </div>
+      </div>`;
+  }
+  const withdrawals = t.withdrawals.map(wd => `
+    <div style="display:flex;align-items:center;gap:.6rem;padding:.3rem 0;font-size:.82rem;border-top:1px solid var(--border)">
+      <span style="flex:1">${fmtDate(wd.date)}${wd.date > t.asOf ? '' : ' <em style="color:var(--text-muted)">· already in the statement</em>'}</span>
+      <strong>${fmt(wd.amount)}</strong>
+      <button class="btn btn-ghost btn-sm" type="button" title="Remove withdrawal" onclick="mbDelete401kWithdrawal('${escAttr(wd.id)}')">✕</button>
+    </div>`).join('');
+  return `
+    <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.85rem">
+      <div style="flex:0 1 170px;min-width:150px">
+        <label style="${label}">Statement closing date</label>
+        <input type="date" class="form-input" value="${escAttr(t.asOf)}" max="${appTodayIso()}" onchange="mbUpdate401kTracker('asOf', this.value)" style="width:100%;font-weight:600">
+      </div>
+      <div style="flex:1;min-width:170px">
+        <label style="${label}">Statement closing balance</label>
+        <div style="position:relative">
+          <span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
+          <input type="text" inputmode="decimal" class="form-input" value="${escAttr(moneyInputValue(t.balance))}" placeholder="0.00"
+                 onchange="mbUpdate401kTracker('balance', this.value)" onblur="formatMoneyInput(this)" style="width:100%;padding-left:1.5rem;font-weight:600">
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="mbLoad401kProxy(true)" ${est.hasStatement && !_mb401kProxy.loading ? '' : 'disabled'}>↻ Refresh prices</button>
+    </div>
+    ${headline}
+    <div style="margin-top:.75rem">
+      <div style="${label}">Withdrawals since the statement (gross, before withholding)</div>
+      ${withdrawals}
+      <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;margin-top:.4rem">
+        <input type="date" class="form-input" id="mb-401k-wd-date" value="${appTodayIso()}" max="${appTodayIso()}" style="width:auto">
+        <input type="text" inputmode="decimal" class="form-input" id="mb-401k-wd-amount" placeholder="Gross amount" style="width:140px">
+        <button class="btn btn-ghost btn-sm" type="button" onclick="mbAdd401kWithdrawal()">+ Add withdrawal</button>
+      </div>
+    </div>
+    <div style="font-size:.72rem;color:var(--text-muted);margin-top:.6rem;line-height:1.5">
+      Her plan holds one fund, <strong>${escHtml(MOM_401K_FUND_NAME)}</strong>, a collective trust with no public price. The estimate rolls the statement balance forward with the daily total return of its public twin, <strong>${escHtml(MOM_401K_PROXY_SYMBOL)}</strong>${_mb401kProxy.name ? ` (${escHtml(_mb401kProxy.name)})` : ''}. Prices post once a day after the market closes, and the two funds can drift by a few hundredths of a percent a quarter, so re-enter the balance from each new statement.
+    </div>`;
+}
+
+async function mbUpdate401kTracker(field, value) {
+  if (!state.momBudget.rmd) state.momBudget.rmd = { balance: 0, year: CURRENT_YEAR };
+  const t = mbNormalize401kTracker(state.momBudget.rmd.tracker);
+  if (field === 'asOf') {
+    t.asOf = MB_ISO_DATE_RE.test(value) && value <= appTodayIso() ? value : '';
+  } else if (field === 'balance') {
+    const v = parseMoney(value);
+    t.balance = (isFinite(v) && v > 0) ? v : 0;
+  }
+  state.momBudget.rmd.tracker = t;
+  _renderMomBudgetHtml();
+  mbLoad401kProxy();
+  await _saveMomBudget();
+}
+
+async function mbAdd401kWithdrawal() {
+  const date = document.getElementById('mb-401k-wd-date')?.value || '';
+  const amount = parseMoney(document.getElementById('mb-401k-wd-amount')?.value);
+  if (!MB_ISO_DATE_RE.test(date) || !isFinite(amount) || amount <= 0) {
+    showBrandedNotice({ title: 'Withdrawal not added', message: 'Enter the date and the gross amount withdrawn.' });
+    return;
+  }
+  if (!state.momBudget.rmd) state.momBudget.rmd = { balance: 0, year: CURRENT_YEAR };
+  const t = mbNormalize401kTracker(state.momBudget.rmd.tracker);
+  t.withdrawals.push({ id: mbUuid('wd'), date, amount });
+  state.momBudget.rmd.tracker = mbNormalize401kTracker(t);
+  _renderMomBudgetHtml();
+  await _saveMomBudget();
+}
+
+function mbDelete401kWithdrawal(id) {
+  const t = mb401kTracker();
+  const wd = t.withdrawals.find(item => item.id === id);
+  if (!wd) return;
+  showBrandedNotice({
+    type: 'danger',
+    title: 'Remove this withdrawal?',
+    message: `${fmtDate(wd.date)} · ${fmt(wd.amount)} will no longer be subtracted from the estimated balance.`,
+    confirmLabel: 'Yes, Remove',
+    onConfirm: async () => {
+      state.momBudget.rmd.tracker = { ...t, withdrawals: t.withdrawals.filter(item => item.id !== id) };
+      _renderMomBudgetHtml();
+      await _saveMomBudget();
+    }
+  });
 }
 
 async function mbUpdateRmd(field, value) {
