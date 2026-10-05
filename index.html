@@ -7733,11 +7733,15 @@ let _mb401kProxy = { from: '', series: null, name: '', fetchedAt: '', error: '',
 function mbNormalize401kTracker(raw) {
   const t = (raw && typeof raw === 'object') ? raw : {};
   const balance = Number(t.balance);
+  const autoAmount = Number(t.autoAmount);
   return {
     asOf: MB_ISO_DATE_RE.test(String(t.asOf || '')) ? String(t.asOf) : '',
     balance: (Number.isFinite(balance) && balance > 0) ? balance : 0,
+    // Yearly Jan 1 withdrawal: 0 = follow the budget's gross withdrawal.
+    autoAmount: (Number.isFinite(autoAmount) && autoAmount > 0) ? autoAmount : 0,
+    autoThrough: Math.trunc(Number(t.autoThrough)) || 0,   // last year already recorded
     withdrawals: (Array.isArray(t.withdrawals) ? t.withdrawals : [])
-      .map(w => ({ id: String(w?.id || mbUuid('wd')), date: String(w?.date || ''), amount: Number(w?.amount) || 0 }))
+      .map(w => ({ id: String(w?.id || mbUuid('wd')), date: String(w?.date || ''), amount: Number(w?.amount) || 0, ...(w?.auto ? { auto: true } : {}) }))
       .filter(w => MB_ISO_DATE_RE.test(w.date) && w.amount > 0)
       .sort((a, b) => a.date.localeCompare(b.date))
   };
@@ -7786,6 +7790,30 @@ function mbCalc401kEstimate() {
     marketPct: (growth - 1) * 100,
     nextYear, nextFactor, nextRmd: nextFactor ? estimate / nextFactor : 0
   };
+}
+
+// The gross amount assumed to leave the account each Jan 1: the override when
+// one is set, else the withdrawal that funds the monthly budget.
+function mb401kAutoAmount() {
+  return mb401kTracker().autoAmount || mbCalc401kWithdrawal().grossAnnual || 0;
+}
+
+// Records each Jan 1 withdrawal once its date arrives, at the amount in effect
+// then, so a later budget change never restates a past year. Recorded entries
+// are ordinary withdrawals: remove or replace one if the real amount differed.
+function mbApply401kAutoWithdrawals() {
+  const t = mb401kTracker();
+  const amount = mb401kAutoAmount();
+  if (!t.asOf || !t.balance || !(amount > 0)) return false;
+  const today = appTodayIso();
+  let applied = false;
+  for (let year = Math.max(Number(t.asOf.slice(0, 4)), t.autoThrough) + 1; `${year}-01-01` <= today; year++) {
+    t.withdrawals.push({ id: mbUuid('wd'), date: `${year}-01-01`, amount: Math.round(amount * 100) / 100, auto: true });
+    t.autoThrough = year;
+    applied = true;
+  }
+  if (applied) state.momBudget.rmd.tracker = mbNormalize401kTracker(t);
+  return applied;
 }
 
 async function mbLoad401kProxy(force = false) {
@@ -8046,6 +8074,7 @@ async function renderMomBudget() {
   try { await ensureBudgetLoaded(); } catch { /* offline — keep last synced value */ }
   mbSyncHouseholdTransfers();
   if (!state.momBudget.months[_mbMonth]) state.momBudget.months[_mbMonth] = mbBlankMonth();
+  if (mbApply401kAutoWithdrawals()) _mbMigrationApplied = true;   // persist the new entry
   _renderMomBudgetHtml();
   mbLoad401kProxy();   // not awaited — the card fills in when prices arrive
   if (_mbMigrationApplied) {
@@ -8697,10 +8726,16 @@ function mb401kTrackerHtml(est, w) {
   }
   const withdrawals = t.withdrawals.map(wd => `
     <div style="display:flex;align-items:center;gap:.6rem;padding:.3rem 0;font-size:.82rem;border-top:1px solid var(--border)">
-      <span style="flex:1">${fmtDate(wd.date)}${wd.date > t.asOf ? '' : ' <em style="color:var(--text-muted)">· already in the statement</em>'}</span>
+      <span style="flex:1">${fmtDate(wd.date)}${wd.auto ? ' <em style="color:var(--text-muted)">· automatic</em>' : ''}${wd.date > t.asOf ? '' : ' <em style="color:var(--text-muted)">· already in the statement</em>'}</span>
       <strong>${fmt(wd.amount)}</strong>
       <button class="btn btn-ghost btn-sm" type="button" title="Remove withdrawal" onclick="mbDelete401kWithdrawal('${escAttr(wd.id)}')">✕</button>
     </div>`).join('');
+  const autoAmount = mb401kAutoAmount();
+  const budgetGross = w.grossAnnual || 0;
+  const nextAutoYear = Math.max(CURRENT_YEAR, Number((t.asOf || '').slice(0, 4)) || 0, t.autoThrough) + 1;
+  const autoNote = autoAmount > 0
+    ? `Next: <strong>Jan 1, ${nextAutoYear} · ${fmt(autoAmount)}</strong> ${t.autoAmount ? '(amount set here)' : '(the gross withdrawal that funds the monthly budget)'}. It is recorded below on the day and can be removed or replaced if the real amount differs.`
+    : 'No yearly withdrawal is assumed. Enter an amount, or add a 401(k) distribution to the monthly template.';
   return `
     <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.85rem">
       <div style="flex:0 1 170px;min-width:150px">
@@ -8718,6 +8753,17 @@ function mb401kTrackerHtml(est, w) {
       <button class="btn btn-ghost btn-sm" type="button" onclick="mbLoad401kProxy(true)" ${est.hasStatement && !_mb401kProxy.loading ? '' : 'disabled'}>↻ Refresh prices</button>
     </div>
     ${headline}
+    <div style="margin-top:.75rem;display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end">
+      <div style="flex:0 1 220px;min-width:190px">
+        <label style="${label}">Automatic Jan 1 withdrawal (gross)</label>
+        <div style="position:relative">
+          <span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
+          <input type="text" inputmode="decimal" class="form-input" value="${escAttr(t.autoAmount ? moneyInputValue(t.autoAmount) : '')}" placeholder="${escAttr(budgetGross ? `${moneyInputValue(budgetGross)} from budget` : '0.00')}"
+                 onchange="mbUpdate401kTracker('autoAmount', this.value)" style="width:100%;padding-left:1.5rem;font-weight:600">
+        </div>
+      </div>
+      <div style="flex:1;min-width:220px;font-size:.78rem;color:var(--text-muted);line-height:1.45">${autoNote}</div>
+    </div>
     <div style="margin-top:.75rem">
       <div style="${label}">Withdrawals since the statement (gross, before withholding)</div>
       ${withdrawals}
@@ -8728,7 +8774,7 @@ function mb401kTrackerHtml(est, w) {
       </div>
     </div>
     <div style="font-size:.72rem;color:var(--text-muted);margin-top:.6rem;line-height:1.5">
-      Her plan holds one fund, <strong>${escHtml(MOM_401K_FUND_NAME)}</strong>, a collective trust with no public price. The estimate rolls the statement balance forward with the daily total return of its public twin, <strong>${escHtml(MOM_401K_PROXY_SYMBOL)}</strong>${_mb401kProxy.name ? ` (${escHtml(_mb401kProxy.name)})` : ''}. Prices post once a day after the market closes, and the two funds can drift by a few hundredths of a percent a quarter, so re-enter the balance from each new statement.
+      Her plan holds one fund, <strong>${escHtml(MOM_401K_FUND_NAME)}</strong>, a collective trust with no public price. The estimate rolls the statement balance forward with the daily total return of its public twin, <strong>${escHtml(MOM_401K_PROXY_SYMBOL)}</strong>${_mb401kProxy.name ? ` (${escHtml(_mb401kProxy.name)})` : ''}. Prices post once a day after the market closes, and the two funds can drift by a few hundredths of a percent a quarter, so it is a close estimate, not the plan's own figure. Entering a newer statement is optional and simply resets that drift.
     </div>`;
 }
 
@@ -8740,8 +8786,12 @@ async function mbUpdate401kTracker(field, value) {
   } else if (field === 'balance') {
     const v = parseMoney(value);
     t.balance = (isFinite(v) && v > 0) ? v : 0;
+  } else if (field === 'autoAmount') {
+    const v = parseMoney(value);
+    t.autoAmount = (isFinite(v) && v > 0) ? v : 0;   // blank = follow the budget
   }
   state.momBudget.rmd.tracker = t;
+  mbApply401kAutoWithdrawals();
   _renderMomBudgetHtml();
   mbLoad401kProxy();
   await _saveMomBudget();
