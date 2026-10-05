@@ -283,7 +283,7 @@ test('year to date counts a month the owner never opened, using its scheduled bu
   assert.equal(ytd.spent, 212.4);
 });
 
-test('the RMD card starts minimized and remembers being opened', () => {
+test('the RMD card starts minimized and opens on demand', () => {
   const store = {};
   const a = app(store);
   a.state.momBudget = a.mbNormalize(legacyRecord());
@@ -296,7 +296,7 @@ test('the RMD card starts minimized and remembers being opened', () => {
   assert.match(card, /2026 minimum \$/, 'the headline figure still reads while closed');
 
   a.mbToggleRmd();
-  assert.equal(store.rentals_mom_budget_rmd_open, '1');
+  assert.equal(a.mbRmdOpen(), true);
   card = a.mbRmdCard();
   assert.doesNotMatch(card, /class="card-body hidden"/);
   assert.match(card, />Minimize</);

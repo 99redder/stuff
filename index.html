@@ -7629,7 +7629,6 @@ const MOM_BUDGET_DEFAULT = {
 const MB_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MB_TRACKING_START_MONTH = '2026-09';
 const MB_YEAR_STATS_OPEN_KEY = 'rentals_mom_budget_year_stats_open';
-const MB_RMD_OPEN_KEY = 'rentals_mom_budget_rmd_open';
 // Separate spending allowance used by Mom Money Left tracking. Fair Share is
 // shown as a reference transfer and is excluded from this calculation.
 // The monthly spending allowance is always the itemized variable budgets added
@@ -8302,20 +8301,21 @@ function mbToggleYearStats() {
   _renderMomBudgetHtml();
 }
 
-// The RMD card is reference material, not a daily input — it starts minimized.
+// The RMD card and the 401(k) balance tracker are reference material, not
+// daily inputs — both start minimized on every load.
+let _mbRmdSectionOpen = false;
+let _mb401kTrackerOpen = false;
 function mbRmdOpen() {
-  return localStorage.getItem(MB_RMD_OPEN_KEY) === '1';
+  return _mbRmdSectionOpen;
 }
 
-// The RMD details inside the card start minimized on every load.
-let _mbRmdSectionOpen = false;
-function mbToggleRmdSection() {
+function mbToggleRmd() {
   _mbRmdSectionOpen = !_mbRmdSectionOpen;
   _renderMomBudgetHtml();
 }
 
-function mbToggleRmd() {
-  localStorage.setItem(MB_RMD_OPEN_KEY, mbRmdOpen() ? '0' : '1');
+function mbToggle401kTracker() {
+  _mb401kTrackerOpen = !_mb401kTrackerOpen;
   _renderMomBudgetHtml();
 }
 
@@ -8451,6 +8451,7 @@ const MB_SHORTCUTS = [
   ['mb-sec-discretionary', '🛍️ Add a purchase'],
   ['mb-sec-emergency', '🚨 Add an emergency'],
   ['mb-sec-fixed', '✅ Mark bills paid'],
+  ['mb-sec-401k-budget', '🏦 Yearly 401(k) withdrawal'],
   ['mb-sec-401k', '💰 401(k) balance'],
   ['mb-sec-401k-withdrawals', '💵 401(k) withdrawals'],
   ['mb-sec-rmd', '📋 RMD'],
@@ -8461,10 +8462,8 @@ const MB_SHORTCUTS = [
 // the cursor in a ledger's description box so a purchase can be typed at once.
 function mbJumpTo(target) {
   let rerender = false;
-  if (target.startsWith('mb-sec-401k') || target === 'mb-sec-rmd') {
-    if (!mbRmdOpen()) { localStorage.setItem(MB_RMD_OPEN_KEY, '1'); rerender = true; }
-    if (target === 'mb-sec-rmd' && !_mbRmdSectionOpen) { _mbRmdSectionOpen = true; rerender = true; }
-  }
+  if (['mb-sec-401k', 'mb-sec-401k-withdrawals'].includes(target) && !_mb401kTrackerOpen) { _mb401kTrackerOpen = true; rerender = true; }
+  if (target === 'mb-sec-rmd' && !_mbRmdSectionOpen) { _mbRmdSectionOpen = true; rerender = true; }
   if (rerender) _renderMomBudgetHtml();
   const el = document.getElementById(target);
   if (!el) return;
@@ -8738,36 +8737,42 @@ function mbRmdCard() {
       Add a 401(k) distribution amount to the monthly template's income section and this shows the gross withdrawal needed to net it after 20% withholding.</div>`;
   }
 
-  const open = mbRmdOpen();
-  const rmdOpen = _mbRmdSectionOpen;
-  // Keep the headline figures readable while the card is closed.
+  const rmdOpen = mbRmdOpen();
+  const trackerOpen = _mb401kTrackerOpen;
+  // Keep each headline figure readable while its card is closed.
   const est = mbCalc401kEstimate();
   const rmdNoteText = !c.balance ? 'Balance not entered'
     : c.required ? `${c.year} minimum ${fmt(c.rmd)}`
     : 'Not required yet';
-  const collapsedNote = est.ready ? `≈ ${fmt(est.estimate)} today · ${rmdNoteText}` : rmdNoteText;
+  const trackerNote = est.ready ? `≈ ${fmt(est.estimate)} today`
+    : est.hasStatement ? 'Loading prices…' : 'Statement not entered';
+  const toggle = (open, onClick) => `<button class="btn btn-ghost btn-sm" type="button" style="margin-left:auto" onclick="${onClick}" aria-expanded="${open ? 'true' : 'false'}">${open ? 'Minimize' : 'Expand'}</button>`;
+  const note = text => `<span style="font-size:.78rem;font-weight:600;color:var(--text-muted)">${escHtml(text)}</span>`;
 
+  // Three cards: the yearly withdrawal (always open), then the balance tracker
+  // and the RMD details, which both start minimized.
   return `
+    <div class="card tp-card" id="mb-sec-401k-budget">
+      <div class="card-header"><div class="card-title">401(k) Withdrawal to Fund the Monthly Budget</div></div>
+      <div class="card-body">
+        ${withdrawalBlock}
+      </div>
+    </div>
     <div class="card tp-card" id="mb-sec-401k">
       <div class="card-header" style="gap:.75rem;flex-wrap:wrap">
-        <div class="card-title">Traditional 401(k) Minimum Distribution (RMD)</div>
-        ${open ? '' : `<span style="font-size:.78rem;font-weight:600;color:var(--text-muted)">${escHtml(collapsedNote)}</span>`}
-        <button class="btn btn-ghost btn-sm" type="button" style="margin-left:auto" onclick="mbToggleRmd()" aria-expanded="${open ? 'true' : 'false'}">${open ? 'Minimize' : 'Expand'}</button>
+        <div class="card-title">401(k) Balance Tracker</div>
+        ${trackerOpen ? '' : note(trackerNote)}
+        ${toggle(trackerOpen, 'mbToggle401kTracker()')}
       </div>
-      <div class="card-body${open ? '' : ' hidden'}">
-        ${mb401kTrackerHtml(est, w)}
-        <div style="display:flex;align-items:center;gap:.6rem;margin:1rem 0 .6rem">
-          <div style="flex:1;height:1px;background:var(--border)"></div>
-          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Withdrawal to fund the monthly budget</div>
-          <div style="flex:1;height:1px;background:var(--border)"></div>
-        </div>
-        ${withdrawalBlock}
-        <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin:1rem 0 .6rem;padding-top:.85rem;border-top:1px solid var(--border)">
-          <div id="mb-sec-rmd" style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Required minimum distribution</div>
-          <span style="flex:1;font-size:.78rem;font-weight:600;color:var(--text-muted)">${rmdOpen ? '' : escHtml(rmdNoteText)}</span>
-          <button class="btn btn-ghost btn-sm" type="button" onclick="mbToggleRmdSection()" aria-expanded="${rmdOpen ? 'true' : 'false'}">${rmdOpen ? 'Minimize' : 'Expand'}</button>
-        </div>
-        ${rmdOpen ? `
+      ${trackerOpen ? `<div class="card-body">${mb401kTrackerHtml(est, w)}</div>` : ''}
+    </div>
+    <div class="card tp-card" id="mb-sec-rmd">
+      <div class="card-header" style="gap:.75rem;flex-wrap:wrap">
+        <div class="card-title">Traditional 401(k) Minimum Distribution (RMD)</div>
+        ${rmdOpen ? '' : note(rmdNoteText)}
+        ${toggle(rmdOpen, 'mbToggleRmd()')}
+      </div>
+      <div class="card-body${rmdOpen ? '' : ' hidden'}">
         <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.85rem">
           <div style="flex:0 1 130px;min-width:120px">
             <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Distribution year</label>
@@ -8792,7 +8797,7 @@ function mbRmdCard() {
           : c.balanceSource === 'projected' ? `<div style="font-size:.76rem;color:var(--text-muted);margin-top:.4rem">Projection: Dec 31, ${priorYear} hasn't closed yet, so this uses today's estimated balance and will move with the market until then.</div>` : ''}
         <div style="font-size:.72rem;color:var(--text-muted);margin-top:.6rem;line-height:1.5">
           This figure is the IRS <strong>required minimum</strong> she must withdraw. The budget withdrawal above works the other way: it grosses up the <strong>${fmt(w.netAnnual)}/yr</strong> (${fmt(w.netMonthly)}/mo) budgeted from her 401(k) in the monthly template into a single <strong>Jan 1 lump withdrawal</strong> so that, after the plan's automatic <strong>20% tax withholding</strong>, she still nets the budgeted amount for the year (net ÷ 0.80). Both use the full pre-tax balance and assume she's <strong>retired</strong> with <strong>no spouse</strong>, so the IRS <strong>Uniform Lifetime Table</strong> applies. Future-year RMDs are projections. Estimate only — actual tax owed may differ from the amount withheld; confirm with her plan administrator or CPA.
-        </div>` : ''}
+        </div>
       </div>
     </div>`;
 }
