@@ -8077,11 +8077,16 @@ function mbNormalize(raw) {
   // 401(k) RMD calculator inputs are global, not per-month. Existing records
   // without a projection year default to the current year.
   data.rmd = (data.rmd && typeof data.rmd === 'object') ? data.rmd : { balance: 0 };
+  // A typed Dec 31 balance belongs to one distribution year; other years use
+  // the tracker's estimate. Older records predate the year tag: tag them with
+  // the year they were saved for and persist it, so a balance typed for one
+  // year is never carried into the next when the calendar rolls over.
+  if (Number(data.rmd.balance) > 0 && !data.rmd.balanceYear) {
+    data.rmd.balanceYear = Math.trunc(Number(data.rmd.year)) || CURRENT_YEAR;
+    _mbMigrationApplied = true;
+  }
   data.rmd.year = mbNormalizeRmdYear(data.rmd.year);
   data.rmd.tracker = mbNormalize401kTracker(data.rmd.tracker);
-  // A typed Dec 31 balance belongs to one distribution year; other years fall
-  // back to the tracker's estimate. Older records predate the year tag.
-  if (Number(data.rmd.balance) > 0 && !data.rmd.balanceYear) data.rmd.balanceYear = data.rmd.year;
   data.months = data.months || {};
   Object.entries(data.months).forEach(([monthKey, month]) => {
     month.fixedPaid = month.fixedPaid || {};
