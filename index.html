@@ -1274,10 +1274,6 @@
       max-width: 100%;
       min-width: 0;
     }
-    .mb-fixed-sort {
-      width: 215px;
-      flex: 0 0 215px;
-    }
     @media (max-width: 1180px) {
       .mb-stats-row.mb-stats-year {
         grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
@@ -1286,10 +1282,6 @@
     @media (max-width: 520px) {
       .mb-stats-row.mb-stats-year {
         grid-template-columns: 1fr;
-      }
-      .mb-fixed-sort {
-        width: 100%;
-        flex-basis: 100%;
       }
     }
     .mb-fixed-paid {
@@ -7887,7 +7879,6 @@ function mbDefaultMonth() {
 }
 
 let _mbMonth = mbDefaultMonth();
-let _mbFixedSort = 'amount';
 // Set by mbNormalize when a one-time migration rewrites the record, so
 // renderMomBudget can save the correction instead of re-applying it every load.
 let _mbMigrationApplied = false;
@@ -8334,7 +8325,8 @@ function mbCalcMonth(monthKey) {
   const base = mbTemplateTotals(monthKey);
   const fixedDue = t.fixed.reduce((s, item) => s + mbFixedExpectedPayment(item, monthKey), 0);
   const fixedPaid = t.fixed.reduce((s, item) => {
-    if (!m.fixedPaid?.[item.id]) return s;
+    // Fair Share is a set amount with no paid checkbox — it always counts.
+    if (!item.auto && !m.fixedPaid?.[item.id]) return s;
     const expected = mbFixedExpectedPayment(item, monthKey);
     const fallback = expected || (Number(item.amount) || 0);
     if (mbFixedBillKind(item) === 'fixed') return s + fallback;
@@ -8450,7 +8442,6 @@ function mbBillIcon(item) {
 const MB_SHORTCUTS = [
   ['mb-sec-discretionary', '🛍️ Add a purchase'],
   ['mb-sec-emergency', '🚨 Add an emergency'],
-  ['mb-sec-fixed', '✅ Mark bills paid'],
   ['mb-sec-401k-budget', '🏦 Yearly 401(k) withdrawal'],
   ['mb-sec-401k', '💰 401(k) balance'],
   ['mb-sec-401k-withdrawals', '💵 401(k) withdrawals'],
@@ -8492,13 +8483,10 @@ function _renderMomBudgetHtml() {
       ${sub ? `<div class="stat-sub">${sub}</div>` : ''}
     </div>`;
 
-  const fixedItems = [...t.fixed].sort((a, b) => {
-    if (_mbFixedSort === 'amount') return (Number(b.amount) || 0) - (Number(a.amount) || 0) || String(a.name || '').localeCompare(String(b.name || ''));
-    if (_mbFixedSort === 'az') return String(a.name || '').localeCompare(String(b.name || ''));
-    if (_mbFixedSort === 'za') return String(b.name || '').localeCompare(String(a.name || ''));
-    return 0;
-  });
-
+  // Fair Share is a set amount shown on its own card; only other bills (none
+  // by default) get paid-tracking rows.
+  const fairShareItems = t.fixed.filter(item => item.auto);
+  const fixedItems = t.fixed.filter(item => !item.auto);
   const fixedRows = fixedItems.map(item => {
     const paid = !!m.fixedPaid?.[item.id];
     const planned = Number(item.amount) || 0;
@@ -8594,18 +8582,18 @@ function _renderMomBudgetHtml() {
           note: MB_VARIABLE_META.emergency.ledgerNote
         })}
 
+        ${fairShareItems.map(item => `
         <div class="card tp-card" id="mb-sec-fixed">
-          <div class="card-header" style="gap:.75rem;flex-wrap:wrap">
-            <div class="card-title">Fixed Bills — ${escHtml(_mbMonth)}</div>
-            <select class="form-input mb-fixed-sort" style="margin-left:auto" onchange="mbSetFixedSort(this.value)">
-              <option value="template"${_mbFixedSort === 'template' ? ' selected' : ''}>Template order</option>
-              <option value="amount"${_mbFixedSort === 'amount' ? ' selected' : ''}>Amount high to low</option>
-              <option value="az"${_mbFixedSort === 'az' ? ' selected' : ''}>A to Z</option>
-              <option value="za"${_mbFixedSort === 'za' ? ' selected' : ''}>Z to A</option>
-            </select>
+          <div class="card-header"><div class="card-title"><span class="mb-card-icon" aria-hidden="true">${mbBillIcon(item)}</span>${escHtml(item.name)}</div></div>
+          <div class="card-body">
+            <div style="font-size:1.8rem;font-weight:800;line-height:1.1">${fmt(Number(item.amount) || 0)}<span style="font-size:.9rem;font-weight:600;color:var(--text-muted)"> / month</span></div>
           </div>
+        </div>`).join('')}
+        ${fixedItems.length ? `
+        <div class="card tp-card">
+          <div class="card-header"><div class="card-title">Fixed Bills — ${escHtml(_mbMonth)}</div></div>
           <div class="card-body"><div class="mb-fixed-list">${fixedRows}</div></div>
-        </div>
+        </div>` : ''}
         ${mbRmdCard()}
       </div>
 
@@ -9317,11 +9305,6 @@ async function mbSetMonth(value) {
   if (!state.momBudget.months[_mbMonth]) state.momBudget.months[_mbMonth] = mbBlankMonth();
   _renderMomBudgetHtml();
   await _saveMomBudget();
-}
-
-function mbSetFixedSort(value) {
-  _mbFixedSort = ['template', 'amount', 'az', 'za'].includes(value) ? value : 'amount';
-  _renderMomBudgetHtml();
 }
 
 async function mbToggleFixed(id, checked) {
