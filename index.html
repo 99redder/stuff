@@ -1556,6 +1556,7 @@
       <button class="tp-header-btn active" id="cash-flow-btn" onclick="switchView('cash-flow')">Cash Flow</button>
       <button class="tp-header-btn" id="budget-btn" onclick="switchView('budget')">Monthly Budget</button>
       <button class="tp-header-btn" id="tax-planning-btn" onclick="switchView('tax-planning')">Tax Planning</button>
+      <button class="tp-header-btn" id="mom-budget-btn" onclick="switchView('mom-budget')">Mom Budget</button>
       <button class="tp-header-btn" id="properties-btn" onclick="switchToProperties()">🏠 Properties</button>
       <details class="header-tools-menu" id="header-tools-menu">
         <summary class="tp-header-btn" id="header-tools-summary">More</summary>
@@ -1564,7 +1565,6 @@
           <button class="tp-header-btn" id="savings-btn" onclick="switchView('savings')">💰 Savings</button>
           <button class="tp-header-btn" id="solar-btn" onclick="switchView('solar')">☀️ Solar</button>
           <button class="tp-header-btn" id="deductions-btn" onclick="switchView('deductions')">Deductions Tracker</button>
-          <button class="tp-header-btn" id="mom-budget-btn" onclick="switchView('mom-budget')">Mom Budget</button>
           <button class="tp-header-btn" id="mom-checklist-btn" onclick="switchView('mom-checklist')">📦 Mom Moving Checklist</button>
           <button class="tp-header-btn" id="efile-helper-btn" onclick="switchView('efile-helper')">📄 E-File Helper</button>
         </div>
@@ -2748,7 +2748,7 @@ function switchView(view) {
   const propsBtn = document.getElementById('properties-btn');
   if (propsBtn) propsBtn.classList.toggle('active', propMode);
   const toolsSummary = document.getElementById('header-tools-summary');
-  if (toolsSummary) toolsSummary.classList.toggle('active', isNetWorth || isSavings || isSolar || isDeductions || isMomBudget || isMomChecklist || isEfileHelper);
+  if (toolsSummary) toolsSummary.classList.toggle('active', isNetWorth || isSavings || isSolar || isDeductions || isMomChecklist || isEfileHelper);
   renderView();
 }
 
