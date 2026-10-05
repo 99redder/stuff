@@ -7675,10 +7675,29 @@ function mbNormalizeRmdYear(value) {
     : CURRENT_YEAR;
 }
 
+// The RMD is figured on the balance at the prior Dec 31. A balance typed in for
+// this distribution year wins; otherwise the 401(k) tracker supplies it — its
+// estimate at that Dec 31 close, or today's estimate while that date is still
+// ahead (a projection that firms up once the year ends).
+function mbRmdBalance(year) {
+  const r = state.momBudget.rmd || {};
+  const manual = Number(r.balance) || 0;
+  // An untagged balance predates the year tag and still counts.
+  if (manual > 0 && (!r.balanceYear || Number(r.balanceYear) === year)) return { balance: manual, source: 'manual' };
+  const t = mb401kTracker();
+  const series = _mb401kProxy.from === t.asOf ? _mb401kProxy.series : null;
+  const yearEnd = `${year - 1}-12-31`;
+  if (!t.asOf || !t.balance || !series?.length || yearEnd < t.asOf) return { balance: 0, source: 'none' };
+  const latestDate = series[series.length - 1][0];
+  const settled = yearEnd < appTodayIso() && mb401kProxyPrice(series, yearEnd);
+  const estimate = mb401kEstimateAt(settled ? yearEnd : latestDate);
+  return { balance: estimate || 0, source: settled ? 'estimate' : 'projected' };
+}
+
 function mbCalcRmd() {
   const r = state.momBudget.rmd || {};
   const year = mbNormalizeRmdYear(r.year);
-  const balance = Number(r.balance) || 0;
+  const { balance, source: balanceSource } = mbRmdBalance(year);
   const birthYear = MOM_RMD_BIRTH_YEAR;
   const age = year - birthYear;
   const startAge = mbRmdStartAge(birthYear);
@@ -7689,7 +7708,7 @@ function mbCalcRmd() {
   const withholding = rmd * MOM_RMD_TAX_WITHHOLDING_RATE;
   const net = rmd - withholding;
   return {
-    year, balance, birthYear, age, startAge, required, factor,
+    year, balance, balanceSource, birthYear, age, startAge, required, factor,
     rmd, monthly: rmd / 12, withholding, net, netMonthly: net / 12
   };
 }
@@ -7761,8 +7780,21 @@ function mb401kProxyPrice(series, date) {
   return found;
 }
 
-// estimate = statement balance × growth since the statement, less each later
-// withdrawal carried forward from the day it left the account.
+// Estimated balance at the close of `date`: the statement balance grown since
+// the statement, less each withdrawal made by then, carried forward from the
+// day it left the account. Null without prices back to the statement date.
+function mb401kEstimateAt(date) {
+  const t = mb401kTracker();
+  const series = _mb401kProxy.from === t.asOf ? _mb401kProxy.series : null;
+  const base = mb401kProxyPrice(series, t.asOf);
+  const at = mb401kProxyPrice(series, date);
+  if (!t.balance || !base || !at || date < t.asOf) return null;
+  const withdrawn = t.withdrawals
+    .filter(w => w.date > t.asOf && w.date <= date)
+    .reduce((sum, w) => sum + w.amount * (at.price / (mb401kProxyPrice(series, w.date) || base).price), 0);
+  return Math.max(0, t.balance * (at.price / base.price) - withdrawn);
+}
+
 function mbCalc401kEstimate() {
   const t = mb401kTracker();
   const out = { tracker: t, ready: false, hasStatement: !!(t.asOf && t.balance) };
@@ -7774,11 +7806,7 @@ function mbCalc401kEstimate() {
   const growth = latest[1] / base.price;
   const counted = t.withdrawals.filter(w => w.date > t.asOf);
   const withdrawn = counted.reduce((sum, w) => sum + w.amount, 0);
-  const withdrawnToday = counted.reduce((sum, w) => {
-    const at = mb401kProxyPrice(series, w.date) || base;
-    return sum + w.amount * (latest[1] / at.price);
-  }, 0);
-  const estimate = Math.max(0, t.balance * growth - withdrawnToday);
+  const estimate = mb401kEstimateAt(latest[0]) || 0;
   const nextYear = CURRENT_YEAR + 1;
   const nextAge = nextYear - MOM_RMD_BIRTH_YEAR;
   const nextFactor = nextAge >= mbRmdStartAge(MOM_RMD_BIRTH_YEAR)
@@ -8032,6 +8060,9 @@ function mbNormalize(raw) {
   data.rmd = (data.rmd && typeof data.rmd === 'object') ? data.rmd : { balance: 0 };
   data.rmd.year = mbNormalizeRmdYear(data.rmd.year);
   data.rmd.tracker = mbNormalize401kTracker(data.rmd.tracker);
+  // A typed Dec 31 balance belongs to one distribution year; other years fall
+  // back to the tracker's estimate. Older records predate the year tag.
+  if (Number(data.rmd.balance) > 0 && !data.rmd.balanceYear) data.rmd.balanceYear = data.rmd.year;
   data.months = data.months || {};
   Object.entries(data.months).forEach(([monthKey, month]) => {
     month.fixedPaid = month.fixedPaid || {};
@@ -8585,7 +8616,7 @@ function mbRmdCard() {
   let result;
   if (!c.balance) {
     result = `<div style="padding:.85rem 1rem;background:var(--surface);border:1px dashed var(--border);border-radius:var(--radius);color:var(--text-muted);font-size:.85rem">
-      Enter her traditional 401(k) balance above to calculate the ${c.year} minimum withdrawal.</div>`;
+      Enter her traditional 401(k) balance above to calculate the ${c.year} minimum withdrawal. (The tracker can only estimate a Dec 31 on or after its statement date.)</div>`;
   } else if (!c.required) {
     const startYear = c.birthYear + c.startAge;
     result = `<div style="padding:.85rem 1rem;background:rgba(37,99,235,.08);border:1px solid rgba(37,99,235,.25);border-radius:var(--radius);font-size:.85rem">
@@ -8674,7 +8705,7 @@ function mbRmdCard() {
             <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Traditional 401(k) gross balance on Dec 31, ${priorYear}</label>
             <div style="position:relative">
               <span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
-              <input type="text" inputmode="decimal" class="form-input" value="${escAttr(moneyInputValue(r.balance))}" placeholder="0.00"
+              <input type="text" inputmode="decimal" class="form-input" value="${escAttr(c.balanceSource === 'manual' ? moneyInputValue(r.balance) : '')}" placeholder="${escAttr(c.balance ? `${moneyInputValue(c.balance)} estimated` : '0.00')}"
                      onchange="mbUpdateRmd('balance', this.value)" onblur="formatMoneyInput(this)" style="width:100%;padding-left:1.5rem;font-weight:600">
             </div>
           </div>
@@ -8684,6 +8715,8 @@ function mbRmdCard() {
           </div>
         </div>
         ${result}
+        ${c.balanceSource === 'estimate' ? `<div style="font-size:.76rem;color:var(--text-muted);margin-top:.4rem">Using the tracker's estimated Dec 31, ${priorYear} balance. Type the statement figure above to replace it.</div>`
+          : c.balanceSource === 'projected' ? `<div style="font-size:.76rem;color:var(--text-muted);margin-top:.4rem">Projection: Dec 31, ${priorYear} hasn't closed yet, so this uses today's estimated balance and will move with the market until then.</div>` : ''}
         <div style="display:flex;align-items:center;gap:.6rem;margin:1rem 0 .6rem">
           <div style="flex:1;height:1px;background:var(--border)"></div>
           <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Withdrawal to fund the monthly budget</div>
@@ -8834,6 +8867,7 @@ async function mbUpdateRmd(field, value) {
   if (field === 'balance') {
     const v = parseMoney(value);
     state.momBudget.rmd.balance = (isFinite(v) && v >= 0) ? v : 0;
+    state.momBudget.rmd.balanceYear = mbNormalizeRmdYear(state.momBudget.rmd.year);   // blank = use the tracker
   } else if (field === 'year') {
     state.momBudget.rmd.year = mbNormalizeRmdYear(value);
   }
