@@ -1701,8 +1701,26 @@ const MB_BUDGET_SPLIT_MONTH = '2026-10';
 const MB_SPLIT_DISCRETIONARY = 400;
 const MB_SPLIT_EMERGENCY = 200;
 
+// Her latest 401(k) statement, loaded straight into private storage (never
+// into this public source). When it is newer than the statement the tracker
+// holds, it becomes the tracker's starting point; the app saves it from there.
+const MOM_401K_STATEMENT_KEY = 'mom_401k_statement';
+
+async function applyMom401kStatement(env, data) {
+  if (!data || typeof data !== 'object') return;
+  const statement = await env.RENTALS.get(MOM_401K_STATEMENT_KEY, 'json').catch(() => null);
+  const asOf = String(statement?.asOf || '');
+  const balance = Number(statement?.balance);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf) || !(balance > 0)) return;
+  data.rmd = (data.rmd && typeof data.rmd === 'object') ? data.rmd : { balance: 0 };
+  const tracker = (data.rmd.tracker && typeof data.rmd.tracker === 'object') ? data.rmd.tracker : {};
+  if (String(tracker.asOf || '') >= asOf && Number(tracker.balance) > 0) return;
+  data.rmd.tracker = { ...tracker, asOf, balance };
+}
+
 async function handleGetMomBudget(env) {
   const data = await env.MOM_BUDGET_STORE.getByName('mom_budget').getBudget();
+  await applyMom401kStatement(env, data);
   return jsonResponse({ data });
 }
 
