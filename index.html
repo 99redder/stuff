@@ -1697,6 +1697,24 @@
   </div>
 </div>
 
+<!-- ── Mom Budget 401(k) Withdrawal Modal ── -->
+<div class="modal-overlay hidden" id="mom-401k-modal" onclick="handleModalOverlayClick(event,'mom-401k-modal')">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mom-401k-modal-title">
+    <div class="modal-header">
+      <div class="modal-icon primary">💵</div>
+      <div>
+        <div class="modal-title" id="mom-401k-modal-title">Record a Withdrawal</div>
+        <div class="modal-subtitle" id="mom-401k-modal-subtitle"></div>
+      </div>
+    </div>
+    <div class="modal-body" id="mom-401k-modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="mbClose401kModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="mbSave401kModal()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Edit Transaction Modal ── -->
 <div class="modal-overlay hidden" id="edit-modal" onclick="handleModalOverlayClick(event,'edit-modal')">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
@@ -2970,6 +2988,7 @@ function handleModalOverlayClick(e, modalId) {
     if (modalId === 'ded-delete-modal') closeDedDeleteModal();
     if (modalId === 'edit-modal') closeEditModal();
     if (modalId === 'mom-template-modal') closeMomTemplateModal();
+    if (modalId === 'mom-401k-modal') mbClose401kModal();
     if (modalId === 'mom-phone-modal') mbClosePhoneAccess();
     if (modalId === 'budget-worksheet-modal') closeBudgetWorksheetModal();
     if (modalId === 'budget-treasury-modal') closeBudgetTreasuryModal();
@@ -8757,18 +8776,27 @@ function mb401kTrackerHtml(est, w) {
         </div>
       </div>`;
   }
-  const withdrawals = t.withdrawals.map(wd => `
-    <div style="display:flex;align-items:center;gap:.6rem;padding:.3rem 0;font-size:.82rem;border-top:1px solid var(--border)">
-      <span style="flex:1">${fmtDate(wd.date)}${wd.auto ? ' <em style="color:var(--text-muted)">· automatic</em>' : ''}${wd.date > t.asOf ? '' : ' <em style="color:var(--text-muted)">· already in the statement</em>'}</span>
+  // One list: the next scheduled Jan 1 withdrawal on top, then what has
+  // already come out since the statement, newest first.
+  const autoAmount = mb401kAutoAmount();
+  const nextAutoYear = Math.max(CURRENT_YEAR, Number((t.asOf || '').slice(0, 4)) || 0, t.autoThrough) + 1;
+  const row = 'display:flex;align-items:center;gap:.6rem;padding:.5rem .75rem;font-size:.84rem;border-top:1px solid var(--border)';
+  const tag = text => `<span style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted)">${text}</span>`;
+  const scheduledRow = `
+    <div style="${row};border-top:0;background:var(--surface)">
+      <span style="flex:1">Jan 1, ${nextAutoYear} ${tag('Scheduled')}
+        <span style="display:block;font-size:.74rem;color:var(--text-muted)">${autoAmount > 0
+          ? (t.autoAmount ? 'Yearly amount you set' : 'Follows the budget: what she needs for the year, plus 20% tax')
+          : 'No yearly withdrawal set'}</span></span>
+      <strong>${autoAmount > 0 ? fmt(autoAmount) : '—'}</strong>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="mbOpen401kModal('yearly')">Change</button>
+    </div>`;
+  const takenRows = t.withdrawals.filter(wd => wd.date > t.asOf).reverse().map(wd => `
+    <div style="${row}">
+      <span style="flex:1">${fmtDate(wd.date)} ${wd.auto ? tag('Automatic') : ''}</span>
       <strong>${fmt(wd.amount)}</strong>
       <button class="btn btn-ghost btn-sm" type="button" title="Remove withdrawal" onclick="mbDelete401kWithdrawal('${escAttr(wd.id)}')">✕</button>
     </div>`).join('');
-  const autoAmount = mb401kAutoAmount();
-  const budgetGross = w.grossAnnual || 0;
-  const nextAutoYear = Math.max(CURRENT_YEAR, Number((t.asOf || '').slice(0, 4)) || 0, t.autoThrough) + 1;
-  const autoNote = autoAmount > 0
-    ? `Next: <strong>Jan 1, ${nextAutoYear} · ${fmt(autoAmount)}</strong> ${t.autoAmount ? '(amount set here)' : '(the gross withdrawal that funds the monthly budget)'}. It is recorded below on the day and can be removed or replaced if the real amount differs.`
-    : 'No yearly withdrawal is assumed. Enter an amount, or add a 401(k) distribution to the monthly template.';
   return `
     <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.85rem">
       <div style="flex:0 1 170px;min-width:150px">
@@ -8786,25 +8814,16 @@ function mb401kTrackerHtml(est, w) {
       <button class="btn btn-ghost btn-sm" type="button" onclick="mbLoad401kProxy(true)" ${est.hasStatement && !_mb401kProxy.loading ? '' : 'disabled'}>↻ Refresh prices</button>
     </div>
     ${headline}
-    <div style="margin-top:.75rem;display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end">
-      <div style="flex:0 1 220px;min-width:190px">
-        <label style="${label}">Automatic Jan 1 withdrawal (gross)</label>
-        <div style="position:relative">
-          <span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
-          <input type="text" inputmode="decimal" class="form-input" value="${escAttr(t.autoAmount ? moneyInputValue(t.autoAmount) : '')}" placeholder="${escAttr(budgetGross ? `${moneyInputValue(budgetGross)} from budget` : '0.00')}"
-                 onchange="mbUpdate401kTracker('autoAmount', this.value)" style="width:100%;padding-left:1.5rem;font-weight:600">
-        </div>
+    <div style="margin-top:.85rem">
+      <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.35rem">
+        <div style="flex:1;font-size:.82rem;font-weight:700">Withdrawals</div>
+        <button class="btn btn-ghost btn-sm" type="button" onclick="mbOpen401kModal('record')">+ Record a withdrawal</button>
       </div>
-      <div style="flex:1;min-width:220px;font-size:.78rem;color:var(--text-muted);line-height:1.45">${autoNote}</div>
-    </div>
-    <div style="margin-top:.75rem">
-      <div style="${label}">Withdrawals since the statement (gross, before withholding)</div>
-      ${withdrawals}
-      <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;margin-top:.4rem">
-        <input type="date" class="form-input" id="mb-401k-wd-date" value="${appTodayIso()}" max="${appTodayIso()}" style="width:auto">
-        <input type="text" inputmode="decimal" class="form-input" id="mb-401k-wd-amount" placeholder="Gross amount" style="width:140px">
-        <button class="btn btn-ghost btn-sm" type="button" onclick="mbAdd401kWithdrawal()">+ Add withdrawal</button>
+      <div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+        ${scheduledRow}
+        ${takenRows}
       </div>
+      <div style="font-size:.74rem;color:var(--text-muted);margin-top:.35rem">The Jan 1 withdrawal is recorded for you each year. Only add one here if she takes out extra, or remove one if it didn't happen.</div>
     </div>
     <div style="font-size:.72rem;color:var(--text-muted);margin-top:.6rem;line-height:1.5">
       Her plan holds one fund, <strong>${escHtml(MOM_401K_FUND_NAME)}</strong>, a collective trust with no public price. The estimate rolls the statement balance forward with the daily total return of its public twin, <strong>${escHtml(MOM_401K_PROXY_SYMBOL)}</strong>${_mb401kProxy.name ? ` (${escHtml(_mb401kProxy.name)})` : ''}. Prices post once a day after the market closes, and the two funds can drift by a few hundredths of a percent a quarter, so it is a close estimate, not the plan's own figure. Entering a newer statement is optional and simply resets that drift.
@@ -8819,9 +8838,6 @@ async function mbUpdate401kTracker(field, value) {
   } else if (field === 'balance') {
     const v = parseMoney(value);
     t.balance = (isFinite(v) && v > 0) ? v : 0;
-  } else if (field === 'autoAmount') {
-    const v = parseMoney(value);
-    t.autoAmount = (isFinite(v) && v > 0) ? v : 0;   // blank = follow the budget
   }
   state.momBudget.rmd.tracker = t;
   mbApply401kAutoWithdrawals();
@@ -8830,17 +8846,88 @@ async function mbUpdate401kTracker(field, value) {
   await _saveMomBudget();
 }
 
-async function mbAdd401kWithdrawal() {
-  const date = document.getElementById('mb-401k-wd-date')?.value || '';
-  const amount = parseMoney(document.getElementById('mb-401k-wd-amount')?.value);
-  if (!MB_ISO_DATE_RE.test(date) || !isFinite(amount) || amount <= 0) {
-    showBrandedNotice({ title: 'Withdrawal not added', message: 'Enter the date and the gross amount withdrawn.' });
-    return;
-  }
+// One modal, two jobs: 'record' a withdrawal that happened, or change the
+// 'yearly' amount assumed each Jan 1.
+let _mb401kModalMode = 'record';
+function mbOpen401kModal(mode) {
+  _mb401kModalMode = mode === 'yearly' ? 'yearly' : 'record';
+  const yearly = _mb401kModalMode === 'yearly';
+  const t = mb401kTracker();
+  const budgetGross = mbCalc401kWithdrawal().grossAnnual || 0;
+  const money = (id, value = '') => `<span class="mb-money mb-modal-money"><input type="text" inputmode="decimal" id="${id}" value="${escAttr(value)}" placeholder="0.00" onblur="formatMoneyInput(this)" oninput="mb401kModalPreview()" onkeydown="if(event.key==='Enter') mbSave401kModal()"></span>`;
+  document.getElementById('mom-401k-modal-title').textContent = yearly ? 'Yearly Jan 1 Withdrawal' : 'Record a Withdrawal';
+  document.getElementById('mom-401k-modal-subtitle').textContent = yearly ? 'Taken out of the estimate every Jan 1' : 'Money taken out of her 401(k)';
+  document.getElementById('mom-401k-modal-body').innerHTML = yearly ? `
+    <div class="form-grid">
+      <div class="form-group full">
+        <label for="mom-401k-amount">Amount taken out of the account each Jan 1 ($)</label>
+        ${money('mom-401k-amount', t.autoAmount ? moneyInputValue(t.autoAmount) : '')}
+      </div>
+    </div>
+    <div style="font-size:.8rem;color:var(--text-muted);margin-top:.6rem;line-height:1.5">Leave it blank to follow the budget${budgetGross ? `, currently <strong>${fmt(budgetGross)}</strong> a year` : ''}. Years already recorded are not changed.</div>
+    <div id="mom-401k-error" class="error-msg hidden" style="margin-top:0.75rem"></div>` : `
+    <div class="form-grid">
+      <div class="form-group">
+        <label for="mom-401k-date">Date</label>
+        <input type="date" id="mom-401k-date" value="${appTodayIso()}" min="${escAttr(t.asOf)}" max="${appTodayIso()}">
+      </div>
+      <div class="form-group">
+        <label for="mom-401k-amount">Amount ($)</label>
+        ${money('mom-401k-amount')}
+      </div>
+      <div class="form-group full">
+        <label>This amount is</label>
+        <label style="display:flex;align-items:center;gap:.5rem;font-weight:500;margin:.15rem 0"><input type="radio" name="mom-401k-basis" value="gross" checked onchange="mb401kModalPreview()" style="width:auto"> What came out of the account</label>
+        <label style="display:flex;align-items:center;gap:.5rem;font-weight:500;margin:.15rem 0"><input type="radio" name="mom-401k-basis" value="net" onchange="mb401kModalPreview()" style="width:auto"> What she received, after 20% tax was withheld</label>
+      </div>
+    </div>
+    <div id="mom-401k-preview" style="font-size:.8rem;color:var(--text-muted);margin-top:.5rem;min-height:1.2em"></div>
+    <div id="mom-401k-error" class="error-msg hidden" style="margin-top:0.75rem"></div>`;
+  document.getElementById('mom-401k-modal').classList.remove('hidden');
+  document.getElementById('mom-401k-amount').focus();
+}
+
+function mbClose401kModal() {
+  document.getElementById('mom-401k-modal').classList.add('hidden');
+}
+
+// The amount that left the account: a received (net) figure is grossed up for
+// the plan's 20% withholding.
+function mb401kModalGross() {
+  const amount = parseMoney(document.getElementById('mom-401k-amount')?.value);
+  if (!isFinite(amount) || amount <= 0) return 0;
+  const net = document.querySelector('input[name="mom-401k-basis"]:checked')?.value === 'net';
+  return Math.round((net ? amount / (1 - MOM_RMD_TAX_WITHHOLDING_RATE) : amount) * 100) / 100;
+}
+
+function mb401kModalPreview() {
+  const preview = document.getElementById('mom-401k-preview');
+  if (!preview) return;
+  const gross = mb401kModalGross();
+  preview.innerHTML = gross > 0 ? `<strong>${fmt(gross)}</strong> will be taken off the estimated balance.` : '';
+}
+
+async function mbSave401kModal() {
+  const error = document.getElementById('mom-401k-error');
+  const fail = message => { error.textContent = message; error.classList.remove('hidden'); };
   if (!state.momBudget.rmd) state.momBudget.rmd = { balance: 0, year: CURRENT_YEAR };
   const t = mbNormalize401kTracker(state.momBudget.rmd.tracker);
-  t.withdrawals.push({ id: mbUuid('wd'), date, amount });
+  if (_mb401kModalMode === 'yearly') {
+    const raw = document.getElementById('mom-401k-amount').value.trim();
+    const amount = raw ? parseMoney(raw) : 0;
+    if (raw && (!isFinite(amount) || amount < 0)) return fail('Enter an amount, or leave it blank to follow the budget.');
+    t.autoAmount = amount;
+  } else {
+    const date = document.getElementById('mom-401k-date').value;
+    const gross = mb401kModalGross();
+    if (!MB_ISO_DATE_RE.test(date) || date > appTodayIso()) return fail('Pick the date it was taken out.');
+    if (t.asOf && date <= t.asOf) return fail(`The ${fmtDate(t.asOf)} statement balance already reflects anything taken out by then.`);
+    if (!(gross > 0)) return fail('Enter the amount.');
+    t.withdrawals.push({ id: mbUuid('wd'), date, amount: gross });
+  }
   state.momBudget.rmd.tracker = mbNormalize401kTracker(t);
+  mbApply401kAutoWithdrawals();
+  mbClose401kModal();
   _renderMomBudgetHtml();
   await _saveMomBudget();
 }
@@ -16676,6 +16763,7 @@ document.addEventListener('keydown', e => {
     closeDeleteModal();
     closeEditModal();
     closeMomTemplateModal();
+    mbClose401kModal();
     closeSolarCalcModal();
     closeDedDeleteModal();
     closeFsAgreementModal();
