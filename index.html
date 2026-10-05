@@ -8802,7 +8802,10 @@ function mb401kTrackerHtml(est, w) {
       <strong>${fmt(wd.amount)}</strong>
       <button class="btn btn-ghost btn-sm" type="button" title="Remove withdrawal" onclick="mbDelete401kWithdrawal('${escAttr(wd.id)}')">✕</button>
     </div>`).join('');
-  return `
+  // The statement is a set-once starting point, so its inputs stay tucked away
+  // unless nothing has been entered yet.
+  const statementOpen = _mb401kStatementOpen || !est.hasStatement;
+  const statementHtml = statementOpen ? `
     <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.85rem">
       <div style="flex:0 1 170px;min-width:150px">
         <label style="${label}">Statement closing date</label>
@@ -8817,7 +8820,14 @@ function mb401kTrackerHtml(est, w) {
         </div>
       </div>
       <button class="btn btn-ghost btn-sm" type="button" onclick="mbLoad401kProxy(true)" ${est.hasStatement && !_mb401kProxy.loading ? '' : 'disabled'}>↻ Refresh prices</button>
-    </div>
+      ${est.hasStatement ? `<button class="btn btn-ghost btn-sm" type="button" onclick="mbToggle401kStatement()" aria-expanded="true">Minimize</button>` : ''}
+    </div>` : `
+    <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.85rem;font-size:.8rem;color:var(--text-muted)">
+      <span style="flex:1">Starting point: ${fmtDate(t.asOf)} statement · <strong style="color:var(--text)">${fmt(t.balance)}</strong></span>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="mbToggle401kStatement()" aria-expanded="false">Expand</button>
+    </div>`;
+  return `
+    ${statementHtml}
     ${headline}
     <div style="margin-top:.85rem">
       <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.35rem">
@@ -8833,6 +8843,12 @@ function mb401kTrackerHtml(est, w) {
     <div style="font-size:.72rem;color:var(--text-muted);margin-top:.6rem;line-height:1.5">
       Her plan holds one fund, <strong>${escHtml(MOM_401K_FUND_NAME)}</strong>, a collective trust with no public price. The estimate rolls the statement balance forward with the daily total return of its public twin, <strong>${escHtml(MOM_401K_PROXY_SYMBOL)}</strong>${_mb401kProxy.name ? ` (${escHtml(_mb401kProxy.name)})` : ''}. Prices post once a day after the market closes, and the two funds can drift by a few hundredths of a percent a quarter, so it is a close estimate, not the plan's own figure. Entering a newer statement is optional and simply resets that drift.
     </div>`;
+}
+
+let _mb401kStatementOpen = false;
+function mbToggle401kStatement() {
+  _mb401kStatementOpen = !_mb401kStatementOpen;
+  _renderMomBudgetHtml();
 }
 
 async function mbUpdate401kTracker(field, value) {
