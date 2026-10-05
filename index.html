@@ -8304,6 +8304,13 @@ function mbRmdOpen() {
   return localStorage.getItem(MB_RMD_OPEN_KEY) === '1';
 }
 
+// The RMD details inside the card start minimized on every load.
+let _mbRmdSectionOpen = false;
+function mbToggleRmdSection() {
+  _mbRmdSectionOpen = !_mbRmdSectionOpen;
+  _renderMomBudgetHtml();
+}
+
 function mbToggleRmd() {
   localStorage.setItem(MB_RMD_OPEN_KEY, mbRmdOpen() ? '0' : '1');
   _renderMomBudgetHtml();
@@ -8668,14 +8675,14 @@ function mbRmdCard() {
   const w = mbCalc401kWithdrawal();
   let withdrawalBlock;
   if (w.netMonthly > 0) {
+    // What the RMD is, and whether this withdrawal covers it.
     let rmdNote = '';
     if (c.required && c.rmd > 0) {
-      if (w.grossAnnual + 0.005 >= c.rmd) {
-        rmdNote = `<div style="margin-top:.6rem;padding:.5rem .7rem;background:rgba(16,185,129,.10);border:1px solid rgba(16,185,129,.3);border-radius:var(--radius);font-size:.78rem;color:var(--text)">✓ This <strong>${fmt(w.grossAnnual)}</strong> annual withdrawal is at or above the ${fmt(c.rmd)} RMD minimum, so the requirement is met.</div>`;
-      } else {
-        const short = c.rmd - w.grossAnnual;
-        rmdNote = `<div style="margin-top:.6rem;padding:.5rem .7rem;background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.4);border-radius:var(--radius);font-size:.78rem;color:var(--text)">⚠️ This <strong>${fmt(w.grossAnnual)}</strong> annual withdrawal is <strong>${fmt(short)}</strong> under the ${fmt(c.rmd)} RMD minimum. Withdraw at least ${fmt(short)} more on Jan 1 to satisfy the RMD.</div>`;
-      }
+      const short = c.rmd - w.grossAnnual;
+      const what = `The IRS requires her to take at least <strong>${fmt(c.rmd)}</strong> out in ${c.year} (the required minimum distribution, or RMD).`;
+      rmdNote = `<div style="margin-top:.6rem;font-size:.78rem;color:var(--text-muted);line-height:1.5">${what} ${short <= 0.005
+        ? `<strong style="color:var(--success)">✓ This withdrawal meets it.</strong>`
+        : `<strong style="color:var(--warning, #b45309)">⚠️ This withdrawal is ${fmt(short)} short of it.</strong>`}</div>`;
     }
     withdrawalBlock = `
       <div style="padding:1rem;background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(37,99,235,.06));border:2px solid var(--success);border-radius:var(--radius)">
@@ -8698,6 +8705,7 @@ function mbRmdCard() {
   }
 
   const open = mbRmdOpen();
+  const rmdOpen = _mbRmdSectionOpen;
   // Keep the headline figures readable while the card is closed.
   const est = mbCalc401kEstimate();
   const rmdNoteText = !c.balance ? 'Balance not entered'
@@ -8716,9 +8724,16 @@ function mbRmdCard() {
         ${mb401kTrackerHtml(est, w)}
         <div style="display:flex;align-items:center;gap:.6rem;margin:1rem 0 .6rem">
           <div style="flex:1;height:1px;background:var(--border)"></div>
-          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Required minimum distribution</div>
+          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Withdrawal to fund the monthly budget</div>
           <div style="flex:1;height:1px;background:var(--border)"></div>
         </div>
+        ${withdrawalBlock}
+        <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin:1rem 0 .6rem;padding-top:.85rem;border-top:1px solid var(--border)">
+          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Required minimum distribution</div>
+          <span style="flex:1;font-size:.78rem;font-weight:600;color:var(--text-muted)">${rmdOpen ? '' : escHtml(rmdNoteText)}</span>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="mbToggleRmdSection()" aria-expanded="${rmdOpen ? 'true' : 'false'}">${rmdOpen ? 'Minimize' : 'Expand'}</button>
+        </div>
+        ${rmdOpen ? `
         <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.85rem">
           <div style="flex:0 1 130px;min-width:120px">
             <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Distribution year</label>
@@ -8741,15 +8756,9 @@ function mbRmdCard() {
         ${result}
         ${c.balanceSource === 'estimate' ? `<div style="font-size:.76rem;color:var(--text-muted);margin-top:.4rem">Using the tracker's estimated Dec 31, ${priorYear} balance. Type the statement figure above to replace it.</div>`
           : c.balanceSource === 'projected' ? `<div style="font-size:.76rem;color:var(--text-muted);margin-top:.4rem">Projection: Dec 31, ${priorYear} hasn't closed yet, so this uses today's estimated balance and will move with the market until then.</div>` : ''}
-        <div style="display:flex;align-items:center;gap:.6rem;margin:1rem 0 .6rem">
-          <div style="flex:1;height:1px;background:var(--border)"></div>
-          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Withdrawal to fund the monthly budget</div>
-          <div style="flex:1;height:1px;background:var(--border)"></div>
-        </div>
-        ${withdrawalBlock}
         <div style="font-size:.72rem;color:var(--text-muted);margin-top:.6rem;line-height:1.5">
-          The top figure is the IRS <strong>required minimum</strong> she must withdraw. The section below works the other way: it grosses up the <strong>${fmt(w.netAnnual)}/yr</strong> (${fmt(w.netMonthly)}/mo) budgeted from her 401(k) in the monthly template into a single <strong>Jan 1 lump withdrawal</strong> so that, after the plan's automatic <strong>20% tax withholding</strong>, she still nets the budgeted amount for the year (net ÷ 0.80). Both use the full pre-tax balance and assume she's <strong>retired</strong> with <strong>no spouse</strong>, so the IRS <strong>Uniform Lifetime Table</strong> applies. Future-year RMDs are projections. Estimate only — actual tax owed may differ from the amount withheld; confirm with her plan administrator or CPA.
-        </div>
+          This figure is the IRS <strong>required minimum</strong> she must withdraw. The budget withdrawal above works the other way: it grosses up the <strong>${fmt(w.netAnnual)}/yr</strong> (${fmt(w.netMonthly)}/mo) budgeted from her 401(k) in the monthly template into a single <strong>Jan 1 lump withdrawal</strong> so that, after the plan's automatic <strong>20% tax withholding</strong>, she still nets the budgeted amount for the year (net ÷ 0.80). Both use the full pre-tax balance and assume she's <strong>retired</strong> with <strong>no spouse</strong>, so the IRS <strong>Uniform Lifetime Table</strong> applies. Future-year RMDs are projections. Estimate only — actual tax owed may differ from the amount withheld; confirm with her plan administrator or CPA.
+        </div>` : ''}
       </div>
     </div>`;
 }
