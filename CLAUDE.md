@@ -288,6 +288,7 @@ Editing a budget input in the Monthly Template card applies **from the month cur
 
 **Mom Budget tab layout:**
 - Header row: back button, `Mom Budget` title, month input, existing-month dropdown
+- **Shortcut bar** under the header (`MB_SHORTCUTS` / `mbJumpTo(target)`): task-named buttons that scroll to a section by its `mb-sec-*` id — add a purchase / emergency (also focuses that ledger's description box), mark bills paid, 401(k) balance, 401(k) withdrawals, RMD, budget amounts. Jumping into the 401(k) card or its RMD section opens it first.
 - **Default month** (`mbDefaultMonth()`): the current month, but never earlier than `MB_BUDGET_SPLIT_MONTH` — so the tab opens on the $400 + $200 setup rather than September's one-off lump, and tracks the calendar normally from October on.
 - **No stat rows at all.** Both were removed: every tile duplicated something else on the page. `Monthly Income` and `Overall Spending Left` live in the Month Math card, `Spending Used` repeated the Overall card's own sub-line, and `Discretionary Left` / `Emergency Left` repeat the total strip at the top of each ledger card. The phone PWA keeps `Overall Spending Left` as her headline.
 - Annual summary: collapsed by default behind an Expand/Minimize button; open state persists in `localStorage` key `rentals_mom_budget_year_stats_open`

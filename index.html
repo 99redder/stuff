@@ -1266,6 +1266,9 @@
       gap: 0.4rem;
     }
     .mb-variable-schedule-row .btn { padding: 0 0.35rem; }
+    .mb-shortcuts { display:flex; flex-wrap:wrap; align-items:center; gap:.4rem; margin-bottom:1rem; }
+    .mb-shortcuts-label { font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); margin-right:.2rem; }
+    [id^="mb-sec-"] { scroll-margin-top: 5.5rem; }
     .mb-month-control {
       width: 180px;
       max-width: 100%;
@@ -8443,6 +8446,33 @@ function mbBillIcon(item) {
   return '•';
 }
 
+// Task shortcuts across the top of the tab: [target id, label].
+const MB_SHORTCUTS = [
+  ['mb-sec-discretionary', '🛍️ Add a purchase'],
+  ['mb-sec-emergency', '🚨 Add an emergency'],
+  ['mb-sec-fixed', '✅ Mark bills paid'],
+  ['mb-sec-401k', '💰 401(k) balance'],
+  ['mb-sec-401k-withdrawals', '💵 401(k) withdrawals'],
+  ['mb-sec-rmd', '📋 RMD'],
+  ['mb-sec-template', '📝 Budget amounts'],
+];
+
+// Scrolls to a section, first opening whatever it is tucked inside, and puts
+// the cursor in a ledger's description box so a purchase can be typed at once.
+function mbJumpTo(target) {
+  let rerender = false;
+  if (target.startsWith('mb-sec-401k') || target === 'mb-sec-rmd') {
+    if (!mbRmdOpen()) { localStorage.setItem(MB_RMD_OPEN_KEY, '1'); rerender = true; }
+    if (target === 'mb-sec-rmd' && !_mbRmdSectionOpen) { _mbRmdSectionOpen = true; rerender = true; }
+  }
+  if (rerender) _renderMomBudgetHtml();
+  const el = document.getElementById(target);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const ledger = { 'mb-sec-discretionary': 'discretionary', 'mb-sec-emergency': 'emergency' }[target];
+  if (ledger) document.getElementById(`mb-${ledger}-name`)?.focus({ preventScroll: true });
+}
+
 function _renderMomBudgetHtml() {
   const t = state.momBudget.template;
   const m = state.momBudget.months[_mbMonth] || mbBlankMonth();
@@ -8521,6 +8551,10 @@ function _renderMomBudgetHtml() {
       </div>
     </div>
 
+    <nav class="mb-shortcuts" aria-label="Jump to a task">
+      <span class="mb-shortcuts-label">Jump to</span>
+      ${MB_SHORTCUTS.map(([target, text]) => `<button type="button" class="btn btn-ghost btn-sm" onclick="mbJumpTo('${target}')">${text}</button>`).join('')}
+    </nav>
     <details style="margin-bottom:1rem;border:1px solid rgba(16,185,129,.35);border-radius:var(--radius);background:rgba(16,185,129,.08)">
       <summary style="cursor:pointer;padding:.6rem .9rem;font-size:.8rem;font-weight:700;color:var(--success);list-style:none">💵 Is Mom's Fair Share taxable income to me? — No <span style="font-weight:400;color:var(--text-muted)">(tap for why)</span></summary>
       <div style="padding:0 .9rem .8rem;font-size:.75rem;color:var(--text-muted);line-height:1.55">
@@ -8561,7 +8595,7 @@ function _renderMomBudgetHtml() {
           note: MB_VARIABLE_META.emergency.ledgerNote
         })}
 
-        <div class="card tp-card">
+        <div class="card tp-card" id="mb-sec-fixed">
           <div class="card-header" style="gap:.75rem;flex-wrap:wrap">
             <div class="card-title">Fixed Bills — ${escHtml(_mbMonth)}</div>
             <select class="form-input mb-fixed-sort" style="margin-left:auto" onchange="mbSetFixedSort(this.value)">
@@ -8577,7 +8611,7 @@ function _renderMomBudgetHtml() {
       </div>
 
       <div class="tp-sticky">
-        <div class="card">
+        <div class="card" id="mb-sec-math">
           <div class="card-header"><div class="card-title">Month Math</div></div>
           <div class="card-body">
             <div class="tp-row"><span>Income</span><strong style="color:var(--success)">${fmt(c.income)}</strong></div>
@@ -8591,7 +8625,7 @@ function _renderMomBudgetHtml() {
           </div>
         </div>
 
-        <div class="card tp-card">
+        <div class="card tp-card" id="mb-sec-template">
           <div class="card-header"><div class="card-title">Monthly Template</div></div>
           <div class="card-body">
             <div class="tp-group mb-template-section-head">
@@ -8714,7 +8748,7 @@ function mbRmdCard() {
   const collapsedNote = est.ready ? `≈ ${fmt(est.estimate)} today · ${rmdNoteText}` : rmdNoteText;
 
   return `
-    <div class="card tp-card">
+    <div class="card tp-card" id="mb-sec-401k">
       <div class="card-header" style="gap:.75rem;flex-wrap:wrap">
         <div class="card-title">Traditional 401(k) Minimum Distribution (RMD)</div>
         ${open ? '' : `<span style="font-size:.78rem;font-weight:600;color:var(--text-muted)">${escHtml(collapsedNote)}</span>`}
@@ -8729,7 +8763,7 @@ function mbRmdCard() {
         </div>
         ${withdrawalBlock}
         <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin:1rem 0 .6rem;padding-top:.85rem;border-top:1px solid var(--border)">
-          <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Required minimum distribution</div>
+          <div id="mb-sec-rmd" style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Required minimum distribution</div>
           <span style="flex:1;font-size:.78rem;font-weight:600;color:var(--text-muted)">${rmdOpen ? '' : escHtml(rmdNoteText)}</span>
           <button class="btn btn-ghost btn-sm" type="button" onclick="mbToggleRmdSection()" aria-expanded="${rmdOpen ? 'true' : 'false'}">${rmdOpen ? 'Minimize' : 'Expand'}</button>
         </div>
@@ -8838,7 +8872,7 @@ function mb401kTrackerHtml(est, w) {
   return `
     ${statementHtml}
     ${headline}
-    <div style="margin-top:.85rem">
+    <div style="margin-top:.85rem" id="mb-sec-401k-withdrawals">
       <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.35rem">
         <div style="flex:1;font-size:.82rem;font-weight:700">Withdrawals</div>
         <button class="btn btn-ghost btn-sm" type="button" onclick="mbOpen401kModal('record')">+ Record a withdrawal</button>
@@ -9254,7 +9288,7 @@ function mbLedgerCard(title, section, entries, label, nameKey, options = {}) {
         <button class="btn btn-primary btn-sm" onclick="mbAddLedger('${section}','${nameKey}')">Add</button>
       </div>`);
 
-  return `<div class="card tp-card">
+  return `<div class="card tp-card" id="mb-sec-${escAttr(section)}">
     <div class="card-header"><div class="card-title">${options.icon ? `<span class="mb-card-icon" aria-hidden="true">${options.icon}</span>` : ''}${escHtml(title)}</div></div>
     <div class="card-body">
       ${options.budgetKey ? mbLedgerTotalHtml(section, entries, options.budgetKey) : ''}
