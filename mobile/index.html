@@ -409,8 +409,8 @@
     return `<div class="hero"><div class="hero-label">${excess>=0?'Excess left over':'Shortfall'}</div><div class="hero-value">${excess<0?'−':''}${money(Math.abs(excess))}</div><div class="hero-note">${money(totalIncome)} income minus ${money(totalExpenses)} expenses</div></div>
       <div class="grid">${stat('Income events',money(totalIncome),`1 pinned · ${autoIncome.length} auto · ${manualIncome.length} manual`,'good')}${stat('Expense events',money(totalExpenses),`${autoExpenses.length} auto · ${expenses.length} manual`,'bad')}${stat(excess>=0?'Excess':'Shortfall',money(Math.abs(excess)),'expected amount',tone(excess))}</div>
       ${card('Income',incomeRows,'2026')}
-      ${card('Future Cash Flow Items',futureRows,`${money(sum(future))} total`)}
-      ${card('Expenses',expenseRows,'Amount order')}`;
+      ${card('Expenses',expenseRows,'Amount order')}
+      ${card('Future Cash Flow Items',futureRows,`${money(sum(future))} total`)}`;
   }
 
   const FED_BRACKETS=[[24800,.10],[100800,.12],[211400,.22],[403550,.24],[512450,.32],[768700,.35],[Infinity,.37]];
