@@ -7652,7 +7652,7 @@ const MB_VARIABLE_META = {
     // A fund rather than a monthly cap: whatever a month doesn't use carries
     // forward through the rest of the calendar year.
     carryover: true,
-    ledgerNote: 'Set aside for emergencies and unplanned costs. Kept separate so a surprise expense does not eat the month\u2019s discretionary budget. Unused money carries over and builds up through the year.',
+    ledgerNote: 'Set aside for emergencies and unplanned costs. Kept separate so a surprise expense does not eat the month\u2019s discretionary budget. Unused money carries over from month to month and from year to year.',
     autoNote: 'From November 2026 this budget is everything left of her income after Fair Share and the discretionary budget, so it moves when either of those or her 401(k) minimum changes.'
   }
 };
@@ -9252,6 +9252,20 @@ function mbLedgerYearStat(section, budgetKey, year) {
   return stat;
 }
 
+// A carry-over fund never resets: everything budgeted since tracking began, less
+// everything spent from it, through the month on screen — across calendar years.
+function mbLedgerFundStat(section, budgetKey) {
+  const stat = mbTrackedMonthsThrough().reduce((acc, monthKey) => {
+    const month = mbLedgerMonthStat(section, budgetKey, monthKey);
+    if (month.budget > 0 && !acc.since) acc.since = monthKey;
+    acc.spent += month.spent;
+    acc.budget += month.budget;
+    return acc;
+  }, { since: '', spent: 0, budget: 0 });
+  stat.diff = stat.budget - stat.spent;
+  return stat;
+}
+
 function mbOverUnderHtml(diff) {
   if (!diff) return '<span class="mb-ledger-delta is-even">on budget</span>';
   const over = diff < 0;
@@ -9269,6 +9283,7 @@ function mbLedgerHistoryHtml(section, budgetKey) {
     .filter(month => month.count > 0 || month.budget > 0)
     .reverse();
   const ytd = mbLedgerYearStat(section, budgetKey, year);
+  const fund = mbLedgerFundStat(section, budgetKey);
   if (!prior.length && !ytd.months) return '';
   // Months this year in which the budget actually existed — the divisor for the
   // carry-over fund's real monthly pace (it only started in October 2026).
@@ -9292,7 +9307,13 @@ function mbLedgerHistoryHtml(section, budgetKey) {
             <span class="mb-ledger-history-meta">· ${ytd.months} month${ytd.months === 1 ? '' : 's'} · ${fmt(ytd.budget)} budgeted</span>
           </span>
           <span><strong>${fmt(ytd.spent)}</strong> ${mbOverUnderHtml(ytd.diff)}</span>
-        </div>${MB_VARIABLE_META[budgetKey]?.carryover && budgetMonths ? `
+        </div>${MB_VARIABLE_META[budgetKey]?.carryover && fund.since ? `
+        <div class="mb-ledger-history-row mb-ledger-history-total">
+          <span>Fund balance
+            <span class="mb-ledger-history-meta">· ${fmt(fund.budget)} set aside since ${escHtml(mbMonthLabel(fund.since))}, ${fmt(fund.spent)} spent · carries across years</span>
+          </span>
+          <span><strong>${fund.diff < 0 ? '−' : ''}${fmt(Math.abs(fund.diff))}</strong></span>
+        </div>` : ''}${MB_VARIABLE_META[budgetKey]?.carryover && budgetMonths ? `
         <div class="mb-ledger-history-row mb-ledger-history-total">
           <span>Actual pace
             <span class="mb-ledger-history-meta">· averaged over ${budgetMonths} month${budgetMonths === 1 ? '' : 's'}</span>
@@ -9310,14 +9331,14 @@ function mbLedgerTotalHtml(section, entries, budgetKey) {
   const budget = mbVariableAmount(budgetKey, _mbMonth);
   const left = budget - spent;
   if (MB_VARIABLE_META[budgetKey]?.carryover) {
-    // Year to date through the month on screen: everything set aside so far
-    // this year, less everything spent from it.
-    const ytd = mbLedgerYearStat(section, budgetKey, _mbMonth.slice(0, 4));
+    // Running balance through the month on screen: everything set aside since
+    // the fund began, less everything spent from it. It carries across years.
+    const ytd = mbLedgerFundStat(section, budgetKey);
     const carriedIn = ytd.diff - left;
     return `
     <div class="mb-ledger-total">
       <div>
-        <div class="mb-ledger-total-label">${escHtml(_mbMonth.slice(0, 4))} fund available</div>
+        <div class="mb-ledger-total-label">Fund available${ytd.since ? ` <span style="font-weight:400;text-transform:none">· built up since ${escHtml(mbMonthLabel(ytd.since))}</span>` : ''}</div>
         <div class="mb-ledger-total-value" style="color:${ytd.diff < 0 ? 'var(--danger)' : 'var(--success)'}">${ytd.diff < 0 ? '−' : ''}${fmt(Math.abs(ytd.diff))}</div>
       </div>
       <div class="mb-ledger-total-meta">
