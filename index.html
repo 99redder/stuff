@@ -8793,10 +8793,10 @@ function mbTransfersCard(c) {
             ${row(`Leave in checking <span style="font-weight:400;color:var(--text-muted)">(${fmt(c.discretionary)} discretionary + ${fmt(c.emergency)} unplanned)</span>`, keep)}
             <div class="tp-row ${toSavings >= 0 ? 'refund' : 'owed'}"><span>Move to savings</span><span>${toSavings < 0 ? '−' : ''}${fmt(Math.abs(toSavings))}</span></div>
             ${january ? `
-            <div class="tp-group" style="margin-top:.6rem">Also on January 1</div>
-            ${w.rmdMode ? row('401(k) minimum, after withholding, to savings', w.netAnnual) : ''}
+            <div class="tp-group" style="margin-top:.6rem">Also in early January</div>
+            ${w.rmdMode ? row('401(k) yearly withdrawal, after withholding, straight to savings', w.netAnnual) : ''}
             ${row(`Unplanned left over from ${escHtml(priorYear)}, checking to savings`, sweep)}` : `
-            <div class="mb-card-note" style="margin-top:.5rem">The 401(k) minimum arrives once a year, on January 1, and goes to savings then. That is why this monthly transfer is smaller than the Emergency Fund's ${fmt(c.safetyNet)} monthly budget.</div>`}
+            <div class="mb-card-note" style="margin-top:.5rem">The 401(k) minimum is one withdrawal a year, in early January, paid straight to savings. That is why this monthly transfer is smaller than the Emergency Fund's ${fmt(c.safetyNet)} monthly budget.</div>`}
           </div>
         </div>`;
 }
