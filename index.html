@@ -1252,6 +1252,9 @@
     .mb-ledger-delta.is-under { color: var(--success); background: rgba(16, 185, 129, 0.12); }
     .mb-ledger-delta.is-even { color: var(--text-muted); background: var(--surface2); }
     .mb-ledger-delta.is-over { color: var(--danger); background: rgba(239, 68, 68, 0.12); }
+    .mb-variable-history { margin:.1rem 0 .5rem; font-size:.74rem; color:var(--text-muted); }
+    .mb-variable-history > summary { cursor:pointer; padding:.15rem 0; }
+    .mb-variable-history > summary:hover { color:var(--text); }
     .mb-variable-schedule {
       margin: 0.15rem 0 0.6rem;
       padding: 0.35rem 0.5rem;
@@ -8763,7 +8766,7 @@ function _renderMomBudgetHtml() {
             ${templateFixedRows}
 
             <div class="tp-group">Variable Budgets</div>
-            <div class="mb-card-note">Amounts apply to <strong>${escHtml(mbMonthLabel(_mbMonth))}</strong> and every month after it. Change one while viewing a later month to schedule a raise or cut without restating months already tracked.</div>
+            <div style="font-size:.74rem;color:var(--text-muted);margin:.1rem 0 .35rem">A change applies from <strong>${escHtml(mbMonthLabel(_mbMonth))}</strong> onward; earlier months keep their amounts.</div>
             ${MB_TRACKED_VARIABLE_KEYS.map(key => mbVariableBudgetRow(key)).join('')}
           </div>
         </div>
@@ -8811,23 +8814,40 @@ function mbVariableBudgetRow(key) {
   const amount = mbVariableAmount(key, _mbMonth);
   const schedule = mbVariableSchedule(key);
   const auto = key === 'safetyNet' && mbRemainderAuto();
+  const notStarted = auto && _mbMonth < MB_AUTO_PLAN_MONTH;
+  // One muted line under the name: the account, plus how an automatic amount is set.
+  const sub = [meta.account, auto ? 'set automatically to what is left' : ''].filter(Boolean).join(' · ');
+  const title = `
+      <span style="flex:1;min-width:0">
+        <span style="display:block;font-weight:600">${escHtml(meta.label)}</span>
+        ${sub ? `<span style="display:block;font-size:.72rem;color:var(--text-muted)">${escHtml(sub)}</span>` : ''}
+      </span>`;
+  // Automatic amounts are shown as text, not as a greyed-out input.
+  const value = auto
+    ? `<strong style="font-variant-numeric:tabular-nums;white-space:nowrap">${notStarted ? `<span style="font-weight:400;font-style:italic;color:var(--text-muted)">starts ${escHtml(mbMonthLabel(MB_AUTO_PLAN_MONTH))}</span>` : fmt(amount)}</strong>`
+    : `${mbLockButton(locked, `mbToggleVariableLock('${key}')`, locked ? `Unlock ${meta.label.toLowerCase()} budget` : `Lock ${meta.label.toLowerCase()} budget`)}
+      <span class="mb-money mb-variable-money"><input type="text" inputmode="decimal" class="form-input" value="${escAttr(moneyInputValue(amount))}" ${locked ? 'disabled' : ''} onchange="mbUpdateVariable('${escAttr(key)}', this.value)" onblur="formatMoneyInput(this)"></span>`;
+  const opening = meta.carryover === 'always' ? `
+    <div class="tp-pay-row">
+      <span style="flex:1;font-size:.82rem;color:var(--text-muted);padding-left:.75rem" title="Money already in the fund before tracking began">Starting balance</span>
+      <span class="mb-money mb-variable-money"><input type="text" inputmode="decimal" class="form-input" value="${escAttr(moneyInputValue(Number(t.fundOpening?.[key]) || 0))}" onchange="mbUpdateFundOpening('${escAttr(key)}', this.value)" onblur="formatMoneyInput(this)"></span>
+    </div>` : '';
+  // Past and scheduled amounts are reference material: tucked behind a toggle.
+  const base = Number(t.variable?.[key]) || 0;
   const changes = schedule.map(change => `
     <div class="mb-variable-schedule-row">
       <span>From <strong>${escHtml(mbMonthLabel(change.from))}</strong>: ${fmt(change.amount)}</span>
       ${(locked || auto) ? '' : `<button class="btn btn-ghost btn-sm" style="color:var(--danger)" title="Remove this scheduled change" onclick="mbRemoveVariableChange('${escAttr(key)}','${escAttr(change.from)}')">×</button>`}
     </div>`).join('');
+  const history = schedule.length ? `
+    <details class="mb-variable-history">
+      <summary>${schedule.length} amount change${schedule.length === 1 ? '' : 's'}</summary>
+      <div class="mb-variable-schedule">${base > 0 ? `<div>Before ${escHtml(mbMonthLabel(schedule[0].from))}: ${fmt(base)}</div>` : ''}${changes}</div>
+    </details>` : '';
   return `
-    <div class="tp-pay-row">
-      <span style="flex:1;font-weight:600">${escHtml(meta.label)}${meta.account ? ` <span style="font-weight:400;font-size:.72rem;color:var(--text-muted)">· ${escHtml(meta.account)}</span>` : ''}${auto ? `<span style="display:block;font-weight:400;font-style:italic;font-size:.72rem;color:var(--text-muted)">Auto: income left after Fair Share, discretionary and unplanned</span>` : ''}</span>
-      ${auto ? '' : mbLockButton(locked, `mbToggleVariableLock('${key}')`, locked ? `Unlock ${meta.label.toLowerCase()} budget` : `Lock ${meta.label.toLowerCase()} budget`)}
-      <span class="mb-money mb-variable-money"><input type="text" inputmode="decimal" class="form-input" value="${escAttr(moneyInputValue(amount))}" ${(locked || auto) ? 'disabled' : ''} onchange="mbUpdateVariable('${escAttr(key)}', this.value)" onblur="formatMoneyInput(this)"></span>
-    </div>
-    ${meta.carryover === 'always' ? `
-    <div class="tp-pay-row">
-      <span style="flex:1;font-size:.82rem;color:var(--text-muted)">Starting balance <span style="font-style:italic">(already in the fund before tracking began)</span></span>
-      <span class="mb-money mb-variable-money"><input type="text" inputmode="decimal" class="form-input" value="${escAttr(moneyInputValue(Number(t.fundOpening?.[key]) || 0))}" onchange="mbUpdateFundOpening('${escAttr(key)}', this.value)" onblur="formatMoneyInput(this)"></span>
-    </div>` : ''}
-    ${changes ? `<div class="mb-variable-schedule"><div>Before the first change: ${fmt(Number(t.variable?.[key]) || 0)}</div>${changes}</div>` : ''}`;
+    <div class="tp-pay-row">${title}
+      ${value}
+    </div>${opening}${history}`;
 }
 
 async function mbUpdateFundOpening(key, value) {
