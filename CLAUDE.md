@@ -529,6 +529,7 @@ A collapsible **section inside the Monthly Budget view** — not a standalone ta
   roundDollar,     // round her share to the NEAREST whole dollar (Math.round, neutral)
   shared: { [budgetExpenseItemId]: bool },  // per-item OVERRIDES of the category default
   participants: { [itemId]: number },       // per-item divisor override (who benefits)
+  direct: { [itemId]: number },             // per-item DIRECT amount — her own itemized charge on the bill, used instead of amount ÷ participants (see below)
   agreement: { residentName, ownerNames, propertyAddress },  // cost-sharing agreement parties
   mortgage: { enabled, itemId, loanAmount, ratePct, termYears, firstPayment },  // principal exclusion (see below)
   foodBenchmark: { enabled, itemId, amount, sourceLabel, suppliesAllowance },  // USDA food benchmark for the Weekly Spending item (see below)
@@ -844,6 +845,12 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-10-11 — Fair Share: direct attribution of an itemized charge
+
+- **A shared bill can carry Mom's actual itemized charge instead of an equal split.** The first full Verizon bill itemizes her line at $51.50, while `bill ÷ 3 adults` charged her for a slice of the other lines (incl. Ellie's iPad). `fairShare.direct[itemId]` holds her actual amount; `fsItemDirect(item, fs, effAmt)` returns it **capped at the bill** (never a markup), else `null` for the normal split. Applies in the plain/mortgage-exclusion branch of `fsCalc` only — the housing and USDA items keep their own valuation. UI: a small **$** button on each shared-bill row switches it to a `Her actual $` input (`fsUpdateDirect`), and **÷** switches back (`fsClearDirect`). The item still counts fully in `totalShared`.
+- **Agreement:** Method clause gains a conditional direct-attribution sentence; Exhibit A marks the row `§`, the Divided-Among column reads `Actual §`, and a boxed `§ Directly attributed expenses` write-up names each one. **The amount is typed by hand — update it when the carrier's per-line charge changes.**
+- **Worker mirrored** in `calcFairShareFromBudget` so the phone PWA's Fair Share matches. **Worker deploy required.**
 
 ### 2026-10-05 — Mom Budget: 401(k) balance tracker
 

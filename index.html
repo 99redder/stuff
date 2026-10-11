@@ -14289,6 +14289,7 @@ function fsNormalize(raw) {
     roundDollar:   (raw.roundDollar !== undefined) ? !!raw.roundDollar : (raw.roundUp !== false),
     shared:        (raw.shared && typeof raw.shared === 'object') ? { ...raw.shared } : {},
     participants:  (raw.participants && typeof raw.participants === 'object') ? { ...raw.participants } : {},
+    direct:        (raw.direct && typeof raw.direct === 'object') ? { ...raw.direct } : {},
     agreement: {
       residentName:    (typeof raw.agreement?.residentName === 'string' && raw.agreement.residentName.trim()) ? raw.agreement.residentName : 'Nancy Gorham',
       ownerNames:      (typeof raw.agreement?.ownerNames === 'string' && raw.agreement.ownerNames.trim()) ? raw.agreement.ownerNames : 'Christopher Gorham and Megan Gorham',
@@ -14565,6 +14566,17 @@ function fsItemParticipants(item, cat, fs) {
   return fsDefaultParticipants(item, cat, fs.householdSize);
 }
 
+// Direct attribution: when the bill itself itemizes Mom's own charge (e.g. the
+// carrier's per-line total on the phone bill), her portion is that actual
+// amount rather than an equal split. Capped at the bill so it can never exceed
+// the real cost. Returns null when the item is split the normal way.
+function fsItemDirect(item, fs, effAmt) {
+  if (!fs.direct || !Object.prototype.hasOwnProperty.call(fs.direct, item.id)) return null;
+  const saved = Number(fs.direct[item.id]);
+  if (!Number.isFinite(saved) || saved < 0) return null;
+  return Math.min(Math.max(0, effAmt), saved);
+}
+
 function fsCalc() {
   const b = state.budget;
   const fs = b.fairShare;
@@ -14593,8 +14605,9 @@ function fsCalc() {
           herPortion = fbAdj.amount;
         } else {
           const effAmt = (mAdj && item.id === mAdj.itemId) ? Math.max(0, amt - mAdj.principal) : amt;
+          const direct = fsItemDirect(item, fs, effAmt);
           sharedAmt = effAmt;
-          herPortion = effAmt / fsItemParticipants(item, cat, fs);
+          herPortion = direct !== null ? direct : effAmt / fsItemParticipants(item, cat, fs);
         }
         totalShared += sharedAmt;
         herShareExact += herPortion;
@@ -14936,7 +14949,9 @@ function fsRenderCard() {
       const effAmt = isHb ? c.housingAdj.monthlyCost
         : isAdj ? Math.max(0, (Number(item.amount) || 0) - c.mortgageAdj.principal)
         : (Number(item.amount) || 0);
-      const momPortion = isShared ? (isFb ? c.foodAdj.amount : effAmt / participants) : 0;
+      const direct = (isShared && !isHb && !isFb && !isFolded) ? fsItemDirect(item, fs, effAmt) : null;
+      const isDirect = direct !== null;
+      const momPortion = isShared ? (isFb ? c.foodAdj.amount : isDirect ? direct : effAmt / participants) : 0;
       const amtCell = isHb
         ? `<s style="opacity:.6">${fmt(item.amount || 0)}</s> ${fmt(effAmt)}/mo <span title="Home carrying cost substituted for the mortgage payment — see the housing benchmark above" style="font-size:.66rem;color:var(--primary);font-weight:700">carrying cost</span>`
         : isAdj
@@ -14946,11 +14961,22 @@ function fsRenderCard() {
         ? `<span title="Folded into the housing carrying-cost benchmark above and split there — not counted separately" style="display:flex;align-items:center;gap:.25rem;font-size:.68rem;color:var(--primary);font-weight:700;white-space:nowrap">→ in housing 🏘️</span>`
         : isFb
         ? `<span title="${escAttr(c.foodAdj.sourceLabel)} — see the USDA food benchmark above" style="display:flex;align-items:center;gap:.25rem;font-size:.68rem;color:var(--primary);font-weight:700;white-space:nowrap">USDA = ${fmt(momPortion)}</span>`
+        : isDirect
+        ? `<span style="display:flex;align-items:center;gap:.25rem;font-size:.68rem;color:var(--primary);font-weight:700;white-space:nowrap">
+          <span title="Mom's own itemized charge on this bill — used as-is instead of an equal split">Her actual $</span>
+          <input type="number" min="0" step="0.01" value="${escAttr(String(direct))}"
+                 onchange="fsUpdateDirect('${escAttr(item.id)}', this.value)"
+                 style="width:4.75rem;padding:.16rem .3rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);font-size:.75rem;text-align:right">
+          <button type="button" onclick="fsClearDirect('${escAttr(item.id)}')" title="Go back to an equal split"
+                  style="padding:.1rem .35rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text-muted);font-size:.68rem;cursor:pointer">÷</button>
+        </span>`
         : `<label title="Number of people who benefit from this expense" style="display:flex;align-items:center;gap:.25rem;font-size:.68rem;color:var(--text-muted);white-space:nowrap">
           ÷ <input type="number" min="1" max="${fs.householdSize}" step="1" value="${participants}"
                    onchange="fsUpdateParticipants('${escAttr(item.id)}', this.value)"
                    style="width:3.25rem;padding:.16rem .3rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);font-size:.75rem;text-align:center">
           = ${fmt(momPortion)}
+          ${isHb ? '' : `<button type="button" onclick="fsUpdateDirect('${escAttr(item.id)}', ${Math.round(momPortion * 100) / 100})" title="The bill itemizes Mom's own charge — enter that exact amount instead of splitting"
+                  style="padding:.1rem .35rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text-muted);font-size:.68rem;cursor:pointer">$</button>`}
         </label>`;
       return `<div style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;border-bottom:1px solid var(--border)">
         <span style="flex:1;min-width:0;${isShared ? '' : 'opacity:.55'}">${escHtml(item.name)}</span>
@@ -14992,7 +15018,7 @@ function fsRenderCard() {
           ${housingBox}
           ${foodBox}
           <div style="font-size:.74rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:.3rem">Which bills are shared, and by whom?</div>
-          <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.6rem">Mark each bill <strong>Shared</strong> or <strong>Personal</strong>, then set how many people actually benefit from each shared expense. Phone service and car insurance default to the three adults; household-wide expenses default to all ${fs.householdSize} residents. If Mom's exact incremental cost is known, use that instead of an equal split.</div>
+          <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.6rem">Mark each bill <strong>Shared</strong> or <strong>Personal</strong>, then set how many people actually benefit from each shared expense. Phone service and car insurance default to the three adults; household-wide expenses default to all ${fs.householdSize} residents. If a bill itemizes Mom's own charge (like her line on the phone bill), press <strong>$</strong> on that row and enter her actual amount instead of an equal split.</div>
           ${itemSections || `<div style="color:var(--text-muted);font-size:.85rem;padding:1rem 0">No budget expenses yet — add bills in the budget below and they'll appear here.</div>`}
           <div style="display:flex;justify-content:space-between;border-top:2px solid var(--border);padding-top:.5rem;margin-top:.3rem;font-weight:700;font-size:.85rem">
             <span>Shared costs / mo</span><span>${fmt(c.totalShared)}</span>
@@ -15065,6 +15091,21 @@ async function fsUpdateParticipants(itemId, value) {
   const count = Math.round(Number(value));
   if (!Number.isFinite(count)) return;
   fs.participants[itemId] = Math.min(fs.householdSize, Math.max(1, count));
+  await _saveBudget();
+  _renderBudgetHtml();
+}
+
+async function fsUpdateDirect(itemId, value) {
+  const fs = state.budget.fairShare;
+  const amount = Math.round(Number(value) * 100) / 100;
+  if (!Number.isFinite(amount) || amount < 0) return;
+  fs.direct[itemId] = amount;
+  await _saveBudget();
+  _renderBudgetHtml();
+}
+
+async function fsClearDirect(itemId) {
+  delete state.budget.fairShare.direct[itemId];
   await _saveBudget();
   _renderBudgetHtml();
 }
@@ -15162,9 +15203,11 @@ function fsAgreementRows() {
       const isAdj = !isHb && mAdj && item.id === mAdj.itemId;   // housing benchmark supersedes the mortgage exclusion
       const isFb = fbAdj && item.id === fbAdj.itemId;
       const eff = isHb ? hAdj.monthlyCost : (isAdj ? Math.max(0, amt - mAdj.principal) : amt);
+      const direct = (isHb || isFb) ? null : fsItemDirect(item, fs, eff);
       rows.push({
         name: item.name, cat, amount: eff, participants,
-        portion: isFb ? fbAdj.amount : eff / participants,
+        portion: isFb ? fbAdj.amount : direct !== null ? direct : eff / participants,
+        direct: direct !== null,
         adjusted: isAdj ? { original: amt, principal: mAdj.principal, k: mAdj.k, n: mAdj.n, ratePct: fs.mortgage.ratePct } : null,
         usda: isFb ? { amount: fbAdj.amount, sourceLabel: fbAdj.sourceLabel, fullAmount: amt, perCapita: eff / participants } : null,
         housing: isHb ? { ...hAdj, original: amt } : null
@@ -15194,10 +15237,10 @@ function fsAgreementDocHtml() {
 
   const exhibitRows = rows.map(r => `
     <tr>
-      <td>${escHtml(r.name)}${r.adjusted ? '&nbsp;*' : ''}${r.usda ? '&nbsp;&dagger;' : ''}${r.housing ? '&nbsp;&Dagger;' : ''}</td>
+      <td>${escHtml(r.name)}${r.adjusted ? '&nbsp;*' : ''}${r.usda ? '&nbsp;&dagger;' : ''}${r.housing ? '&nbsp;&Dagger;' : ''}${r.direct ? '&nbsp;&sect;' : ''}</td>
       <td>${escHtml(r.cat)}</td>
       <td class="num">${fmt(r.amount)}${r.housing ? '&nbsp;&Dagger;' : ''}</td>
-      <td class="num">${r.usda ? 'USDA&nbsp;&dagger;' : r.participants}</td>
+      <td class="num">${r.usda ? 'USDA&nbsp;&dagger;' : r.direct ? 'Actual&nbsp;&sect;' : r.participants}</td>
       <td class="num">${fmt(r.portion)}</td>
     </tr>`).join('');
 
@@ -15300,6 +15343,21 @@ function fsAgreementDocHtml() {
       </div>`;
   }
 
+  // Direct-attribution write-up for Exhibit A — expenses where the bill itself
+  // itemizes Resident's own charge.
+  const directRows = rows.filter(r => r.direct);
+  const directBlock = !directRows.length ? '' : `
+      <div class="fs-doc-mortgage">
+        <h3>&sect; Directly attributed expenses</h3>
+        <p>For the following ${directRows.length === 1 ? 'expense' : 'expenses'} the provider's bill
+        separately itemizes the charge for Resident's own service, so Resident's share is that actual
+        itemized amount rather than an equal division of the whole bill:
+        ${directRows.map(r => `&ldquo;${escHtml(r.name)}&rdquo; &mdash; <strong>${fmt(r.portion)} per month</strong> of the ${fmt(r.amount)} bill`).join('; ')}.
+        Direct attribution is used wherever it is available because it measures Resident's actual cost
+        exactly; the remainder of each bill covers other household members' service and is borne by
+        Homeowners. The amount is updated from the provider's bill whenever it changes.</p>
+      </div>`;
+
   return `
   <div class="fs-doc">
     <h1>Household Cost-Sharing Agreement</h1>
@@ -15341,7 +15399,10 @@ function fsAgreementDocHtml() {
       ongoing carrying cost (principally owner-borne maintenance, upkeep, and
       depreciation), independent of the Homeowners' mortgage financing and set below
       the fair rental value of the dwelling, so it reimburses real cost without any
-      return on the Homeowners' capital, as detailed in Exhibit&nbsp;A.` : ''}</li>
+      return on the Homeowners' capital, as detailed in Exhibit&nbsp;A.` : ''}${directRows.length ? `
+      Where a provider's bill separately itemizes the charge for Resident's own service,
+      Resident's share of that expense is the actual itemized charge rather than an equal
+      division, as detailed in Exhibit&nbsp;A.` : ''}</li>
 
       <li><strong>Monthly contribution.</strong> Based on current costs, Resident's contribution
       is <strong>${fmt(c.herShare)} per month</strong>${fs.roundDollar ? ' (rounded to the nearest whole dollar)' : ''},
@@ -15408,6 +15469,7 @@ function fsAgreementDocHtml() {
       ${adjBlock}
       ${usdaBlock}
       ${housingBlock}
+      ${directBlock}
       <p class="fs-doc-foot">Exact sum of itemized shares: ${fmt(c.herShareExact)}. Amounts are drawn from the
       household budget records as of the date above; expenses classified as personal are omitted.
       Prepared from the household budget maintained by Homeowners. Template for family

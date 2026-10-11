@@ -1653,7 +1653,13 @@ function calcFairShareFromBudget(budget) {
           herShare += fbAdj.amount;
         } else {
           const effAmt = (mAdj && item.id === mAdj.itemId) ? Math.max(0, amt - mAdj.principal) : amt;
-          herShare += effAmt / participants;
+          // Direct attribution (mirror of the frontend fsItemDirect): the bill
+          // itemizes her own charge, so use it as-is, capped at the bill.
+          const direct = (fs.direct && typeof fs.direct === 'object' && Object.prototype.hasOwnProperty.call(fs.direct, item.id))
+            ? Number(fs.direct[item.id]) : NaN;
+          herShare += (Number.isFinite(direct) && direct >= 0)
+            ? Math.min(Math.max(0, effAmt), direct)
+            : effAmt / participants;
         }
       }
     }
