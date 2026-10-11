@@ -15104,10 +15104,26 @@ async function fsUpdateDirect(itemId, value) {
   _renderBudgetHtml();
 }
 
-async function fsClearDirect(itemId) {
-  delete state.budget.fairShare.direct[itemId];
-  await _saveBudget();
-  _renderBudgetHtml();
+function fsClearDirect(itemId) {
+  const fs = state.budget.fairShare;
+  let item = null, cat = '';
+  for (const c of BUDGET_EXPENSE_CATS) {
+    const it = (state.budget.expenses[c] || []).find(x => x.id === itemId);
+    if (it) { item = it; cat = c; break; }
+  }
+  if (!item) return;
+  const amt = Number(item.amount) || 0;
+  const parts = fsItemParticipants(item, cat, fs);
+  showBrandedNotice({
+    title: 'Go back to an equal split?',
+    message: `"${item.name}" is set to Mom's actual charge of ${fmt(Number(fs.direct[itemId]) || 0)}/mo. Switching back divides the whole ${fmt(amt)} bill among ${parts} people (${fmt(amt / parts)}/mo for her) and discards the amount you entered.`,
+    confirmLabel: 'Use Equal Split',
+    onConfirm: async () => {
+      delete fs.direct[itemId];
+      await _saveBudget();
+      _renderBudgetHtml();
+    }
+  });
 }
 
 async function fsUpdateSetting(key, value) {
