@@ -9498,15 +9498,16 @@ function mbLedgerTotalHtml(section, entries, budgetKey) {
       </div>
     </div>`;
   }
+  // The headline is what is left to spend; the running total sits beside it.
   return `
     <div class="mb-ledger-total">
       <div>
-        <div class="mb-ledger-total-label">${escHtml(mbMonthLabel(_mbMonth, 'long'))} total</div>
-        <div class="mb-ledger-total-value" style="color:${spent > budget ? 'var(--danger)' : 'var(--text)'}">${fmt(spent)}</div>
+        <div class="mb-ledger-total-label">${left < 0 ? 'Over budget' : 'Left to spend'} · ${escHtml(mbMonthLabel(_mbMonth, 'long'))}</div>
+        <div class="mb-ledger-total-value" style="color:${left < 0 ? 'var(--danger)' : 'var(--success)'}">${left < 0 ? '−' : ''}${fmt(Math.abs(left))}</div>
       </div>
       <div class="mb-ledger-total-meta">
+        <div><strong>${fmt(spent)}</strong> spent</div>
         <div>of <strong>${fmt(budget)}</strong> budget</div>
-        <div style="color:${left >= 0 ? 'var(--success)' : 'var(--danger)'}"><strong>${left < 0 ? '−' : ''}${fmt(Math.abs(left))}</strong> ${left < 0 ? 'over' : 'left'}</div>
       </div>
     </div>`;
 }
