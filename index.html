@@ -7647,7 +7647,8 @@ const MB_VARIABLE_META = {
   discretionary: {
     label: 'Discretionary',
     icon: '\u{1F6CD}\u{FE0F}',
-    ledgerNote: 'Discretionary includes non-grocery purchase items, prescription copays, and overages from other budget areas.'
+    account: 'Checking',
+    ledgerNote: 'Discretionary includes non-grocery purchase items, prescription copays, and overages from other budget areas. Paid from her checking account.'
   },
   emergency: {
     label: 'Unplanned',
@@ -7656,14 +7657,16 @@ const MB_VARIABLE_META = {
     // then starts over on Jan 1. Whatever is unspent at year end moves to the
     // Emergency Fund (see `sweepFrom` below).
     carryover: 'year',
-    ledgerNote: 'For costs that were not planned but are not emergencies: a gift, a replacement, a one-off bill. Kept separate so a surprise does not eat the month\u2019s discretionary budget. Unused money rolls forward month to month, then on January 1 whatever is left moves to the Emergency Fund and this starts over.'
+    account: 'Checking',
+    ledgerNote: 'For costs that were not planned but are not emergencies: a gift, a replacement, a one-off bill. Kept separate so a surprise does not eat the month\u2019s discretionary budget. Unused money stays in her checking account and rolls forward month to month; on January 1 whatever is left is transferred to her savings account (the Emergency Fund) and this starts over.'
   },
   safetyNet: {
     label: 'Emergency Fund',
     icon: '\u{1F6DF}',
     carryover: 'always',
     sweepFrom: 'emergency',   // receives Unplanned's unspent balance each Jan 1
-    ledgerNote: 'Her cushion for real emergencies. Unused money carries over from month to month and from year to year, and each January 1 it also receives whatever was left in Unplanned.',
+    account: 'High-interest savings',
+    ledgerNote: 'Her cushion for real emergencies, kept in her high-interest savings account. Unused money carries over from month to month and from year to year, and each January 1 it also receives whatever was left in Unplanned. Interest the account earns is not counted here; update the starting balance to true it up.',
     autoNote: 'From November 2026 it receives everything left of her income (Social Security plus the 401(k) minimum) after Fair Share and the discretionary and unplanned budgets, so it moves when any of those change.'
   }
 };
@@ -8777,7 +8780,7 @@ function mbVariableBudgetRow(key) {
     </div>`).join('');
   return `
     <div class="tp-pay-row">
-      <span style="flex:1;font-weight:600">${escHtml(meta.label)}${auto ? `<span style="display:block;font-weight:400;font-style:italic;font-size:.72rem;color:var(--text-muted)">Auto: income left after Fair Share, discretionary and unplanned</span>` : ''}</span>
+      <span style="flex:1;font-weight:600">${escHtml(meta.label)}${meta.account ? ` <span style="font-weight:400;font-size:.72rem;color:var(--text-muted)">· ${escHtml(meta.account)}</span>` : ''}${auto ? `<span style="display:block;font-weight:400;font-style:italic;font-size:.72rem;color:var(--text-muted)">Auto: income left after Fair Share, discretionary and unplanned</span>` : ''}</span>
       ${auto ? '' : mbLockButton(locked, `mbToggleVariableLock('${key}')`, locked ? `Unlock ${meta.label.toLowerCase()} budget` : `Lock ${meta.label.toLowerCase()} budget`)}
       <span class="mb-money mb-variable-money"><input type="text" inputmode="decimal" class="form-input" value="${escAttr(moneyInputValue(amount))}" ${(locked || auto) ? 'disabled' : ''} onchange="mbUpdateVariable('${escAttr(key)}', this.value)" onblur="formatMoneyInput(this)"></span>
     </div>
@@ -9432,7 +9435,7 @@ function mbLedgerTotalHtml(section, entries, budgetKey) {
       <div class="mb-ledger-total-meta">
         <div><strong>${carriedIn < 0 ? '−' : ''}${fmt(Math.abs(carriedIn))}</strong> carried in + <strong>${fmt(budget)}</strong> this month</div>
         <div><strong>${fmt(spent)}</strong> spent in ${escHtml(mbMonthLabel(_mbMonth, 'long'))}</div>
-        ${yearly ? `<div>Resets January 1; anything left moves to the Emergency Fund</div>`
+        ${yearly ? `<div>Resets January 1; anything left moves to the Emergency Fund (savings)</div>`
           : `${fund.opening > 0 ? `<div>Includes the <strong>${fmt(fund.opening)}</strong> starting balance</div>` : ''}${fund.swept > 0 ? `<div>Includes <strong>${fmt(fund.swept)}</strong> moved from Unplanned (${fund.sweeps.map(x => `${fmt(x.amount)} on Jan 1, ${Number(x.year) + 1}`).join(', ')})</div>` : ''}`}
       </div>
     </div>`;
