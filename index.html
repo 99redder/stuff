@@ -8108,6 +8108,15 @@ function mbNormalize(raw) {
   }
   data.template.variable.emergency = Number(data.template.variable.emergency ?? 0) || 0;
   data.template.variable.safetyNet = Number(data.template.variable.safetyNet ?? 0) || 0;
+  // Money already in a never-resetting fund before tracking began, per bucket key.
+  // Never hardcoded here (public repo): typed in the template card, or adopted
+  // by the worker from the private `mom_fund_opening` KV record.
+  const opening = (data.template.fundOpening && typeof data.template.fundOpening === 'object') ? data.template.fundOpening : {};
+  data.template.fundOpening = {};
+  Object.keys(opening).forEach(key => {
+    const value = Number(opening[key]);
+    if (Number.isFinite(value) && value >= 0) data.template.fundOpening[key] = Math.round(value * 100) / 100;
+  });
   data.template.variableSchedule = (data.template.variableSchedule && typeof data.template.variableSchedule === 'object')
     ? data.template.variableSchedule : {};
   MB_TRACKED_VARIABLE_KEYS.forEach(key => {
@@ -8772,7 +8781,22 @@ function mbVariableBudgetRow(key) {
       ${auto ? '' : mbLockButton(locked, `mbToggleVariableLock('${key}')`, locked ? `Unlock ${meta.label.toLowerCase()} budget` : `Lock ${meta.label.toLowerCase()} budget`)}
       <span class="mb-money mb-variable-money"><input type="text" inputmode="decimal" class="form-input" value="${escAttr(moneyInputValue(amount))}" ${(locked || auto) ? 'disabled' : ''} onchange="mbUpdateVariable('${escAttr(key)}', this.value)" onblur="formatMoneyInput(this)"></span>
     </div>
+    ${meta.carryover === 'always' ? `
+    <div class="tp-pay-row">
+      <span style="flex:1;font-size:.82rem;color:var(--text-muted)">Starting balance <span style="font-style:italic">(already in the fund before tracking began)</span></span>
+      <span class="mb-money mb-variable-money"><input type="text" inputmode="decimal" class="form-input" value="${escAttr(moneyInputValue(Number(t.fundOpening?.[key]) || 0))}" onchange="mbUpdateFundOpening('${escAttr(key)}', this.value)" onblur="formatMoneyInput(this)"></span>
+    </div>` : ''}
     ${changes ? `<div class="mb-variable-schedule"><div>Before the first change: ${fmt(Number(t.variable?.[key]) || 0)}</div>${changes}</div>` : ''}`;
+}
+
+async function mbUpdateFundOpening(key, value) {
+  const amount = Math.round(parseMoney(value) * 100) / 100;
+  if (!Number.isFinite(amount) || amount < 0) return;
+  const t = state.momBudget.template;
+  t.fundOpening = t.fundOpening || {};
+  t.fundOpening[key] = amount;
+  _renderMomBudgetHtml();
+  await _saveMomBudget();
 }
 
 function mbLockButton(locked, onClick, title) {
@@ -9306,6 +9330,7 @@ function mbLedgerFundStat(section, budgetKey) {
     acc.budget += month.budget;
     return acc;
   }, { since: '', spent: 0, budget: 0, swept: 0, sweeps: [] });
+  stat.opening = Number(state.momBudget.template.fundOpening?.[budgetKey]) || 0;
   const from = MB_VARIABLE_META[budgetKey]?.sweepFrom;
   if (from) {
     const thisYear = _mbMonth.slice(0, 4);
@@ -9319,7 +9344,7 @@ function mbLedgerFundStat(section, budgetKey) {
       if (amount > 0) { stat.sweeps.push({ year, amount }); stat.swept += amount; }
     });
   }
-  stat.diff = stat.budget + stat.swept - stat.spent;
+  stat.diff = stat.opening + stat.budget + stat.swept - stat.spent;
   return stat;
 }
 
@@ -9364,10 +9389,10 @@ function mbLedgerHistoryHtml(section, budgetKey) {
             <span class="mb-ledger-history-meta">· ${ytd.months} month${ytd.months === 1 ? '' : 's'} · ${fmt(ytd.budget)} budgeted</span>
           </span>
           <span><strong>${fmt(ytd.spent)}</strong> ${mbOverUnderHtml(ytd.diff)}</span>
-        </div>${MB_VARIABLE_META[budgetKey]?.carryover === 'always' && fund.since ? `
+        </div>${MB_VARIABLE_META[budgetKey]?.carryover === 'always' && (fund.since || fund.opening > 0) ? `
         <div class="mb-ledger-history-row mb-ledger-history-total">
           <span>Fund balance
-            <span class="mb-ledger-history-meta">· ${fmt(fund.budget)} set aside since ${escHtml(mbMonthLabel(fund.since))}${fund.swept > 0 ? `, ${fmt(fund.swept)} moved from Unplanned` : ''}, ${fmt(fund.spent)} spent · carries across years</span>
+            <span class="mb-ledger-history-meta">· ${fund.opening > 0 ? `${fmt(fund.opening)} starting balance, ` : ''}${fmt(fund.budget)} set aside${fund.since ? ` since ${escHtml(mbMonthLabel(fund.since))}` : ''}${fund.swept > 0 ? `, ${fmt(fund.swept)} moved from Unplanned` : ''}, ${fmt(fund.spent)} spent · carries across years</span>
           </span>
           <span><strong>${fund.diff < 0 ? '−' : ''}${fmt(Math.abs(fund.diff))}</strong></span>
         </div>` : ''}${MB_VARIABLE_META[budgetKey]?.carryover && budgetMonths ? `
@@ -9408,7 +9433,7 @@ function mbLedgerTotalHtml(section, entries, budgetKey) {
         <div><strong>${carriedIn < 0 ? '−' : ''}${fmt(Math.abs(carriedIn))}</strong> carried in + <strong>${fmt(budget)}</strong> this month</div>
         <div><strong>${fmt(spent)}</strong> spent in ${escHtml(mbMonthLabel(_mbMonth, 'long'))}</div>
         ${yearly ? `<div>Resets January 1; anything left moves to the Emergency Fund</div>`
-          : (fund.swept > 0 ? `<div>Includes <strong>${fmt(fund.swept)}</strong> moved from Unplanned (${fund.sweeps.map(x => `${fmt(x.amount)} on Jan 1, ${Number(x.year) + 1}`).join(', ')})</div>` : '')}
+          : `${fund.opening > 0 ? `<div>Includes the <strong>${fmt(fund.opening)}</strong> starting balance</div>` : ''}${fund.swept > 0 ? `<div>Includes <strong>${fmt(fund.swept)}</strong> moved from Unplanned (${fund.sweeps.map(x => `${fmt(x.amount)} on Jan 1, ${Number(x.year) + 1}`).join(', ')})</div>` : ''}`}
       </div>
     </div>`;
   }

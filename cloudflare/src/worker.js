@@ -1726,9 +1726,30 @@ async function applyMom401kStatement(env, data) {
   data.rmd.tracker = { ...tracker, asOf, balance };
 }
 
+// A fund's starting balance can be loaded into private KV the same way, as
+// `mom_fund_opening` = { safetyNet: <dollars> }. It is adopted only while the
+// record has no starting balance of its own for that bucket, so a value typed
+// in the app (including 0) always wins.
+const MOM_FUND_OPENING_KEY = 'mom_fund_opening';
+
+async function applyMomFundOpening(env, data) {
+  if (!data || typeof data !== 'object' || !data.template || typeof data.template !== 'object') return;
+  const opening = await env.RENTALS.get(MOM_FUND_OPENING_KEY, 'json').catch(() => null);
+  if (!opening || typeof opening !== 'object') return;
+  const current = (data.template.fundOpening && typeof data.template.fundOpening === 'object') ? data.template.fundOpening : {};
+  for (const key of Object.keys(opening)) {
+    const value = Number(opening[key]);
+    if (!MB_TRACKED_VARIABLE_KEYS.includes(key) || !Number.isFinite(value) || value < 0) continue;
+    if (Object.prototype.hasOwnProperty.call(current, key)) continue;
+    current[key] = value;
+  }
+  data.template.fundOpening = current;
+}
+
 async function handleGetMomBudget(env) {
   const data = await env.MOM_BUDGET_STORE.getByName('mom_budget').getBudget();
   await applyMom401kStatement(env, data);
+  await applyMomFundOpening(env, data);
   return jsonResponse({ data });
 }
 

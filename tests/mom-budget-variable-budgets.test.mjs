@@ -380,3 +380,18 @@ test('Unplanned resets each Jan 1 and its unspent balance moves to the Emergency
   vm.runInContext("_mbMonth = '2027-01'", a);
   assert.equal(a.mbLedgerFundStat('safetyNet', 'safetyNet').swept, 0);
 });
+
+test('a starting balance counts toward the Emergency Fund but not the yearly Unplanned fund', () => {
+  const a = app();
+  const raw = legacyRecord();
+  raw.template.fundOpening = { safetyNet: 1500.25, emergency: 'junk' };
+  a.state.momBudget = a.mbNormalize(raw);
+  assert.deepEqual(plain(a.state.momBudget.template.fundOpening), { safetyNet: 1500.25 });
+  a.mbSetVariableAmount('safetyNet', '2026-11', 700);
+  vm.runInContext("_mbMonth = '2026-11'", a);
+  const fund = a.mbLedgerFundStat('safetyNet', 'safetyNet');
+  assert.equal(fund.opening, 1500.25);
+  assert.equal(fund.diff, 1500.25 + 700);
+  assert.match(a.mbLedgerTotalHtml('safetyNet', [], 'safetyNet'), /starting balance/);
+  assert.equal(a.mbLedgerYearStat('emergency', 'emergency', '2026').opening, undefined);
+});
