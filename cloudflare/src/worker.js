@@ -1700,7 +1700,9 @@ const MB_TRACKING_START_DATE = `${MB_TRACKING_START_MONTH}-01`;
 // The allowance is always the itemized variable budgets added up. September 2026
 // ran as a single $800 lump — the only month that did — so it is pinned as an
 // $800 discretionary budget rather than special-cased in the math.
-const MB_TRACKED_VARIABLE_KEYS = ['discretionary', 'emergency'];
+// `emergency` is the $200 Unplanned bucket; `safetyNet` is the Emergency Fund
+// that receives the remainder. Both are owner-only planning buckets.
+const MB_TRACKED_VARIABLE_KEYS = ['discretionary', 'emergency', 'safetyNet'];
 const MB_SEPT_LUMP_MONTH = '2026-09';
 const MB_SEPT_LUMP_AMOUNT = 800;
 const MB_BUDGET_SPLIT_MONTH = '2026-10';
@@ -1892,7 +1894,7 @@ function monthLabel(monthKey) {
 }
 
 function blankMomBudgetMonth() {
-  return { fixedPaid: {}, fixedActual: {}, groceries: [], gas: [], discretionary: [], emergency: [], otherExpenses: [] };
+  return { fixedPaid: {}, fixedActual: {}, groceries: [], gas: [], discretionary: [], emergency: [], safetyNet: [], otherExpenses: [] };
 }
 
 // ── Effective-dated variable budgets (mirrors index.html) ───────────────────
@@ -1990,6 +1992,7 @@ function normalizeMomBudget(raw) {
     data.template.octoberSplitV2 = true;
   }
   data.template.variable.emergency = Number(data.template.variable.emergency ?? 0) || 0;
+  data.template.variable.safetyNet = Number(data.template.variable.safetyNet ?? 0) || 0;
   data.template.variableSchedule = (data.template.variableSchedule && typeof data.template.variableSchedule === 'object')
     ? data.template.variableSchedule : {};
   for (const key of MB_TRACKED_VARIABLE_KEYS) {
@@ -2018,8 +2021,9 @@ function normalizeMomBudget(raw) {
     delete month.fixedActual['family-gift'];
     month.discretionary = Array.isArray(month.discretionary) ? month.discretionary : [];
     month.emergency = Array.isArray(month.emergency) ? month.emergency : [];
+    month.safetyNet = Array.isArray(month.safetyNet) ? month.safetyNet : [];
     month.otherExpenses = Array.isArray(month.otherExpenses) ? month.otherExpenses : [];
-    for (const ledger of ['discretionary', 'emergency', 'otherExpenses']) {
+    for (const ledger of ['discretionary', 'emergency', 'safetyNet', 'otherExpenses']) {
       month[ledger] = month[ledger].filter(entry => !validDateString(entry.date) || entry.date >= MB_TRACKING_START_DATE);
     }
   });
@@ -2042,7 +2046,8 @@ function momBudgetTemplateTotals(data, monthKey) {
   const fixed = t.fixed.reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const discretionary = momVariableAmount(data, 'discretionary', monthKey);
   const emergency = momVariableAmount(data, 'emergency', monthKey);
-  return { income, fixed, discretionary, emergency, planned: fixed + discretionary + emergency };
+  const safetyNet = momVariableAmount(data, 'safetyNet', monthKey);
+  return { income, fixed, discretionary, emergency, safetyNet, planned: fixed + discretionary + emergency + safetyNet };
 }
 
 function calcMomBudgetMonth(data, monthKey) {
@@ -2068,10 +2073,11 @@ function calcMomBudgetMonth(data, monthKey) {
   }, 0);
   const discretionarySpent = (m.discretionary || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const emergencySpent = (m.emergency || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const safetyNetSpent = (m.safetyNet || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const otherSpent = (m.otherExpenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const otherOverages = otherSpent + fixedOver;
   const discretionaryAdjusted = Math.max(0, base.discretionary - otherOverages);
-  const budgetSpent = base.fixed + fixedOver + discretionarySpent + emergencySpent + otherSpent;
+  const budgetSpent = base.fixed + fixedOver + discretionarySpent + emergencySpent + safetyNetSpent + otherSpent;
   // Spending tracking is a separate allowance. Count paid bills and ledgers,
   // but explicitly exclude the auto-synced Fair Share transfer.
   const trackingFixedPaid = t.fixed.reduce((s, item) => {
@@ -2082,7 +2088,7 @@ function calcMomBudgetMonth(data, monthKey) {
     const actual = Number(m.fixedActual?.[item.id]);
     return s + (Number.isFinite(actual) && actual > 0 ? actual : fallback);
   }, 0);
-  const trackingUsed = trackingFixedPaid + discretionarySpent + emergencySpent + otherSpent;
+  const trackingUsed = trackingFixedPaid + discretionarySpent + emergencySpent + safetyNetSpent + otherSpent;
   const trackingAllowance = momTrackingAllowance(data, monthKey);
   const trackingRemaining = trackingAllowance - trackingUsed;
   return {
@@ -2092,6 +2098,8 @@ function calcMomBudgetMonth(data, monthKey) {
     discretionarySpent,
     emergencySpent,
     emergencyRemaining: base.emergency - emergencySpent,
+    safetyNetSpent,
+    safetyNetRemaining: base.safetyNet - safetyNetSpent,
     otherOverages,
     discretionaryAdjusted,
     discretionaryRemaining: discretionaryAdjusted - discretionarySpent,
@@ -2107,12 +2115,14 @@ function calcMomBudgetMonth(data, monthKey) {
   };
 }
 
-// Her phone tracks discretionary spending only. The emergencies / unplanned
-// budget is the owner's planning bucket, so its allowance and its spending are
-// both left out of every figure the phone shows.
+// Her phone tracks discretionary spending only. The unplanned budget and the
+// emergency fund are the owner's planning buckets, so their allowances and
+// their spending are left out of every figure the phone shows.
 function momPhoneTracking(c) {
-  const trackingAllowance = c.trackingAllowance - c.emergency;
-  const trackingUsed = c.trackingUsed - c.emergencySpent;
+  // Rounded to cents: subtracting the buckets back out can leave float dust.
+  const cents = v => Math.round(v * 100) / 100;
+  const trackingAllowance = cents(c.trackingAllowance - c.emergency - c.safetyNet);
+  const trackingUsed = cents(c.trackingUsed - c.emergencySpent - c.safetyNetSpent);
   const trackingRemaining = trackingAllowance - trackingUsed;
   return {
     trackingAllowance,
@@ -2192,6 +2202,7 @@ function momMonthHasActivity(month) {
     || Object.values(month.fixedActual || {}).some(v => Number(v) > 0)
     || (month.discretionary || []).length > 0
     || (month.emergency || []).length > 0
+    || (month.safetyNet || []).length > 0
     || (month.otherExpenses || []).length > 0;
 }
 

@@ -846,6 +846,14 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ## Recent Updates
 
+### 2026-10-11 — Mom Budget: three buckets (Discretionary, Unplanned, Emergency Fund)
+
+- **Three variable budgets:** Discretionary ($400), **Unplanned** ($200) and **Emergency Fund** (the remainder). `MB_TRACKED_VARIABLE_KEYS = ['discretionary', 'emergency', 'safetyNet']`.
+- **Mind the keys.** `emergency` is the $200 bucket that began in October 2026 as "Emergencies / Unplanned" and is now labelled **Unplanned** (key kept so its schedule, ledger and history carry on untouched). **`safetyNet` is the Emergency Fund** — new ledger `months['YYYY-MM'].safetyNet`, card id `mb-sec-safetyNet`, icon 🛟.
+- **The remainder goes to `safetyNet`:** `mbSyncAutoPlan` writes `income − fixed − discretionary − emergency` to `variableSchedule.safetyNet` from `autoPlan.remainderFrom` (renamed from `emergencyFrom`). The one-time `threeBucketsV1` migration renames that flag and strips any `emergency` schedule entry from November 2026 on, which the first automatic plan may have written there.
+- Both Unplanned and Emergency Fund are carry-over funds (`carryover: true`) whose balance runs across years (`mbLedgerFundStat`). Month Math lists all three; the shortcut bar has `Add an unplanned cost` and `Add an emergency`.
+- **Worker mirrored** (`MB_TRACKED_VARIABLE_KEYS`, month normalisation, `momBudgetTemplateTotals`, `calcMomBudgetMonth`); `momPhoneTracking` subtracts both owner buckets (rounded to cents), so her phone still shows discretionary only. The mobile Snapshot Mom tab already reads discretionary only — no change. **Worker deploy required.**
+
 ### 2026-10-11 — Mom Budget: automatic plan (401(k) at the RMD, emergencies = what is left)
 
 - **Her 401(k) income is the required minimum, nothing more.** With Fair Share down to about $1,045, Social Security alone covers her budget, so the 401(k) only pays out what the IRS requires. The `401k` income line is now `auto: true, autoType: 'rmd'`: read-only, valued at `mbCalcRmd().netMonthly` (the RMD for the RMD card's year, less 20% withholding, ÷ 12). `mbCalc401kWithdrawal()` returns `rmdMode: true` with `grossAnnual` equal to the RMD **to the cent** (never grossed back up from the rounded income line), so the Jan 1 auto-withdrawal (`mb401kAutoAmount`) is exactly the minimum.

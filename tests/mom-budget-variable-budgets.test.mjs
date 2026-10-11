@@ -331,3 +331,33 @@ test('the emergency fund carries unused money forward, across calendar years', (
   assert.doesNotMatch(a.mbLedgerTotalHtml('discretionary', [], 'discretionary'), /Fund available/);
   assert.match(history, /Fund balance/);
 });
+
+test('three buckets: unplanned stays $200 and the emergency fund is separate, in app and worker', () => {
+  const a = app();
+  // A record the first automatic plan already touched: the remainder had been
+  // written into the `emergency` bucket from November.
+  const raw = legacyRecord();
+  a.state.momBudget = a.mbNormalize(raw);
+  a.state.momBudget.template.threeBucketsV1 = false;
+  a.state.momBudget.template.autoPlan = { rmdIncome: true, emergencyFrom: '2026-11' };
+  a.mbSetVariableAmount('emergency', '2026-11', 959.15);
+  a.state.momBudget = a.mbNormalize(plain(a.state.momBudget));
+  assert.equal(a.mbVariableAmount('emergency', '2026-11'), 200);      // back to the Unplanned $200
+  assert.equal(a.state.momBudget.template.autoPlan.remainderFrom, '2026-11');
+  a.mbSetVariableAmount('safetyNet', '2026-11', 759.15);
+  a.state.momBudget.months['2026-11'] = { ...a.mbBlankMonth(), safetyNet: [{ id: 's', date: '2026-11-03', amount: 50, name: 'ER copay' }] };
+  const november = a.mbCalcMonth('2026-11');
+  assert.equal(november.safetyNet, 759.15);
+  assert.equal(november.safetyNetSpent, 50);
+  assert.equal(november.trackingAllowance, 400 + 200 + 759.15);
+  assert.equal(a.mbLedgerFundStat('safetyNet', 'safetyNet').since, '');   // screen is still on an earlier month
+  // The worker reads the same record and keeps both owner buckets off her phone.
+  const w = worker();
+  const data = w.normalizeMomBudget(plain(a.state.momBudget));
+  const c = w.calcMomBudgetMonth(data, '2026-11');
+  assert.equal(c.trackingAllowance, november.trackingAllowance);
+  assert.equal(c.trackingUsed, november.trackingUsed);
+  const phone = w.momPhoneTracking(c);
+  assert.equal(phone.trackingAllowance, 400);
+  assert.equal(phone.trackingUsed, c.trackingUsed - 50);
+});

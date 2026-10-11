@@ -7635,11 +7635,14 @@ const MB_BUDGET_SPLIT_MONTH = '2026-10';
 const MB_SPLIT_DISCRETIONARY = 400;
 const MB_SPLIT_EMERGENCY = 200;
 // From this month the plan is automatic: her 401(k) income is the required
-// minimum distribution (after withholding) and the emergency budget is whatever
-// income is left after Fair Share and the discretionary budget.
+// minimum distribution (after withholding) and the Emergency Fund gets whatever
+// income is left after Fair Share and the discretionary and unplanned budgets.
 const MB_AUTO_PLAN_MONTH = '2026-11';
 // Variable budgets that make up the monthly spending allowance, in display order.
-const MB_TRACKED_VARIABLE_KEYS = ['discretionary', 'emergency'];
+// Three buckets. NOTE the keys: `emergency` is the $200 bucket that began in
+// October 2026 as "Emergencies / Unplanned" and is now labelled Unplanned;
+// `safetyNet` is the Emergency Fund that receives the remainder.
+const MB_TRACKED_VARIABLE_KEYS = ['discretionary', 'emergency', 'safetyNet'];
 const MB_VARIABLE_META = {
   discretionary: {
     label: 'Discretionary',
@@ -7647,13 +7650,19 @@ const MB_VARIABLE_META = {
     ledgerNote: 'Discretionary includes non-grocery purchase items, prescription copays, and overages from other budget areas.'
   },
   emergency: {
-    label: 'Emergencies / Unplanned',
+    label: 'Unplanned',
     icon: '\u{1F6A8}',
     // A fund rather than a monthly cap: whatever a month doesn't use carries
     // forward through the rest of the calendar year.
     carryover: true,
-    ledgerNote: 'Set aside for emergencies and unplanned costs. Kept separate so a surprise expense does not eat the month\u2019s discretionary budget. Unused money carries over from month to month and from year to year.',
-    autoNote: 'From November 2026 this budget is everything left of her income after Fair Share and the discretionary budget, so it moves when either of those or her 401(k) minimum changes.'
+    ledgerNote: 'For costs that were not planned but are not emergencies: a gift, a replacement, a one-off bill. Kept separate so a surprise does not eat the month\u2019s discretionary budget. Unused money carries over from month to month and from year to year.'
+  },
+  safetyNet: {
+    label: 'Emergency Fund',
+    icon: '\u{1F6DF}',
+    carryover: true,
+    ledgerNote: 'Her cushion for real emergencies. Unused money carries over from month to month and from year to year.',
+    autoNote: 'From November 2026 it receives everything left of her income (Social Security plus the 401(k) minimum) after Fair Share and the discretionary and unplanned budgets, so it moves when any of those change.'
   }
 };
 const MB_VARIABLE_FIXED_BILL_IDS = new Set(['electric', 'water', 'gas-heat']);
@@ -7913,7 +7922,7 @@ function mbUuid(prefix = 'mb') {
 }
 
 function mbBlankMonth() {
-  return { fixedPaid: {}, fixedActual: {}, groceries: [], gas: [], discretionary: [], emergency: [], otherExpenses: [] };
+  return { fixedPaid: {}, fixedActual: {}, groceries: [], gas: [], discretionary: [], emergency: [], safetyNet: [], otherExpenses: [] };
 }
 
 // ── Effective-dated variable budgets ────────────────────────────────────────
@@ -8079,11 +8088,24 @@ function mbNormalize(raw) {
   // emergencies = what is left). The amounts themselves are set by
   // mbSyncAutoPlan once the Fair Share figure is loaded.
   if (!data.template.autoPlanV1) {
-    data.template.autoPlan = { rmdIncome: true, emergencyFrom: MB_AUTO_PLAN_MONTH };
+    data.template.autoPlan = { rmdIncome: true, remainderFrom: MB_AUTO_PLAN_MONTH };
     data.template.autoPlanV1 = true;
     _mbMigrationApplied = true;
   }
+  // One-time: three buckets. The first automatic plan put the remainder into the
+  // `emergency` bucket; that bucket goes back to its $200 (now "Unplanned") and
+  // the remainder goes to the new Emergency Fund (`safetyNet`) instead.
+  if (!data.template.threeBucketsV1) {
+    const plan = data.template.autoPlan || {};
+    data.template.autoPlan = { rmdIncome: plan.rmdIncome !== false, remainderFrom: plan.remainderFrom || plan.emergencyFrom || MB_AUTO_PLAN_MONTH };
+    const sched = data.template.variableSchedule = data.template.variableSchedule || {};
+    sched.emergency = (Array.isArray(sched.emergency) ? sched.emergency : [])
+      .filter(change => String(change.from) < MB_AUTO_PLAN_MONTH);
+    data.template.threeBucketsV1 = true;
+    _mbMigrationApplied = true;
+  }
   data.template.variable.emergency = Number(data.template.variable.emergency ?? 0) || 0;
+  data.template.variable.safetyNet = Number(data.template.variable.safetyNet ?? 0) || 0;
   data.template.variableSchedule = (data.template.variableSchedule && typeof data.template.variableSchedule === 'object')
     ? data.template.variableSchedule : {};
   MB_TRACKED_VARIABLE_KEYS.forEach(key => {
@@ -8121,6 +8143,7 @@ function mbNormalize(raw) {
     delete month.fixedActual['family-gift'];
     month.discretionary = Array.isArray(month.discretionary) ? month.discretionary : [];
     month.emergency = Array.isArray(month.emergency) ? month.emergency : [];
+    month.safetyNet = Array.isArray(month.safetyNet) ? month.safetyNet : [];
     month.otherExpenses = Array.isArray(month.otherExpenses) ? month.otherExpenses : [];
   });
   return data;
@@ -8129,7 +8152,7 @@ function mbNormalize(raw) {
 // Ledger entries can also be added from the snapshot phone app
 // (add_mom_budget_entry), so the editor reloads on every visit and tracks which
 // entry ids it has seen. _saveMomBudget uses that to keep outside additions.
-const MB_LEDGER_SECTIONS = ['discretionary', 'emergency', 'otherExpenses'];
+const MB_LEDGER_SECTIONS = ['discretionary', 'emergency', 'safetyNet', 'otherExpenses'];
 let _mbKnownEntryIds = new Set();
 function mbLedgerIds(data) {
   const ids = new Set();
@@ -8315,8 +8338,9 @@ function mbSyncHouseholdTransfers() {
 // Auto plan (template.autoPlan, seeded by the autoPlanV1 migration):
 //  - rmdIncome: the 401(k) income line is the required minimum distribution after
 //    20% withholding, spread over twelve months.
-//  - emergencyFrom: from that month the emergency budget is the income left after
-//    fixed bills (Fair Share) and the discretionary budget. It is written as an
+//  - remainderFrom: from that month the Emergency Fund (`safetyNet`) budget is the
+//    income left after fixed bills (Fair Share) and the discretionary and
+//    unplanned budgets. It is written as an
 //    ordinary effective-dated change for the current month, so months already
 //    tracked keep the budget they had and the worker/phone need no formula.
 // Returns true when it changed the record (the caller saves).
@@ -8341,22 +8365,22 @@ function mbSyncAutoPlan() {
   }
   // Needs the live Fair Share figure; skip while the Monthly Budget isn't loaded.
   const fairShare = t.fixed.find(i => i.id === 'fair-share');
-  if (plan.emergencyFrom && state.budget?.fairShare && Number(fairShare?.amount) > 0) {
+  if (plan.remainderFrom && state.budget?.fairShare && Number(fairShare?.amount) > 0) {
     const today = appTodayIso().slice(0, 7);
-    const month = today < plan.emergencyFrom ? plan.emergencyFrom : today;
+    const month = today < plan.remainderFrom ? plan.remainderFrom : today;
     const income = t.income.reduce((s, i) => s + (Number(i.amount) || 0), 0);
     const fixed = t.fixed.reduce((s, i) => s + (Number(i.amount) || 0), 0);
-    const leftover = Math.max(0, cents(income - fixed - mbVariableAmount('discretionary', month)));
-    if (cents(mbVariableAmount('emergency', month)) !== leftover) {
-      mbSetVariableAmount('emergency', month, leftover);
+    const leftover = Math.max(0, cents(income - fixed - mbVariableAmount('discretionary', month) - mbVariableAmount('emergency', month)));
+    if (cents(mbVariableAmount('safetyNet', month)) !== leftover) {
+      mbSetVariableAmount('safetyNet', month, leftover);
       changed = true;
     }
   }
   return changed;
 }
 
-function mbEmergencyAuto() {
-  return !!state.momBudget?.template?.autoPlan?.emergencyFrom;
+function mbRemainderAuto() {
+  return !!state.momBudget?.template?.autoPlan?.remainderFrom;
 }
 
 function mbYearStatsOpen() {
@@ -8392,7 +8416,8 @@ function mbTemplateTotals(monthKey = _mbMonth) {
   const fixed = t.fixed.reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const discretionary = mbVariableAmount('discretionary', monthKey);
   const emergency = mbVariableAmount('emergency', monthKey);
-  return { income, fixed, discretionary, emergency, planned: fixed + discretionary + emergency };
+  const safetyNet = mbVariableAmount('safetyNet', monthKey);
+  return { income, fixed, discretionary, emergency, safetyNet, planned: fixed + discretionary + emergency + safetyNet };
 }
 
 function mbCalcMonth(monthKey) {
@@ -8420,6 +8445,7 @@ function mbCalcMonth(monthKey) {
   }, 0);
   const discretionarySpent = (m.discretionary || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const emergencySpent = (m.emergency || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const safetyNetSpent = (m.safetyNet || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const otherSpent = (m.otherExpenses || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const otherOverages = otherSpent + fixedOver;
   const discretionaryAdjusted = Math.max(0, base.discretionary - otherOverages);
@@ -8431,11 +8457,11 @@ function mbCalcMonth(monthKey) {
     const actual = Number(m.fixedActual?.[item.id]);
     return s + (Number.isFinite(actual) && actual > 0 ? actual : fallback);
   }, 0);
-  const trackingUsed = trackingFixedPaid + discretionarySpent + emergencySpent + otherSpent;
+  const trackingUsed = trackingFixedPaid + discretionarySpent + emergencySpent + safetyNetSpent + otherSpent;
   const trackingAllowance = mbTrackingAllowance(monthKey);
   const trackingRemaining = trackingAllowance - trackingUsed;
-  const cashSpent = fixedPaid + discretionarySpent + emergencySpent + otherSpent;
-  const budgetSpent = base.fixed + fixedOver + discretionarySpent + emergencySpent + otherSpent;
+  const cashSpent = fixedPaid + discretionarySpent + emergencySpent + safetyNetSpent + otherSpent;
+  const budgetSpent = base.fixed + fixedOver + discretionarySpent + emergencySpent + safetyNetSpent + otherSpent;
   return {
     ...base,
     fixedDue,
@@ -8444,6 +8470,8 @@ function mbCalcMonth(monthKey) {
     discretionarySpent,
     emergencySpent,
     emergencyRemaining: base.emergency - emergencySpent,
+    safetyNetSpent,
+    safetyNetRemaining: base.safetyNet - safetyNetSpent,
     otherSpent,
     otherOverages,
     discretionaryAdjusted,
@@ -8469,6 +8497,7 @@ function mbMonthHasActivity(month) {
     || Object.values(month.fixedActual || {}).some(v => Number(v) > 0)
     || (month.discretionary || []).length > 0
     || (month.emergency || []).length > 0
+    || (month.safetyNet || []).length > 0
     || (month.otherExpenses || []).length > 0;
 }
 
@@ -8517,7 +8546,8 @@ function mbBillIcon(item) {
 // Task shortcuts across the top of the tab: [target id, label].
 const MB_SHORTCUTS = [
   ['mb-sec-discretionary', '🛍️ Add a purchase'],
-  ['mb-sec-emergency', '🚨 Add an emergency'],
+  ['mb-sec-emergency', '🚨 Add an unplanned cost'],
+  ['mb-sec-safetyNet', '🛟 Add an emergency'],
   ['mb-sec-401k-budget', '🏦 Yearly 401(k) withdrawal'],
   ['mb-sec-401k', '💰 401(k) balance'],
   ['mb-sec-401k-withdrawals', '💵 401(k) withdrawals'],
@@ -8535,7 +8565,7 @@ function mbJumpTo(target) {
   const el = document.getElementById(target);
   if (!el) return;
   el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  const ledger = { 'mb-sec-discretionary': 'discretionary', 'mb-sec-emergency': 'emergency' }[target];
+  const ledger = { 'mb-sec-discretionary': 'discretionary', 'mb-sec-emergency': 'emergency', 'mb-sec-safetyNet': 'safetyNet' }[target];
   if (ledger) document.getElementById(`mb-${ledger}-name`)?.focus({ preventScroll: true });
 }
 
@@ -8651,12 +8681,20 @@ function _renderMomBudgetHtml() {
           note: MB_VARIABLE_META.discretionary.ledgerNote
         })}
 
-        ${mbLedgerCard('Emergencies / Unplanned', 'emergency', m.emergency || [], 'Description', 'name', {
+        ${mbLedgerCard('Unplanned', 'emergency', m.emergency || [], 'Description', 'name', {
           budgetKey: 'emergency',
           history: true,
           icon: MB_VARIABLE_META.emergency.icon,
-          emptyText: 'No emergency or unplanned spending this month.',
-          note: MB_VARIABLE_META.emergency.ledgerNote + (mbEmergencyAuto() ? ' ' + MB_VARIABLE_META.emergency.autoNote : '')
+          emptyText: 'No unplanned spending this month.',
+          note: MB_VARIABLE_META.emergency.ledgerNote
+        })}
+
+        ${mbLedgerCard('Emergency Fund', 'safetyNet', m.safetyNet || [], 'Description', 'name', {
+          budgetKey: 'safetyNet',
+          history: true,
+          icon: MB_VARIABLE_META.safetyNet.icon,
+          emptyText: 'Nothing spent from the emergency fund this month.',
+          note: MB_VARIABLE_META.safetyNet.ledgerNote + (mbRemainderAuto() ? ' ' + MB_VARIABLE_META.safetyNet.autoNote : '')
         })}
 
         ${fairShareItems.map(item => `
@@ -8681,7 +8719,8 @@ function _renderMomBudgetHtml() {
             <div class="tp-row"><span>Income</span><strong style="color:var(--success)">${fmt(c.income)}</strong></div>
             <div class="tp-row"><span>Fixed bills</span><strong>${fmt(c.fixed)}</strong></div>
             <div class="tp-row"><span>Discretionary budget</span><strong>${fmt(c.discretionary)}</strong></div>
-            <div class="tp-row"><span>Emergencies / unplanned budget${mbEmergencyAuto() && _mbMonth >= MB_AUTO_PLAN_MONTH ? ' <span style="font-weight:400;color:var(--text-muted)">(what is left)</span>' : ''}</span><strong>${fmt(c.emergency)}</strong></div>
+            <div class="tp-row"><span>Unplanned budget</span><strong>${fmt(c.emergency)}</strong></div>
+            <div class="tp-row"><span>Emergency fund${mbRemainderAuto() && _mbMonth >= MB_AUTO_PLAN_MONTH ? ' <span style="font-weight:400;color:var(--text-muted)">(what is left)</span>' : ''}</span><strong>${fmt(c.safetyNet)}</strong></div>
             <div class="tp-row sub"><span>Unallocated after budget</span><strong>${c.unallocated < 0 ? '−' : ''}${fmt(Math.abs(c.unallocated))}</strong></div>
             ${c.otherOverages ? `<div class="tp-row"><span>Other overages</span><strong style="color:var(--danger)">${fmt(c.otherOverages)}</strong></div>
             <div class="tp-row sub"><span>Adjusted discretionary</span><strong>${fmt(c.discretionaryAdjusted)}</strong></div>` : ''}
@@ -8719,7 +8758,7 @@ function mbVariableBudgetRow(key) {
   const locked = !!t.variableLocks?.[key];
   const amount = mbVariableAmount(key, _mbMonth);
   const schedule = mbVariableSchedule(key);
-  const auto = key === 'emergency' && mbEmergencyAuto();
+  const auto = key === 'safetyNet' && mbRemainderAuto();
   const changes = schedule.map(change => `
     <div class="mb-variable-schedule-row">
       <span>From <strong>${escHtml(mbMonthLabel(change.from))}</strong>: ${fmt(change.amount)}</span>
@@ -8727,7 +8766,7 @@ function mbVariableBudgetRow(key) {
     </div>`).join('');
   return `
     <div class="tp-pay-row">
-      <span style="flex:1;font-weight:600">${escHtml(meta.label)}${auto ? `<span style="display:block;font-weight:400;font-style:italic;font-size:.72rem;color:var(--text-muted)">Auto: income left after Fair Share and discretionary</span>` : ''}</span>
+      <span style="flex:1;font-weight:600">${escHtml(meta.label)}${auto ? `<span style="display:block;font-weight:400;font-style:italic;font-size:.72rem;color:var(--text-muted)">Auto: income left after Fair Share, discretionary and unplanned</span>` : ''}</span>
       ${auto ? '' : mbLockButton(locked, `mbToggleVariableLock('${key}')`, locked ? `Unlock ${meta.label.toLowerCase()} budget` : `Lock ${meta.label.toLowerCase()} budget`)}
       <span class="mb-money mb-variable-money"><input type="text" inputmode="decimal" class="form-input" value="${escAttr(moneyInputValue(amount))}" ${(locked || auto) ? 'disabled' : ''} onchange="mbUpdateVariable('${escAttr(key)}', this.value)" onblur="formatMoneyInput(this)"></span>
     </div>
@@ -9535,7 +9574,7 @@ async function mbToggleTemplateLock(section, id) {
 // the budget they were measured against.
 async function mbUpdateVariable(key, value) {
   if (state.momBudget.template.variableLocks?.[key]) return;
-  if (key === 'emergency' && mbEmergencyAuto()) return;
+  if (key === 'safetyNet' && mbRemainderAuto()) return;
   mbSetVariableAmount(key, _mbMonth, parseMoney(value));
   _renderMomBudgetHtml();
   await _saveMomBudget();
@@ -9543,7 +9582,7 @@ async function mbUpdateVariable(key, value) {
 
 function mbRemoveVariableChange(key, from) {
   if (state.momBudget.template.variableLocks?.[key]) return;
-  if (key === 'emergency' && mbEmergencyAuto()) return;
+  if (key === 'safetyNet' && mbRemainderAuto()) return;
   const meta = MB_VARIABLE_META[key] || { label: key };
   showBrandedNotice({
     title: 'Remove scheduled change',
