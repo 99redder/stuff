@@ -7652,16 +7652,18 @@ const MB_VARIABLE_META = {
   emergency: {
     label: 'Unplanned',
     icon: '\u{1F6A8}',
-    // A fund rather than a monthly cap: whatever a month doesn't use carries
-    // forward through the rest of the calendar year.
-    carryover: true,
-    ledgerNote: 'For costs that were not planned but are not emergencies: a gift, a replacement, a one-off bill. Kept separate so a surprise does not eat the month\u2019s discretionary budget. Unused money carries over from month to month and from year to year.'
+    // $200 a month that rolls forward month to month within the calendar year,
+    // then starts over on Jan 1. Whatever is unspent at year end moves to the
+    // Emergency Fund (see `sweepFrom` below).
+    carryover: 'year',
+    ledgerNote: 'For costs that were not planned but are not emergencies: a gift, a replacement, a one-off bill. Kept separate so a surprise does not eat the month\u2019s discretionary budget. Unused money rolls forward month to month, then on January 1 whatever is left moves to the Emergency Fund and this starts over.'
   },
   safetyNet: {
     label: 'Emergency Fund',
     icon: '\u{1F6DF}',
-    carryover: true,
-    ledgerNote: 'Her cushion for real emergencies. Unused money carries over from month to month and from year to year.',
+    carryover: 'always',
+    sweepFrom: 'emergency',   // receives Unplanned's unspent balance each Jan 1
+    ledgerNote: 'Her cushion for real emergencies. Unused money carries over from month to month and from year to year, and each January 1 it also receives whatever was left in Unplanned.',
     autoNote: 'From November 2026 it receives everything left of her income (Social Security plus the 401(k) minimum) after Fair Share and the discretionary and unplanned budgets, so it moves when any of those change.'
   }
 };
@@ -9291,17 +9293,33 @@ function mbLedgerYearStat(section, budgetKey, year) {
   return stat;
 }
 
-// A carry-over fund never resets: everything budgeted since tracking began, less
+// A fund that never resets: everything budgeted since tracking began, less
 // everything spent from it, through the month on screen — across calendar years.
+// A fund with `sweepFrom` also receives, on each Jan 1 already reached, whatever
+// that other bucket had left over for the year just ended (never a shortfall).
 function mbLedgerFundStat(section, budgetKey) {
-  const stat = mbTrackedMonthsThrough().reduce((acc, monthKey) => {
+  const months = mbTrackedMonthsThrough();
+  const stat = months.reduce((acc, monthKey) => {
     const month = mbLedgerMonthStat(section, budgetKey, monthKey);
     if (month.budget > 0 && !acc.since) acc.since = monthKey;
     acc.spent += month.spent;
     acc.budget += month.budget;
     return acc;
-  }, { since: '', spent: 0, budget: 0 });
-  stat.diff = stat.budget - stat.spent;
+  }, { since: '', spent: 0, budget: 0, swept: 0, sweeps: [] });
+  const from = MB_VARIABLE_META[budgetKey]?.sweepFrom;
+  if (from) {
+    const thisYear = _mbMonth.slice(0, 4);
+    const byYear = {};
+    months.filter(monthKey => monthKey.slice(0, 4) < thisYear).forEach(monthKey => {
+      const month = mbLedgerMonthStat(from, from, monthKey);
+      byYear[monthKey.slice(0, 4)] = (byYear[monthKey.slice(0, 4)] || 0) + month.diff;
+    });
+    Object.keys(byYear).sort().forEach(year => {
+      const amount = Math.round(Math.max(0, byYear[year]) * 100) / 100;
+      if (amount > 0) { stat.sweeps.push({ year, amount }); stat.swept += amount; }
+    });
+  }
+  stat.diff = stat.budget + stat.swept - stat.spent;
   return stat;
 }
 
@@ -9346,10 +9364,10 @@ function mbLedgerHistoryHtml(section, budgetKey) {
             <span class="mb-ledger-history-meta">· ${ytd.months} month${ytd.months === 1 ? '' : 's'} · ${fmt(ytd.budget)} budgeted</span>
           </span>
           <span><strong>${fmt(ytd.spent)}</strong> ${mbOverUnderHtml(ytd.diff)}</span>
-        </div>${MB_VARIABLE_META[budgetKey]?.carryover && fund.since ? `
+        </div>${MB_VARIABLE_META[budgetKey]?.carryover === 'always' && fund.since ? `
         <div class="mb-ledger-history-row mb-ledger-history-total">
           <span>Fund balance
-            <span class="mb-ledger-history-meta">· ${fmt(fund.budget)} set aside since ${escHtml(mbMonthLabel(fund.since))}, ${fmt(fund.spent)} spent · carries across years</span>
+            <span class="mb-ledger-history-meta">· ${fmt(fund.budget)} set aside since ${escHtml(mbMonthLabel(fund.since))}${fund.swept > 0 ? `, ${fmt(fund.swept)} moved from Unplanned` : ''}, ${fmt(fund.spent)} spent · carries across years</span>
           </span>
           <span><strong>${fund.diff < 0 ? '−' : ''}${fmt(Math.abs(fund.diff))}</strong></span>
         </div>` : ''}${MB_VARIABLE_META[budgetKey]?.carryover && budgetMonths ? `
@@ -9369,20 +9387,28 @@ function mbLedgerTotalHtml(section, entries, budgetKey) {
   const spent = entries.reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
   const budget = mbVariableAmount(budgetKey, _mbMonth);
   const left = budget - spent;
-  if (MB_VARIABLE_META[budgetKey]?.carryover) {
-    // Running balance through the month on screen: everything set aside since
-    // the fund began, less everything spent from it. It carries across years.
-    const ytd = mbLedgerFundStat(section, budgetKey);
-    const carriedIn = ytd.diff - left;
+  const carry = MB_VARIABLE_META[budgetKey]?.carryover;
+  if (carry) {
+    // 'year': set aside so far this calendar year, less what was spent from it.
+    // 'always': the same running balance since the fund began, across years.
+    const yearly = carry === 'year';
+    const year = _mbMonth.slice(0, 4);
+    const fund = yearly ? mbLedgerYearStat(section, budgetKey, year) : mbLedgerFundStat(section, budgetKey);
+    const carriedIn = fund.diff - left;
+    const label = yearly
+      ? `${escHtml(year)} fund available`
+      : `Fund available${fund.since ? ` <span style="font-weight:400;text-transform:none">· built up since ${escHtml(mbMonthLabel(fund.since))}</span>` : ''}`;
     return `
     <div class="mb-ledger-total">
       <div>
-        <div class="mb-ledger-total-label">Fund available${ytd.since ? ` <span style="font-weight:400;text-transform:none">· built up since ${escHtml(mbMonthLabel(ytd.since))}</span>` : ''}</div>
-        <div class="mb-ledger-total-value" style="color:${ytd.diff < 0 ? 'var(--danger)' : 'var(--success)'}">${ytd.diff < 0 ? '−' : ''}${fmt(Math.abs(ytd.diff))}</div>
+        <div class="mb-ledger-total-label">${label}</div>
+        <div class="mb-ledger-total-value" style="color:${fund.diff < 0 ? 'var(--danger)' : 'var(--success)'}">${fund.diff < 0 ? '−' : ''}${fmt(Math.abs(fund.diff))}</div>
       </div>
       <div class="mb-ledger-total-meta">
         <div><strong>${carriedIn < 0 ? '−' : ''}${fmt(Math.abs(carriedIn))}</strong> carried in + <strong>${fmt(budget)}</strong> this month</div>
         <div><strong>${fmt(spent)}</strong> spent in ${escHtml(mbMonthLabel(_mbMonth, 'long'))}</div>
+        ${yearly ? `<div>Resets January 1; anything left moves to the Emergency Fund</div>`
+          : (fund.swept > 0 ? `<div>Includes <strong>${fmt(fund.swept)}</strong> moved from Unplanned (${fund.sweeps.map(x => `${fmt(x.amount)} on Jan 1, ${Number(x.year) + 1}`).join(', ')})</div>` : '')}
       </div>
     </div>`;
   }

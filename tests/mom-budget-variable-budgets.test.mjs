@@ -309,18 +309,14 @@ test('Month Math drops the Fixed bills paid row and the ledger cards carry icons
   assert.match(html, /icon: MB_VARIABLE_META\.emergency\.icon/);
 });
 
-test('the emergency fund carries unused money forward, across calendar years', () => {
+test('the unplanned fund carries unused money forward through the year', () => {
   const a = app();
   a.state.momBudget = a.mbNormalize(legacyRecord());
   // October: $200 set aside, $240 spent — $40 short, nothing carried in.
   assert.equal(a.mbLedgerYearStat('emergency', 'emergency', '2026').diff, -40);
   const october = a.mbLedgerTotalHtml('emergency', a.state.momBudget.months['2026-10'].emergency, 'emergency');
-  assert.match(october, /Fund available/);
-  assert.match(october, /built up since Oct 2026/);
-  // The balance does not reset on Jan 1: it runs from the fund's first month.
-  const fund = a.mbLedgerFundStat('emergency', 'emergency');
-  assert.equal(fund.since, '2026-10');
-  assert.equal(fund.diff, -40);
+  assert.match(october, /2026 fund available/);
+  assert.match(october, /Resets January 1/);
   assert.match(october, /\$40\.00/);
   // One budgeted month so far (October), so the pace is $240/mo, $2,880/yr.
   const history = a.mbLedgerHistoryHtml('emergency', 'emergency');
@@ -328,8 +324,8 @@ test('the emergency fund carries unused money forward, across calendar years', (
   assert.match(history, /\$2880\.00/);
   assert.doesNotMatch(a.mbLedgerHistoryHtml('discretionary', 'discretionary'), /Actual pace/);
   // Discretionary stays a plain monthly budget.
-  assert.doesNotMatch(a.mbLedgerTotalHtml('discretionary', [], 'discretionary'), /Fund available/);
-  assert.match(history, /Fund balance/);
+  assert.doesNotMatch(a.mbLedgerTotalHtml('discretionary', [], 'discretionary'), /fund available/i);
+  assert.doesNotMatch(history, /Fund balance/);   // that row belongs to the Emergency Fund
 });
 
 test('three buckets: unplanned stays $200 and the emergency fund is separate, in app and worker', () => {
@@ -360,4 +356,27 @@ test('three buckets: unplanned stays $200 and the emergency fund is separate, in
   const phone = w.momPhoneTracking(c);
   assert.equal(phone.trackingAllowance, 400);
   assert.equal(phone.trackingUsed, c.trackingUsed - 50);
+});
+
+test('Unplanned resets each Jan 1 and its unspent balance moves to the Emergency Fund', () => {
+  const a = app();
+  a.state.momBudget = a.mbNormalize(legacyRecord());
+  a.mbSetVariableAmount('safetyNet', '2026-11', 700);
+  // 2026 Unplanned: $200 x 3 months (Oct-Dec) less the $240 spent in October = $360 left.
+  vm.runInContext("_mbMonth = '2027-01'", a);
+  const unplanned = a.mbLedgerYearStat('emergency', 'emergency', '2027');
+  assert.equal(unplanned.budget, 200);                 // January only: the year started over
+  assert.equal(unplanned.diff, 200);
+  const fund = a.mbLedgerFundStat('safetyNet', 'safetyNet');
+  assert.equal(fund.budget, 700 * 3);                  // Nov, Dec, Jan
+  assert.deepEqual(plain(fund.sweeps), [{ year: '2026', amount: 360 }]);
+  assert.equal(fund.diff, 700 * 3 + 360);
+  assert.match(a.mbLedgerTotalHtml('safetyNet', [], 'safetyNet'), /moved from Unplanned/);
+  // Before the year ends nothing has moved yet.
+  vm.runInContext("_mbMonth = '2026-12'", a);
+  assert.equal(a.mbLedgerFundStat('safetyNet', 'safetyNet').swept, 0);
+  // An overspent Unplanned year moves nothing (never a negative transfer).
+  a.state.momBudget.months['2026-12'] = { ...a.mbBlankMonth(), emergency: [{ id: 'x', date: '2026-12-02', amount: 900, name: 'Big one' }] };
+  vm.runInContext("_mbMonth = '2027-01'", a);
+  assert.equal(a.mbLedgerFundStat('safetyNet', 'safetyNet').swept, 0);
 });
