@@ -7634,6 +7634,10 @@ const MB_SEPT_LUMP_AMOUNT = 800;
 const MB_BUDGET_SPLIT_MONTH = '2026-10';
 const MB_SPLIT_DISCRETIONARY = 400;
 const MB_SPLIT_EMERGENCY = 200;
+// From this month the plan is automatic: her 401(k) income is the required
+// minimum distribution (after withholding) and the emergency budget is whatever
+// income is left after Fair Share and the discretionary budget.
+const MB_AUTO_PLAN_MONTH = '2026-11';
 // Variable budgets that make up the monthly spending allowance, in display order.
 const MB_TRACKED_VARIABLE_KEYS = ['discretionary', 'emergency'];
 const MB_VARIABLE_META = {
@@ -7648,7 +7652,8 @@ const MB_VARIABLE_META = {
     // A fund rather than a monthly cap: whatever a month doesn't use carries
     // forward through the rest of the calendar year.
     carryover: true,
-    ledgerNote: 'Set aside for emergencies and unplanned costs. Kept separate so a surprise expense does not eat the month\u2019s discretionary budget. Unused money carries over and builds up through the year.'
+    ledgerNote: 'Set aside for emergencies and unplanned costs. Kept separate so a surprise expense does not eat the month\u2019s discretionary budget. Unused money carries over and builds up through the year.',
+    autoNote: 'From November 2026 this budget is everything left of her income after Fair Share and the discretionary budget, so it moves when either of those or her 401(k) minimum changes.'
   }
 };
 const MB_VARIABLE_FIXED_BILL_IDS = new Set(['electric', 'water', 'gas-heat']);
@@ -7742,6 +7747,18 @@ function mb401kIncomeItem() {
 function mbCalc401kWithdrawal() {
   const item = mb401kIncomeItem();
   const rate = MOM_RMD_TAX_WITHHOLDING_RATE;
+  // Auto plan: the withdrawal IS the required minimum, to the cent (the income
+  // line is rounded for display, so it is never grossed back up from that).
+  if (item?.autoType === 'rmd') {
+    const r = mbCalcRmd();
+    if (r.required && r.rmd > 0) {
+      return {
+        item, name: item.name || '401(k) Distribution', rate, rmdMode: true,
+        netMonthly: r.netMonthly, grossMonthly: r.monthly, withheldMonthly: r.withholding / 12,
+        netAnnual: r.net, grossAnnual: r.rmd, withheldAnnual: r.withholding
+      };
+    }
+  }
   const netMonthly = Number(item?.amount) || 0;                 // budgeted = desired net
   const grossMonthly = netMonthly > 0 ? netMonthly / (1 - rate) : 0;
   const withheldMonthly = grossMonthly - netMonthly;
@@ -7868,7 +7885,11 @@ async function mbLoad401kProxy(force = false) {
   } catch (err) {
     _mb401kProxy = { ..._mb401kProxy, loading: false, error: 'Fund prices could not be loaded.' };
   }
-  if (state.currentView === 'mom-budget') _renderMomBudgetHtml();
+  if (state.currentView === 'mom-budget') {
+    _renderMomBudgetHtml();
+    // A tracker-based RMD only resolves once prices arrive; persist what it changed.
+    if (_mbMigrationApplied) { _mbMigrationApplied = false; _saveMomBudget(); }
+  }
 }
 
 // Land on the month the new budget setup starts until the calendar catches up,
@@ -8054,6 +8075,14 @@ function mbNormalize(raw) {
     data.template.octoberSplitV2 = true;
     _mbMigrationApplied = true;
   }
+  // One-time: switch to the automatic plan (401(k) at the required minimum,
+  // emergencies = what is left). The amounts themselves are set by
+  // mbSyncAutoPlan once the Fair Share figure is loaded.
+  if (!data.template.autoPlanV1) {
+    data.template.autoPlan = { rmdIncome: true, emergencyFrom: MB_AUTO_PLAN_MONTH };
+    data.template.autoPlanV1 = true;
+    _mbMigrationApplied = true;
+  }
   data.template.variable.emergency = Number(data.template.variable.emergency ?? 0) || 0;
   data.template.variableSchedule = (data.template.variableSchedule && typeof data.template.variableSchedule === 'object')
     ? data.template.variableSchedule : {};
@@ -8123,7 +8152,7 @@ async function renderMomBudget() {
   mbSyncHouseholdTransfers();
   if (!state.momBudget.months[_mbMonth]) state.momBudget.months[_mbMonth] = mbBlankMonth();
   if (mbApply401kAutoWithdrawals()) _mbMigrationApplied = true;   // persist the new entry
-  _renderMomBudgetHtml();
+  _renderMomBudgetHtml();   // runs mbSyncAutoPlan, which flags a save when it changes anything
   mbLoad401kProxy();   // not awaited — the card fills in when prices arrive
   if (_mbMigrationApplied) {
     _mbMigrationApplied = false;
@@ -8281,6 +8310,53 @@ function mbSyncHouseholdTransfers() {
     fairShareItem.frequency = 'monthly';
     fairShareItem.auto = true;
   }
+}
+
+// Auto plan (template.autoPlan, seeded by the autoPlanV1 migration):
+//  - rmdIncome: the 401(k) income line is the required minimum distribution after
+//    20% withholding, spread over twelve months.
+//  - emergencyFrom: from that month the emergency budget is the income left after
+//    fixed bills (Fair Share) and the discretionary budget. It is written as an
+//    ordinary effective-dated change for the current month, so months already
+//    tracked keep the budget they had and the worker/phone need no formula.
+// Returns true when it changed the record (the caller saves).
+function mbSyncAutoPlan() {
+  const t = state.momBudget?.template;
+  const plan = t?.autoPlan;
+  if (!plan) return false;
+  const cents = v => Math.round(v * 100) / 100;
+  let changed = false;
+  if (plan.rmdIncome) {
+    const item = mb401kIncomeItem();
+    const r = mbCalcRmd();
+    if (item && r.required && r.rmd > 0) {
+      const net = cents(r.netMonthly);
+      if (cents(Number(item.amount) || 0) !== net || item.autoType !== 'rmd') {
+        item.amount = net;
+        item.auto = true;
+        item.autoType = 'rmd';
+        changed = true;
+      }
+    }
+  }
+  // Needs the live Fair Share figure; skip while the Monthly Budget isn't loaded.
+  const fairShare = t.fixed.find(i => i.id === 'fair-share');
+  if (plan.emergencyFrom && state.budget?.fairShare && Number(fairShare?.amount) > 0) {
+    const today = appTodayIso().slice(0, 7);
+    const month = today < plan.emergencyFrom ? plan.emergencyFrom : today;
+    const income = t.income.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    const fixed = t.fixed.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    const leftover = Math.max(0, cents(income - fixed - mbVariableAmount('discretionary', month)));
+    if (cents(mbVariableAmount('emergency', month)) !== leftover) {
+      mbSetVariableAmount('emergency', month, leftover);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function mbEmergencyAuto() {
+  return !!state.momBudget?.template?.autoPlan?.emergencyFrom;
 }
 
 function mbYearStatsOpen() {
@@ -8464,6 +8540,7 @@ function mbJumpTo(target) {
 }
 
 function _renderMomBudgetHtml() {
+  if (mbSyncAutoPlan()) _mbMigrationApplied = true;   // saved by the caller's save, or by renderMomBudget
   const t = state.momBudget.template;
   const m = state.momBudget.months[_mbMonth] || mbBlankMonth();
   const c = mbCalcMonth(_mbMonth);
@@ -8579,7 +8656,7 @@ function _renderMomBudgetHtml() {
           history: true,
           icon: MB_VARIABLE_META.emergency.icon,
           emptyText: 'No emergency or unplanned spending this month.',
-          note: MB_VARIABLE_META.emergency.ledgerNote
+          note: MB_VARIABLE_META.emergency.ledgerNote + (mbEmergencyAuto() ? ' ' + MB_VARIABLE_META.emergency.autoNote : '')
         })}
 
         ${fairShareItems.map(item => `
@@ -8604,7 +8681,7 @@ function _renderMomBudgetHtml() {
             <div class="tp-row"><span>Income</span><strong style="color:var(--success)">${fmt(c.income)}</strong></div>
             <div class="tp-row"><span>Fixed bills</span><strong>${fmt(c.fixed)}</strong></div>
             <div class="tp-row"><span>Discretionary budget</span><strong>${fmt(c.discretionary)}</strong></div>
-            <div class="tp-row"><span>Emergencies / unplanned budget</span><strong>${fmt(c.emergency)}</strong></div>
+            <div class="tp-row"><span>Emergencies / unplanned budget${mbEmergencyAuto() && _mbMonth >= MB_AUTO_PLAN_MONTH ? ' <span style="font-weight:400;color:var(--text-muted)">(what is left)</span>' : ''}</span><strong>${fmt(c.emergency)}</strong></div>
             <div class="tp-row sub"><span>Unallocated after budget</span><strong>${c.unallocated < 0 ? '−' : ''}${fmt(Math.abs(c.unallocated))}</strong></div>
             ${c.otherOverages ? `<div class="tp-row"><span>Other overages</span><strong style="color:var(--danger)">${fmt(c.otherOverages)}</strong></div>
             <div class="tp-row sub"><span>Adjusted discretionary</span><strong>${fmt(c.discretionaryAdjusted)}</strong></div>` : ''}
@@ -8642,16 +8719,17 @@ function mbVariableBudgetRow(key) {
   const locked = !!t.variableLocks?.[key];
   const amount = mbVariableAmount(key, _mbMonth);
   const schedule = mbVariableSchedule(key);
+  const auto = key === 'emergency' && mbEmergencyAuto();
   const changes = schedule.map(change => `
     <div class="mb-variable-schedule-row">
       <span>From <strong>${escHtml(mbMonthLabel(change.from))}</strong>: ${fmt(change.amount)}</span>
-      ${locked ? '' : `<button class="btn btn-ghost btn-sm" style="color:var(--danger)" title="Remove this scheduled change" onclick="mbRemoveVariableChange('${escAttr(key)}','${escAttr(change.from)}')">×</button>`}
+      ${(locked || auto) ? '' : `<button class="btn btn-ghost btn-sm" style="color:var(--danger)" title="Remove this scheduled change" onclick="mbRemoveVariableChange('${escAttr(key)}','${escAttr(change.from)}')">×</button>`}
     </div>`).join('');
   return `
     <div class="tp-pay-row">
-      <span style="flex:1;font-weight:600">${escHtml(meta.label)}</span>
-      ${mbLockButton(locked, `mbToggleVariableLock('${key}')`, locked ? `Unlock ${meta.label.toLowerCase()} budget` : `Lock ${meta.label.toLowerCase()} budget`)}
-      <span class="mb-money mb-variable-money"><input type="text" inputmode="decimal" class="form-input" value="${escAttr(moneyInputValue(amount))}" ${locked ? 'disabled' : ''} onchange="mbUpdateVariable('${escAttr(key)}', this.value)" onblur="formatMoneyInput(this)"></span>
+      <span style="flex:1;font-weight:600">${escHtml(meta.label)}${auto ? `<span style="display:block;font-weight:400;font-style:italic;font-size:.72rem;color:var(--text-muted)">Auto: income left after Fair Share and discretionary</span>` : ''}</span>
+      ${auto ? '' : mbLockButton(locked, `mbToggleVariableLock('${key}')`, locked ? `Unlock ${meta.label.toLowerCase()} budget` : `Lock ${meta.label.toLowerCase()} budget`)}
+      <span class="mb-money mb-variable-money"><input type="text" inputmode="decimal" class="form-input" value="${escAttr(moneyInputValue(amount))}" ${(locked || auto) ? 'disabled' : ''} onchange="mbUpdateVariable('${escAttr(key)}', this.value)" onblur="formatMoneyInput(this)"></span>
     </div>
     ${changes ? `<div class="mb-variable-schedule"><div>Before the first change: ${fmt(Number(t.variable?.[key]) || 0)}</div>${changes}</div>` : ''}`;
 }
@@ -8707,11 +8785,13 @@ function mbRmdCard() {
     }
     withdrawalBlock = `
       <div style="padding:1rem;background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(37,99,235,.06));border:2px solid var(--success);border-radius:var(--radius)">
-        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Gross Jan 1 withdrawal to fund the year</div>
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${w.rmdMode ? `Gross Jan 1 withdrawal for ${c.year}: the required minimum` : 'Gross Jan 1 withdrawal to fund the year'}</div>
         <div style="font-size:2rem;font-weight:800;line-height:1.1;margin:.15rem 0;color:var(--success)">${fmt(w.grossAnnual)}<span style="font-size:.9rem;font-weight:600;color:var(--text-muted)"> / year</span></div>
-        <div style="font-size:.82rem;color:var(--text-muted)">one lump on Jan 1 so 20% withholding still leaves the <strong>${fmt(w.netAnnual)}/yr</strong> (${fmt(w.netMonthly)}/mo) budgeted from &ldquo;${escHtml(w.name)}&rdquo; · gross-up ${fmt(w.netAnnual)} ÷ 0.80 = <strong>${fmt(w.grossAnnual)}</strong></div>
+        <div style="font-size:.82rem;color:var(--text-muted)">${w.rmdMode
+          ? `the least the IRS lets her take out, in one lump on Jan 1. After 20% withholding she receives <strong>${fmt(w.netAnnual)}/yr</strong> (${fmt(w.netMonthly)}/mo), which is the &ldquo;${escHtml(w.name)}&rdquo; income line in the monthly template. Nothing more is withdrawn.`
+          : `one lump on Jan 1 so 20% withholding still leaves the <strong>${fmt(w.netAnnual)}/yr</strong> (${fmt(w.netMonthly)}/mo) budgeted from &ldquo;${escHtml(w.name)}&rdquo; · gross-up ${fmt(w.netAnnual)} ÷ 0.80 = <strong>${fmt(w.grossAnnual)}</strong>`}</div>
         <div style="margin-top:.65rem;padding:.65rem .75rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:.5rem 1rem;font-size:.82rem">
-          <div><span style="display:block;color:var(--text-muted);font-size:.72rem">Budgeted net / year</span><strong>${fmt(w.netAnnual)}</strong></div>
+          <div><span style="display:block;color:var(--text-muted);font-size:.72rem">${w.rmdMode ? 'Net received / year' : 'Budgeted net / year'}</span><strong>${fmt(w.netAnnual)}</strong></div>
           <div><span style="display:block;color:var(--text-muted);font-size:.72rem">Tax withheld (20%) / year</span><strong>${fmt(w.withheldAnnual)}</strong></div>
           <div><span style="display:block;color:var(--text-muted);font-size:.72rem">Gross withdrawal / year</span><strong style="color:var(--success)">${fmt(w.grossAnnual)}</strong></div>
         </div>
@@ -8741,7 +8821,7 @@ function mbRmdCard() {
   // and the RMD details, which both start minimized.
   return `
     <div class="card tp-card" id="mb-sec-401k-budget">
-      <div class="card-header"><div class="card-title">401(k) Withdrawal to Fund the Monthly Budget</div></div>
+      <div class="card-header"><div class="card-title">${w.rmdMode ? '401(k) Yearly Withdrawal: Required Minimum Only' : '401(k) Withdrawal to Fund the Monthly Budget'}</div></div>
       <div class="card-body">
         ${withdrawalBlock}
       </div>
@@ -8784,7 +8864,9 @@ function mbRmdCard() {
         ${c.balanceSource === 'estimate' ? `<div style="font-size:.76rem;color:var(--text-muted);margin-top:.4rem">Using the tracker's estimated Dec 31, ${priorYear} balance. Type the statement figure above to replace it.</div>`
           : c.balanceSource === 'projected' ? `<div style="font-size:.76rem;color:var(--text-muted);margin-top:.4rem">Projection: Dec 31, ${priorYear} hasn't closed yet, so this uses today's estimated balance and will move with the market until then.</div>` : ''}
         <div style="font-size:.72rem;color:var(--text-muted);margin-top:.6rem;line-height:1.5">
-          This figure is the IRS <strong>required minimum</strong> she must withdraw. The budget withdrawal above works the other way: it grosses up the <strong>${fmt(w.netAnnual)}/yr</strong> (${fmt(w.netMonthly)}/mo) budgeted from her 401(k) in the monthly template into a single <strong>Jan 1 lump withdrawal</strong> so that, after the plan's automatic <strong>20% tax withholding</strong>, she still nets the budgeted amount for the year (net ÷ 0.80). Both use the full pre-tax balance and assume she's <strong>retired</strong> with <strong>no spouse</strong>, so the IRS <strong>Uniform Lifetime Table</strong> applies. Future-year RMDs are projections. Estimate only — actual tax owed may differ from the amount withheld; confirm with her plan administrator or CPA.
+          This figure is the IRS <strong>required minimum</strong> she must withdraw. ${w.rmdMode
+            ? `The yearly withdrawal above is set to exactly this amount, taken as a single <strong>Jan 1 lump</strong>; after the plan's automatic <strong>20% tax withholding</strong> she receives <strong>${fmt(w.netAnnual)}/yr</strong> (${fmt(w.netMonthly)}/mo), which is her 401(k) income line in the monthly template. Enter the real Dec 31 balance each January so the minimum is exact, since taking less than the minimum is penalized.`
+            : `The budget withdrawal above works the other way: it grosses up the <strong>${fmt(w.netAnnual)}/yr</strong> (${fmt(w.netMonthly)}/mo) budgeted from her 401(k) in the monthly template into a single <strong>Jan 1 lump withdrawal</strong> so that, after the plan's automatic <strong>20% tax withholding</strong>, she still nets the budgeted amount for the year (net ÷ 0.80).`} Both use the full pre-tax balance and assume she's <strong>retired</strong> with <strong>no spouse</strong>, so the IRS <strong>Uniform Lifetime Table</strong> applies. Future-year RMDs are projections. Estimate only — actual tax owed may differ from the amount withheld; confirm with her plan administrator or CPA.
         </div>
       </div>
     </div>`;
@@ -9028,6 +9110,13 @@ function mbFixedTemplateSubtitle(item) {
 }
 
 function mbTemplateRow(section, item) {
+  if (item.autoType === 'rmd') {
+    const r = mbCalcRmd();
+    return `<div class="tp-pay-row">
+      <span style="flex:1;font-weight:600">${escHtml(item.name)}<span style="display:block;font-weight:400;font-style:italic;font-size:.72rem;color:var(--text-muted)">Auto: ${r.year} required minimum ${fmt(r.rmd)}/yr, less 20% withholding, ÷ 12</span></span>
+      <strong style="font-variant-numeric:tabular-nums">${fmt(Number(item.amount) || 0)}</strong>
+    </div>`;
+  }
   const locked = !!item.locked;
   return `<div class="tp-pay-row">
     <input type="text" class="form-input mb-template-name" value="${escAttr(item.name)}" onchange="mbUpdateTemplateItem('${section}','${escAttr(item.id)}','name',this.value)">
@@ -9370,6 +9459,7 @@ async function mbUpdateTemplateItem(section, id, field, value) {
   const item = state.momBudget.template[section].find(i => i.id === id);
   if (!item) return;
   if (field === 'amount' && item.locked) return;
+  if (item.autoType === 'rmd') return;   // read-only: follows the required minimum
   if (field === 'amount' || field === 'paymentAmount') {
     item[field] = parseMoney(value);
     if (section === 'fixed' && field === 'amount' && item.frequency === 'monthly') item.paymentAmount = item.amount;
@@ -9389,7 +9479,9 @@ async function mbDeleteTemplateItem(section, id) {
   const item = state.momBudget.template[section].find(i => i.id === id);
   if (!item) return;
   if (item.auto) {
-    showBrandedNotice({ title: 'Auto-synced line', message: 'The Fair Share line is calculated from your Monthly Budget and can\'t be deleted here. Adjust it from the Monthly Budget tab.' });
+    showBrandedNotice({ title: 'Auto-synced line', message: item.autoType === 'rmd'
+      ? 'The 401(k) line follows her required minimum distribution and can\'t be deleted here. Change the balance in the RMD card to change it.'
+      : 'The Fair Share line is calculated from your Monthly Budget and can\'t be deleted here. Adjust it from the Monthly Budget tab.' });
     return;
   }
   showBrandedNotice({
@@ -9412,7 +9504,7 @@ async function mbDeleteTemplateItem(section, id) {
 
 async function mbToggleTemplateLock(section, id) {
   const item = state.momBudget.template[section].find(i => i.id === id);
-  if (!item) return;
+  if (!item || item.autoType === 'rmd') return;
   item.locked = !item.locked;
   _renderMomBudgetHtml();
   await _saveMomBudget();
@@ -9422,6 +9514,7 @@ async function mbToggleTemplateLock(section, id) {
 // the budget they were measured against.
 async function mbUpdateVariable(key, value) {
   if (state.momBudget.template.variableLocks?.[key]) return;
+  if (key === 'emergency' && mbEmergencyAuto()) return;
   mbSetVariableAmount(key, _mbMonth, parseMoney(value));
   _renderMomBudgetHtml();
   await _saveMomBudget();
@@ -9429,6 +9522,7 @@ async function mbUpdateVariable(key, value) {
 
 function mbRemoveVariableChange(key, from) {
   if (state.momBudget.template.variableLocks?.[key]) return;
+  if (key === 'emergency' && mbEmergencyAuto()) return;
   const meta = MB_VARIABLE_META[key] || { label: key };
   showBrandedNotice({
     title: 'Remove scheduled change',
@@ -9453,6 +9547,7 @@ async function mbToggleVariableLock(key) {
 }
 
 async function _saveMomBudget() {
+  _mbMigrationApplied = false;   // this save carries whatever a sync or migration changed
   try {
     // Reconcile ledgers with changes made elsewhere (the phone app adds, edits,
     // and deletes entries) since this copy loaded. The editor never edits an

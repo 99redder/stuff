@@ -846,6 +846,14 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ## Recent Updates
 
+### 2026-10-11 — Mom Budget: automatic plan (401(k) at the RMD, emergencies = what is left)
+
+- **Her 401(k) income is the required minimum, nothing more.** With Fair Share down to about $1,045, Social Security alone covers her budget, so the 401(k) only pays out what the IRS requires. The `401k` income line is now `auto: true, autoType: 'rmd'`: read-only, valued at `mbCalcRmd().netMonthly` (the RMD for the RMD card's year, less 20% withholding, ÷ 12). `mbCalc401kWithdrawal()` returns `rmdMode: true` with `grossAnnual` equal to the RMD **to the cent** (never grossed back up from the rounded income line), so the Jan 1 auto-withdrawal (`mb401kAutoAmount`) is exactly the minimum.
+- **The emergency budget is the remainder.** From `MB_AUTO_PLAN_MONTH` (`'2026-11'`) it equals income − fixed bills (Fair Share) − the discretionary budget, so `Unallocated after budget` is $0. `mbSyncAutoPlan()` (run at the top of `_renderMomBudgetHtml`) writes it as an ordinary `variableSchedule.emergency` entry effective from the **current** month, so months already tracked keep the budget they had and **the worker, her phone and the mobile Snapshot need no formula** — they read the schedule as before. It skips while the Monthly Budget (the Fair Share figure) isn't loaded.
+- Both are switched on by `template.autoPlan = { rmdIncome, emergencyFrom }`, seeded by the one-time `autoPlanV1` migration in `mbNormalize`. A sync that changes anything sets `_mbMigrationApplied`; `renderMomBudget`, the 401(k) price load, and any edit's own save persist it (`_saveMomBudget` clears the flag).
+- UI: the 401(k) income row and the Emergencies / Unplanned budget row are read-only with an italic `Auto:` line (no lock / delete / ×); the withdrawal card is titled `401(k) Yearly Withdrawal: Required Minimum Only`; Month Math tags the emergency row `(what is left)`. `mbUpdateVariable` / `mbRemoveVariableChange` / `mbUpdateTemplateItem` / `mbToggleTemplateLock` / `mbDeleteTemplateItem` refuse the auto lines.
+- **Each January, type the real Dec 31 balance into the RMD card** — the minimum is only as good as that balance, and under-withdrawing is penalized. The emergency fund still **resets with the calendar year** (`mbLedgerYearStat`), which is unchanged.
+
 ### 2026-10-11 — Fair Share agreement: planned move, effective date, no unsupported claims
 
 - **Agreement can describe a planned move.** `fairShare.agreement.plannedAddress` / `plannedMove` (free text) add a paragraph stating the household plans to move and that the housing-related amounts in Exhibit A are good-faith estimates for that home. `agreement.effectiveDate` (`YYYY-MM-DD`, blank = today) sets the "Effective as of" line; Exhibit A's "as of" date is still the day it is generated. All three are editable in `#fs-agreement-modal`.
