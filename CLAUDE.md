@@ -530,7 +530,7 @@ A collapsible **section inside the Monthly Budget view** — not a standalone ta
   shared: { [budgetExpenseItemId]: bool },  // per-item OVERRIDES of the category default
   participants: { [itemId]: number },       // per-item divisor override (who benefits)
   direct: { [itemId]: number },             // per-item DIRECT amount — her own itemized charge on the bill, used instead of amount ÷ participants (see below)
-  agreement: { residentName, ownerNames, propertyAddress },  // cost-sharing agreement parties
+  agreement: { residentName, ownerNames, propertyAddress, plannedAddress, plannedMove, effectiveDate },  // cost-sharing agreement parties; the last three are optional (planned move + effective date)
   mortgage: { enabled, itemId, loanAmount, ratePct, termYears, firstPayment },  // principal exclusion (see below)
   foodBenchmark: { enabled, itemId, amount, sourceLabel, suppliesAllowance },  // USDA food benchmark for the Weekly Spending item (see below)
   housingBenchmark: { enabled, itemId, homeValue, reservePct, propertyTax, insurance, hoa, utilities, fairMarketRent, sourceLabel }  // housing carrying-cost benchmark (see below); fairMarketRent is the §280A defensibility ceiling (display-only, never changes her share)
@@ -845,6 +845,12 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-10-11 — Fair Share agreement: planned move, effective date, no unsupported claims
+
+- **Agreement can describe a planned move.** `fairShare.agreement.plannedAddress` / `plannedMove` (free text) add a paragraph stating the household plans to move and that the housing-related amounts in Exhibit A are good-faith estimates for that home. `agreement.effectiveDate` (`YYYY-MM-DD`, blank = today) sets the "Effective as of" line; Exhibit A's "as of" date is still the day it is generated. All three are editable in `#fs-agreement-modal`.
+- **The agreement only claims what the data supports.** The "below fair market rent" wording renders only when `housingBenchmark.fairMarketRent > 0`; the "maintenance, upkeep, and depreciation" wording only when the reserve is non-zero; the USDA paragraph says "refreshed periodically", not "each time this agreement is regenerated".
+- **Saved settings as of this date (live data, not code):** the flat 1% reserve is off (`reservePct: 0`) and the four real savings buckets (House Repair, Pool, Basement, Septic) are marked Shared instead; Uber Eats ÷ 3 adults; phone direct at $51.50; property tax corrected to $400/mo (an annual $4,800 had been typed into the monthly field).
 
 ### 2026-10-11 — Fair Share: direct attribution of an itemized charge
 

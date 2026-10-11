@@ -14294,6 +14294,12 @@ function fsNormalize(raw) {
       residentName:    (typeof raw.agreement?.residentName === 'string' && raw.agreement.residentName.trim()) ? raw.agreement.residentName : 'Nancy Gorham',
       ownerNames:      (typeof raw.agreement?.ownerNames === 'string' && raw.agreement.ownerNames.trim()) ? raw.agreement.ownerNames : 'Christopher Gorham and Megan Gorham',
       propertyAddress: (typeof raw.agreement?.propertyAddress === 'string' && raw.agreement.propertyAddress.trim()) ? raw.agreement.propertyAddress : '4781 Mohegan Court, Salisbury, MD 21804',
+      // Optional: a planned move. When plannedAddress is set the agreement states
+      // that the housing figures are estimates for that home until the move.
+      plannedAddress:  typeof raw.agreement?.plannedAddress === 'string' ? raw.agreement.plannedAddress.trim() : '',
+      plannedMove:     typeof raw.agreement?.plannedMove === 'string' ? raw.agreement.plannedMove.trim() : '',
+      // Optional YYYY-MM-DD; blank = effective the day the agreement is generated.
+      effectiveDate:   /^\d{4}-\d{2}-\d{2}$/.test(raw.agreement?.effectiveDate || '') ? raw.agreement.effectiveDate : '',
     },
     // Mortgage principal exclusion — the budget keeps the real full payment,
     // but Fair Share subtracts the estimated principal portion (owner equity,
@@ -15247,6 +15253,9 @@ function fsAgreementDocHtml() {
   const mAdj = fsMortgageAdjustment();
   const hAdj = fsHousingBenchmark();
   const today = fsAgreementDate();
+  const effective = /^\d{4}-\d{2}-\d{2}$/.test(a.effectiveDate || '')
+    ? new Date(a.effectiveDate + 'T12:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    : today;
   const resident = a.residentName.trim() || '________________________';
   const owners = a.ownerNames.trim() || '________________________';
   const address = a.propertyAddress.trim() || '________________________________________';
@@ -15312,7 +15321,7 @@ function fsAgreementDocHtml() {
         figure for all meals and snacks prepared at home, with USDA's published adjustment for
         household size &mdash; supplemented by a stated allowance for Resident's share of
         household supplies purchased through the same pooled spending. The figure is refreshed
-        from the then-current USDA monthly report each time this agreement is regenerated.</p>
+        periodically from the then-current USDA monthly report.</p>
       </div>`;
   }
 
@@ -15344,10 +15353,10 @@ function fsAgreementDocHtml() {
         then divided among the ${housingRow.participants} household members who occupy the home, so
         Resident's housing share is ${fmt(hb.monthlyCost)} &divide; ${housingRow.participants} =
         <strong>${fmt(housingRow.portion)} per month</strong>.</p>
-        <p>This figure is deliberately set at the home's carrying cost and kept <strong>below the fair
-        market rent</strong> for a comparable dwelling. It reimburses the Homeowners for Resident's share of
-        the actual, owner-borne cost of the home &mdash; principally the wear, upkeep, and depreciation of
-        the structure &mdash; and contains no return on the Homeowners' capital or other profit, so it
+        <p>This figure is deliberately set at the home's carrying cost${hb.fairMarketRent > 0 ? ` and kept <strong>below the fair
+        market rent</strong> for a comparable dwelling` : ''}. It reimburses the Homeowners for Resident's share of
+        the actual, owner-borne cost of the home${hb.reserve > 0 ? ` &mdash; principally the wear, upkeep, and depreciation of
+        the structure &mdash;` : ''} and contains no return on the Homeowners' capital or other profit, so it
         remains cost-sharing rather than rent. The home remains the Homeowners' personal residence occupied
         by a family member; no rental activity is created.${(hb.fairMarketRent > 0) ? ` Resident occupies a
         single room in the shared home, so the relevant comparable is the fair rental value of a room, not of
@@ -15355,7 +15364,7 @@ function fsAgreementDocHtml() {
         approximately <strong>${fmt(hb.fairMarketRent)} per month</strong>; Resident's housing contribution of
         ${fmt(housingRow.portion)} per month is below it, consistent with 26&nbsp;U.S.C. §280A(d)(2), under
         which a dwelling occupied by the owner's family member at less than fair rental value remains the
-        owner's personal residence rather than a rental.` : ''} Method: ${escHtml(hb.sourceLabel)}.</p>
+        owner's personal residence rather than a rental.` : ''} Method: ${escHtml(String(hb.sourceLabel).replace(/[.\s]+$/, ''))}.</p>
       </div>`;
   }
 
@@ -15377,13 +15386,19 @@ function fsAgreementDocHtml() {
   return `
   <div class="fs-doc">
     <h1>Household Cost-Sharing Agreement</h1>
-    <p class="fs-doc-date">Effective as of ${escHtml(today)}</p>
+    <p class="fs-doc-date">Effective as of ${escHtml(effective)}</p>
 
     <p>This agreement documents the sharing of actual household expenses between
     <strong>${escHtml(resident)}</strong> (&ldquo;Resident&rdquo;) and
     <strong>${escHtml(owners)}</strong> (&ldquo;Homeowners&rdquo;), all of whom reside together at
     <strong>${escHtml(address)}</strong> (the &ldquo;Residence&rdquo;).</p>
-
+${a.plannedAddress ? `
+    <p>The parties plan to move the shared household to <strong>${escHtml(a.plannedAddress)}</strong>${a.plannedMove ? ` (expected ${escHtml(a.plannedMove)}; the date may change)` : ''}.
+    The housing-related amounts in Exhibit&nbsp;A are good-faith estimates of the costs of that home,
+    which the parties have compared with, and found comparable to, the actual costs of the current
+    Residence. They are used from the effective date so that Resident's contribution does not change
+    at the move, and they will be replaced with actual costs as those become known (see Adjustments).</p>
+` : ''}
     <ol>
       <li><strong>Purpose.</strong> Resident lives in the Residence as a member of the family.
       This agreement documents Resident's proportional contribution to the actual, documented
@@ -15412,10 +15427,10 @@ function fsAgreementDocHtml() {
       allowance for Resident's share of household supplies, rather than a per-capita
       fraction of mixed family spending, as detailed in Exhibit&nbsp;A.` : ''}${hAdj ? `
       Resident's share of housing is valued at Resident's portion of the home's actual
-      ongoing carrying cost (principally owner-borne maintenance, upkeep, and
-      depreciation), independent of the Homeowners' mortgage financing and set below
-      the fair rental value of the dwelling, so it reimburses real cost without any
-      return on the Homeowners' capital, as detailed in Exhibit&nbsp;A.` : ''}${directRows.length ? `
+      ongoing carrying cost (${hAdj.reserve > 0 ? 'principally owner-borne maintenance, upkeep, and depreciation' : 'property tax, insurance, association dues, and utilities'}),
+      independent of the Homeowners' mortgage financing${hAdj.fairMarketRent > 0 ? ' and set below the fair rental value of the dwelling' : ''},
+      so it reimburses real cost without any return on the Homeowners' capital, as
+      detailed in Exhibit&nbsp;A.` : ''}${directRows.length ? `
       Where a provider's bill separately itemizes the charge for Resident's own service,
       Resident's share of that expense is the actual itemized charge rather than an equal
       division, as detailed in Exhibit&nbsp;A.` : ''}</li>
@@ -15546,6 +15561,11 @@ function _renderFsAgreementBody() {
       ${field('residentName', "Resident (Mom's full legal name)", 'Nancy Gorham')}
       ${field('ownerNames', 'Homeowner name(s)', 'Christopher Gorham and Megan Gorham')}
       ${field('propertyAddress', 'Residence address', '4781 Mohegan Court, Salisbury, MD 21804')}
+    </div>
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:.9rem">
+      ${field('plannedAddress', 'Planned new address (optional)', 'blank if no move is planned')}
+      ${field('plannedMove', 'Expected move (optional)', 'around the end of January 2027')}
+      ${field('effectiveDate', 'Effective date (YYYY-MM-DD, optional)', 'blank = today')}
     </div>
     <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.6rem">
       The letter below regenerates from the current Fair Share data every time it's opened —
