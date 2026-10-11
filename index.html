@@ -14675,9 +14675,12 @@ function fsQuickMathHtml(c) {
         const parts = fsItemParticipants(c.housingAdj.item, c.housingAdj.cat, fs);
         note = `carrying cost ${fmt(c.housingAdj.monthlyCost)} ÷ ${parts}${c.housingAdj.utilities > 0 ? ', incl. utilities' : ''}`;
       } else if (c.foodAdj && cat === c.foodAdj.cat) {
-        note = 'USDA food benchmark';
-      } else if (cat === 'Services') {
-        note = sharedNames('Services');
+        const others = (state.budget.expenses[cat] || [])
+          .filter(it => it.id !== c.foodAdj.itemId && fsItemShared(it, cat, fs))
+          .map(it => escHtml(it.name));
+        note = ['USDA food benchmark', ...others].join(' + ');
+      } else if (cat === 'Services' || cat === 'Misc Savings') {
+        note = sharedNames(cat);
       }
       return row(escHtml(cat), note, c.byCat[cat]);
     }).join('');
@@ -14781,6 +14784,17 @@ function fsRenderCard() {
                onchange="fsUpdateHousingBenchmark('${key}', this.value)"${key === 'homeValue' || ['propertyTax','insurance','hoa','utilities'].includes(key) ? ' onblur="formatMoneyInput(this)"' : ''}>
         ${hint ? `<div style="font-size:.6rem;color:var(--text-muted);margin-top:.15rem">${hint}</div>` : ''}
       </div>`;
+    // These fields are MONTHLY. Show the yearly equivalent under each one, and
+    // flag a property tax that is implausibly high for the home value — a yearly
+    // bill typed into the monthly field inflates her share twelvefold.
+    const hYearHint = key => {
+      const v = Number(h[key]) || 0;
+      if (!(v > 0)) return 'monthly amount';
+      const tooHigh = key === 'propertyTax' && h.homeValue > 0 && v * 12 > h.homeValue * 0.03;
+      return tooHigh
+        ? `<span style="color:var(--danger);font-weight:700">= ${fmt(v * 12)} / yr — over 3% of the home value. Is this the yearly bill?</span>`
+        : `= ${fmt(v * 12)} / yr`;
+    };
     let hMath;
     if (hCalc && hTarget) {
       const parts = fsItemParticipants(hTarget.item, hTarget.cat, fs);
@@ -14834,13 +14848,13 @@ function fsRenderCard() {
           <select class="form-input" style="width:100%;font-size:.85rem" onchange="fsUpdateHousingBenchmark('itemId', this.value)">${housingOptions || '<option value="">— none in Mortgage category —</option>'}</select>
         </div>
         ${hInput('homeValue', 'Home value', `type="text" inputmode="decimal" value="${escAttr(moneyInputValue(h.homeValue))}"`, 'for the reserve')}
-        ${hInput('reservePct', 'Reserve %/yr', `type="number" min="0" step="0.1" value="${escAttr(String(h.reservePct))}"`, '≈1% rule')}
+        ${hInput('reservePct', 'Reserve %/yr', `type="number" min="0" step="0.1" value="${escAttr(String(h.reservePct))}"`, '≈1% rule · 0 if repair savings are shared as their own lines')}
       </div>
-      <div style="font-size:.66rem;color:var(--text-muted);margin-top:.55rem">Add property tax / insurance / HOA below <strong>only</strong> if they aren't already their own shared budget line (otherwise they'd be counted twice):</div>
+      <div style="font-size:.66rem;color:var(--text-muted);margin-top:.55rem">Enter property tax / insurance / HOA as <strong>monthly</strong> amounts, and <strong>only</strong> if they aren't already their own shared budget line (otherwise they'd be counted twice):</div>
       <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.35rem">
-        ${hInput('propertyTax', 'Property tax /mo', `type="text" inputmode="decimal" value="${escAttr(moneyInputValue(h.propertyTax))}"`)}
-        ${hInput('insurance', 'Insurance /mo', `type="text" inputmode="decimal" value="${escAttr(moneyInputValue(h.insurance))}"`)}
-        ${hInput('hoa', 'HOA /mo', `type="text" inputmode="decimal" value="${escAttr(moneyInputValue(h.hoa))}"`)}
+        ${hInput('propertyTax', 'Property tax /mo', `type="text" inputmode="decimal" value="${escAttr(moneyInputValue(h.propertyTax))}"`, hYearHint('propertyTax'))}
+        ${hInput('insurance', 'Insurance /mo', `type="text" inputmode="decimal" value="${escAttr(moneyInputValue(h.insurance))}"`, hYearHint('insurance'))}
+        ${hInput('hoa', 'HOA /mo', `type="text" inputmode="decimal" value="${escAttr(moneyInputValue(h.hoa))}"`, hYearHint('hoa'))}
       </div>
       <div style="margin-top:.55rem;background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:.5rem .65rem">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;flex-wrap:wrap">
@@ -14864,7 +14878,7 @@ function fsRenderCard() {
       <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap">
         <div style="flex:1;min-width:220px">
           <div style="font-size:.74rem;font-weight:700;text-transform:uppercase;color:var(--text-muted)">🏘️ Housing Carrying-Cost Benchmark</div>
-          <div style="font-size:.68rem;color:var(--text-muted)">Values her housing share at her portion of the home's real carrying cost (maintenance/capital reserve + any carrying components), decoupled from the mortgage — so paying the loan off early doesn't collapse her contribution. Held below fair market rent so it stays cost-sharing, not rent. <strong>Supersedes the mortgage principal exclusion on the same item.</strong></div>
+          <div style="font-size:.68rem;color:var(--text-muted)">Values her housing share at her portion of the home's real carrying cost — property tax, insurance, HOA and the shared utilities, plus an optional upkeep reserve — decoupled from the mortgage, so paying the loan off (or buying with cash) doesn't collapse her contribution. Every component is a real cost with no return on your capital, so it stays cost-sharing, not rent. <strong>Supersedes the mortgage principal exclusion on the same item.</strong></div>
         </div>
         <button type="button" onclick="fsUpdateHousingBenchmark('enabled', ${h.enabled ? 'false' : 'true'})"
                 style="min-width:76px;padding:.35rem .7rem;border-radius:var(--radius);border:1px solid ${h.enabled ? 'rgba(16,185,129,.4)' : 'var(--border)'};cursor:pointer;font-weight:700;font-size:.8rem;background:${h.enabled ? 'rgba(16,185,129,.14)' : 'var(--surface)'};color:${h.enabled ? 'var(--success)' : 'var(--text-muted)'}">
@@ -15039,8 +15053,10 @@ function fsRenderCard() {
           </div>
           <div style="font-size:.74rem;color:var(--text-muted);line-height:1.5">
             <p style="margin:0 0 .5rem"><strong>Fair share</strong> = the sum of Mom's portion of each shared bill${fs.roundDollar ? `: ${fmt(c.herShareExact)} → ${fmt(c.herShare)}` : `: ${fmt(c.herShare)}`}.</p>
-            <p style="margin:0 0 .5rem">Fair Share is added as a read-only line in Monthly Budget income and Mom Budget fixed expenses.</p>${c.housingAdj ? `
-            <p style="margin:0 0 .5rem"><strong>Housing:</strong> her housing share is her portion of the home's real carrying cost — owner-borne upkeep, a capital reserve, and structural depreciation — decoupled from the mortgage and held <strong>below the home's fair rental value</strong>. Carrying no return on the owners' capital or profit, it reimburses actual cost rather than functioning as rent: under 26&nbsp;U.S.C. §280A(d)(2) and IRS Pub.&nbsp;527, a home occupied by the owners' family member below fair rental value stays the owners' personal residence, creating no rental activity or taxable rental income.</p>` : ''}
+            <p style="margin:0 0 .5rem">Each shared bill is divided among the people who benefit from it. Where a bill itemizes her own charge (her phone line), that <strong>actual amount</strong> is used instead of a split, and it can never exceed the bill.</p>
+            <p style="margin:0 0 .5rem">Fair Share is added as a read-only line in Monthly Budget income and Mom Budget fixed expenses.</p>${fs.agreement.plannedAddress ? `
+            <p style="margin:0 0 .5rem"><strong>Estimates:</strong> the housing figures are projections for ${escHtml(fs.agreement.plannedAddress)}${fs.agreement.plannedMove ? ` (move expected ${escHtml(fs.agreement.plannedMove)})` : ''}. Replace them with real bills as they arrive.</p>` : ''}${c.housingAdj ? `
+            <p style="margin:0 0 .5rem"><strong>Housing:</strong> her housing share is her portion of the home's real carrying cost — ${c.housingAdj.reserve > 0 ? 'property tax, insurance, HOA, shared utilities and an upkeep reserve' : 'property tax, insurance, HOA and shared utilities'} — decoupled from the mortgage${c.housingAdj.fairMarketRent > 0 ? ` and held <strong>below the fair rental value of a comparable room</strong>` : ''}. Carrying no return on the owners' capital or profit, it reimburses actual cost rather than functioning as rent: under 26&nbsp;U.S.C. §280A(d)(2) and IRS Pub.&nbsp;527, a home occupied by the owners' family member below fair rental value stays the owners' personal residence, creating no rental activity or taxable rental income.</p>` : ''}
             <p style="margin:0 0 .5rem"><strong>No gifts:</strong> transfers beyond her share of actual costs are uncompensated transfers under Medicaid's 5-year lookback and can create an eligibility penalty. Keep her payments to expense reimbursement only.</p>
             <p style="margin:0;font-size:.72rem">Keep the underlying bills and allocation method with your records. Her payments count as support she provides for herself, which matters if either of you claims her as a dependent. General information, not tax advice; confirm your specific setup with your CPA.</p>
             <div style="margin-top:.7rem;padding-top:.6rem;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:.35rem .85rem;font-size:.72rem">
