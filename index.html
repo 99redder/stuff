@@ -8742,6 +8742,8 @@ function _renderMomBudgetHtml() {
           </div>
         </div>
 
+        ${mbTransfersCard(c)}
+
         <div class="card tp-card" id="mb-sec-template">
           <div class="card-header"><div class="card-title">Monthly Template</div></div>
           <div class="card-body">
@@ -8764,6 +8766,39 @@ function _renderMomBudgetHtml() {
         </div>
       </div>
     </div>`;
+}
+
+// What actually moves between her two accounts in the month on screen. Social
+// Security lands in checking every month; the 401(k) minimum arrives once, as
+// the Jan 1 lump, so the Emergency Fund's even monthly budget is really a
+// smaller monthly transfer plus a larger one each January.
+function mbTransfersCard(c) {
+  if (!mbRemainderAuto() || _mbMonth < MB_AUTO_PLAN_MONTH) return '';
+  const t = state.momBudget.template;
+  const k401 = mb401kIncomeItem();
+  const monthlyIncome = t.income.filter(i => i !== k401).reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+  const keep = c.discretionary + c.emergency;
+  const toSavings = Math.round((monthlyIncome - c.fixed - keep) * 100) / 100;
+  const january = _mbMonth.slice(5) === '01';
+  const w = mbCalc401kWithdrawal();
+  const priorYear = String(Number(_mbMonth.slice(0, 4)) - 1);
+  const sweep = january ? (mbLedgerFundStat('safetyNet', 'safetyNet').sweeps.find(x => x.year === priorYear)?.amount || 0) : 0;
+  const row = (label, amount, style = '') => `<div class="tp-row"><span>${label}</span><strong style="${style}">${amount < 0 ? '−' : ''}${fmt(Math.abs(amount))}</strong></div>`;
+  return `
+        <div class="card tp-card" id="mb-sec-transfers">
+          <div class="card-header"><div class="card-title">Transfers — ${escHtml(mbMonthLabel(_mbMonth, 'long'))}</div></div>
+          <div class="card-body">
+            ${row('Social Security into checking', monthlyIncome, 'color:var(--success)')}
+            ${row('Pay Fair Share', c.fixed)}
+            ${row(`Leave in checking <span style="font-weight:400;color:var(--text-muted)">(${fmt(c.discretionary)} discretionary + ${fmt(c.emergency)} unplanned)</span>`, keep)}
+            <div class="tp-row ${toSavings >= 0 ? 'refund' : 'owed'}"><span>Move to savings</span><span>${toSavings < 0 ? '−' : ''}${fmt(Math.abs(toSavings))}</span></div>
+            ${january ? `
+            <div class="tp-group" style="margin-top:.6rem">Also on January 1</div>
+            ${w.rmdMode ? row('401(k) minimum, after withholding, to savings', w.netAnnual) : ''}
+            ${row(`Unplanned left over from ${escHtml(priorYear)}, checking to savings`, sweep)}` : `
+            <div class="mb-card-note" style="margin-top:.5rem">The 401(k) minimum arrives once a year, on January 1, and goes to savings then. That is why this monthly transfer is smaller than the Emergency Fund's ${fmt(c.safetyNet)} monthly budget.</div>`}
+          </div>
+        </div>`;
 }
 
 function mbVariableBudgetRow(key) {
