@@ -315,7 +315,7 @@ test('the unplanned fund carries unused money forward through the year', () => {
   // October: $200 set aside, $240 spent — $40 short, nothing carried in.
   assert.equal(a.mbLedgerYearStat('emergency', 'emergency', '2026').diff, -40);
   const october = a.mbLedgerTotalHtml('emergency', a.state.momBudget.months['2026-10'].emergency, 'emergency');
-  assert.match(october, /2026 fund available/);
+  assert.match(october, /2026 funds available/);
   assert.match(october, /Resets January 1/);
   assert.match(october, /\$40\.00/);
   // One budgeted month so far (October), so the pace is $240/mo, $2,880/yr.
@@ -324,7 +324,7 @@ test('the unplanned fund carries unused money forward through the year', () => {
   assert.match(history, /\$2880\.00/);
   assert.doesNotMatch(a.mbLedgerHistoryHtml('discretionary', 'discretionary'), /Actual pace/);
   // Discretionary stays a plain monthly budget.
-  assert.doesNotMatch(a.mbLedgerTotalHtml('discretionary', [], 'discretionary'), /fund available/i);
+  assert.doesNotMatch(a.mbLedgerTotalHtml('discretionary', [], 'discretionary'), /funds available/i);
   assert.doesNotMatch(history, /Fund balance/);   // that row belongs to the Emergency Fund
 });
 

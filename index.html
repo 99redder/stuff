@@ -9482,8 +9482,8 @@ function mbLedgerTotalHtml(section, entries, budgetKey) {
     const fund = yearly ? mbLedgerYearStat(section, budgetKey, year) : mbLedgerFundStat(section, budgetKey);
     const carriedIn = fund.diff - left;
     const label = yearly
-      ? `${escHtml(year)} fund available`
-      : `Fund available${fund.since ? ` <span style="font-weight:400;text-transform:none">· built up since ${escHtml(mbMonthLabel(fund.since))}</span>` : ''}`;
+      ? `${escHtml(year)} funds available`
+      : `${escHtml(MB_VARIABLE_META[budgetKey].label)} balance${fund.since ? ` <span style="font-weight:400;text-transform:none">· built up since ${escHtml(mbMonthLabel(fund.since))}</span>` : ''}`;
     return `
     <div class="mb-ledger-total">
       <div>
