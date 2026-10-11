@@ -8734,8 +8734,11 @@ function _renderMomBudgetHtml() {
             <div class="tp-row"><span>Fixed bills</span><strong>${fmt(c.fixed)}</strong></div>
             <div class="tp-row"><span>Discretionary budget</span><strong>${fmt(c.discretionary)}</strong></div>
             <div class="tp-row"><span>Unplanned budget</span><strong>${fmt(c.emergency)}</strong></div>
-            <div class="tp-row"><span>Emergency fund${mbRemainderAuto() && _mbMonth >= MB_AUTO_PLAN_MONTH ? ' <span style="font-weight:400;color:var(--text-muted)">(what is left)</span>' : ''}</span><strong>${fmt(c.safetyNet)}</strong></div>
-            <div class="tp-row sub"><span>Unallocated after budget</span><strong>${c.unallocated < 0 ? '−' : ''}${fmt(Math.abs(c.unallocated))}</strong></div>
+            ${mbRemainderAuto() && _mbMonth < MB_AUTO_PLAN_MONTH
+              ? `<div class="tp-row"><span>Emergency fund</span><span style="color:var(--text-muted);font-style:italic">starts ${escHtml(mbMonthLabel(MB_AUTO_PLAN_MONTH, 'long'))}</span></div>
+            <div class="tp-row sub"><span>Not yet assigned <span style="font-weight:400;color:var(--text-muted)">(goes to the emergency fund from ${escHtml(mbMonthLabel(MB_AUTO_PLAN_MONTH))})</span></span><strong>${c.unallocated < 0 ? '−' : ''}${fmt(Math.abs(c.unallocated))}</strong></div>`
+              : `<div class="tp-row"><span>Emergency fund${mbRemainderAuto() ? ' <span style="font-weight:400;color:var(--text-muted)">(what is left)</span>' : ''}</span><strong>${fmt(c.safetyNet)}</strong></div>
+            <div class="tp-row sub"><span>Unallocated after budget</span><strong>${c.unallocated < 0 ? '−' : ''}${fmt(Math.abs(c.unallocated))}</strong></div>`}
             ${c.otherOverages ? `<div class="tp-row"><span>Other overages</span><strong style="color:var(--danger)">${fmt(c.otherOverages)}</strong></div>
             <div class="tp-row sub"><span>Adjusted discretionary</span><strong>${fmt(c.discretionaryAdjusted)}</strong></div>` : ''}
             <div class="tp-row ${c.cashLeft >= 0 ? 'refund' : 'owed'}"><span>Cash left by recorded spend</span><span>${c.cashLeft < 0 ? '−' : ''}${fmt(Math.abs(c.cashLeft))}</span></div>
