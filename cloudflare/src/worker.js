@@ -2700,7 +2700,7 @@ async function handleGetSavings(env) {
 const NET_WORTH_KEY = 'net_worth';
 const TREASURY_BONDS = [
   { cusip:'912810UA4', coupon:4.625, par:39600, annualInterest:1831.50, maturity:'2054-05-15', term:'30-Year' },
-  { cusip:'912810UW6', coupon:5.125, par:35000, annualInterest:1793.75, maturity:'2056-08-15', term:'30-Year' },
+  { cusip:'912810UW6', coupon:5.125, par:41000, annualInterest:2101.25, maturity:'2056-08-15', term:'30-Year' },
   { cusip:'912810UG1', coupon:4.625, par:14000, annualInterest:647.50, maturity:'2055-02-15', term:'30-Year' },
   { cusip:'912810UK2', coupon:4.750, par:10000, annualInterest:475.00, maturity:'2055-05-15', term:'30-Year' },
   { cusip:'912810TX6', coupon:4.250, par:11000, annualInterest:467.50, maturity:'2054-02-15', term:'30-Year' },
@@ -2712,6 +2712,10 @@ const TREASURY_BONDS = [
   { cusip:'912810UE6', coupon:4.500, par:5000, annualInterest:225.00, maturity:'2054-11-15', term:'30-Year' },
   { cusip:'912810UJ5', coupon:4.750, par:1000, annualInterest:47.50, maturity:'2045-02-15', term:'20-Year' },
 ];
+// Portfolio totals always follow the list above, so adding to a holding can't
+// leave a stale hardcoded total behind.
+const TREASURY_PAR = TREASURY_BONDS.reduce((sum, bond) => sum + bond.par, 0);
+const TREASURY_ANNUAL_INTEREST = Math.round(TREASURY_BONDS.reduce((sum, bond) => sum + bond.annualInterest, 0) * 100) / 100;
 
 function defaultTreasuryPortfolio(saved = {}) {
   const holdings = TREASURY_BONDS.map(bond => {
@@ -2720,8 +2724,8 @@ function defaultTreasuryPortfolio(saved = {}) {
   });
   return {
     name:'U.S. Treasury Bonds (20 & 30 Year)',
-    par:150000,
-    annualInterest:7110.50,
+    par:TREASURY_PAR,
+    annualInterest:TREASURY_ANNUAL_INTEREST,
     value:holdings.reduce((sum,bond)=>sum+bond.marketValue,0),
     yieldDate:String(saved.yieldDate || ''),
     valuedAt:String(saved.valuedAt || ''),
@@ -2966,7 +2970,7 @@ async function refreshTreasuryPortfolio(env) {
   const holdings = TREASURY_BONDS.map(bond => ({ ...bond, ...estimateTreasuryBondValue(bond,asOf,{y20,y30}) }));
   const data = normalizeNetWorth(await env.RENTALS.get(NET_WORTH_KEY, 'json'));
   data.treasuryPortfolio = {
-    name:'U.S. Treasury Bonds (20 & 30 Year)', par:150000, annualInterest:7110.50,
+    name:'U.S. Treasury Bonds (20 & 30 Year)', par:TREASURY_PAR, annualInterest:TREASURY_ANNUAL_INTEREST,
     value:Math.round(holdings.reduce((sum,bond)=>sum+bond.marketValue,0)*100)/100,
     yieldDate, valuedAt:new Date().toISOString(), source:'U.S. Treasury daily par yield curve estimate', holdings,
   };
