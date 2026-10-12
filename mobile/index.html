@@ -485,8 +485,9 @@
   const MOM_TRACKING_START_MONTH='2026-09';
   // Variable budgets are effective-dated (mirrors index.html / worker.js). The
   // fallback covers a record the desktop has not re-saved since the split.
-  // Only discretionary is tracked here — emergencies / unplanned is desktop-only.
-  const MOM_DEFAULT_SCHEDULE={discretionary:[{from:'2026-10',amount:400}]};
+  // Three buckets, as on the desktop: `emergency` is the $200 Unplanned bucket,
+  // `safetyNet` is the Emergency Fund. Only Discretionary can be edited here.
+  const MOM_DEFAULT_SCHEDULE={discretionary:[{from:'2026-10',amount:400}],emergency:[{from:'2026-10',amount:200}]};
   function momVariable(raw,key,monthKey){
     const list=raw.template?.variableSchedule?.[key],schedule=Array.isArray(list)?list:(MOM_DEFAULT_SCHEDULE[key]||[]);
     let amount=n(raw.template?.variable?.[key]);
@@ -496,7 +497,7 @@
   function momTrackedMonth(raw,key){
     const month=key>=MOM_TRACKING_START_MONTH?(raw.months?.[key]||{}):{};
     const tracked=rows=>(rows||[]).filter(entry=>!/^\d{4}-\d{2}-\d{2}$/.test(String(entry.date||''))||entry.date>=`${MOM_TRACKING_START_MONTH}-01`);
-    return{...month,discretionary:tracked(month.discretionary),otherExpenses:tracked(month.otherExpenses)};
+    return{...month,discretionary:tracked(month.discretionary),emergency:tracked(month.emergency),safetyNet:tracked(month.safetyNet),otherExpenses:tracked(month.otherExpenses)};
   }
   function momMonth(raw,key){
     const t=raw.template||{},m=momTrackedMonth(raw,key),fixed=t.fixed||[];
@@ -507,17 +508,83 @@
     return{income:sum(t.income||[]),fixedDue,fixedPaid,discretionary,budget,spent,other,fixedOver,overages,
       left:budget-spent-overages};
   }
+  // ── Bucket cascade (mirrors index.html: mbDiscretionaryOverflow / mbUnplannedRun /
+  // mbLedgerFundStat). Discretionary spending over budget comes out of Unplanned;
+  // what Unplanned can't cover comes out of the Emergency Fund. Unplanned rolls
+  // forward within the calendar year and its Dec 31 balance moves to the fund.
+  const momCents=v=>Math.round(v*100)/100;
+  function momMonthsThrough(key){
+    const out=[];let[y,m]=MOM_TRACKING_START_MONTH.split('-').map(Number);const[ey,em]=String(key).split('-').map(Number);
+    while(y<ey||(y===ey&&m<=em)){out.push(`${y}-${String(m).padStart(2,'0')}`);m+=1;if(m>12){m=1;y+=1}}
+    return out;
+  }
+  function momOverflow(raw,key){
+    if(!(momVariable(raw,'emergency',key)>0))return 0;
+    const x=momMonth(raw,key),over=x.spent-Math.max(0,x.discretionary-x.overages);
+    return over>0.004?momCents(over):0;
+  }
+  function momUnplannedRun(raw,key){
+    const year=String(key).slice(0,4),run={balance:0,carriedIn:0,lastDraw:0};
+    for(const k of momMonthsThrough(key).filter(k=>k.slice(0,4)===year)){
+      const spent=sum(momTrackedMonth(raw,k).emergency)+momOverflow(raw,k);
+      run.carriedIn=run.balance;run.balance=momCents(run.balance+momVariable(raw,'emergency',k)-spent);run.lastDraw=0;
+      if(run.balance<0){run.lastDraw=-run.balance;run.balance=0}
+    }
+    return run;
+  }
+  function momFund(raw,key){
+    const months=momMonthsThrough(key),thisYear=String(key).slice(0,4),opening=n(raw.template?.fundOpening?.safetyNet);
+    let balance=opening,swept=0;
+    for(const k of months)balance+=momVariable(raw,'safetyNet',k)-sum(momTrackedMonth(raw,k).safetyNet)-momUnplannedRun(raw,k).lastDraw;
+    for(const year of [...new Set(months.map(k=>k.slice(0,4)))].filter(y=>y<thisYear))swept+=momUnplannedRun(raw,`${year}-12`).balance;
+    return{balance:momCents(balance+swept),swept:momCents(swept),opening};
+  }
+  // Read-only cards for the two owner buckets and the month's account transfers.
+  function momBucketCards(raw,key,label){
+    const month=momTrackedMonth(raw,key),year=key.slice(0,4),unplannedBudget=momVariable(raw,'emergency',key);
+    if(!(unplannedBudget>0)&&!raw.template?.variableSchedule?.safetyNet&&!n(raw.template?.fundOpening?.safetyNet))return '';
+    const byDate=rows=>(rows||[]).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+    const over=momOverflow(raw,key),run=momUnplannedRun(raw,key),fund=momFund(raw,key),fundBudget=momVariable(raw,'safetyNet',key);
+    const unplanned=row(`${year} funds available`,fullMoney(run.balance),`${fullMoney(run.carriedIn)} carried in + ${fullMoney(unplannedBudget)} this month · resets Jan 1, the rest moves to the Emergency Fund`,'good')
+      +(run.lastDraw>0?row('Ran out this month',fullMoney(run.lastDraw),'Shortfall taken from the Emergency Fund','bad'):'')
+      +byDate(month.emergency).map(item=>row(item.name||'Unplanned',fullMoney(item.amount),item.date||'')).join('')
+      +(over>0?row('Discretionary over budget',fullMoney(over),'Automatic','bad'):'');
+    const notes=[`${fullMoney(fundBudget)} added this month`];
+    if(fund.opening>0)notes.push(`includes ${fullMoney(fund.opening)} starting balance`);
+    if(fund.swept>0)notes.push(`${fullMoney(fund.swept)} moved from Unplanned`);
+    const emergency=row('Balance',fullMoney(fund.balance),`High-interest savings · ${notes.join(' · ')}`,fund.balance<0?'bad':'good')
+      +byDate(month.safetyNet).map(item=>row(item.name||'Emergency',fullMoney(item.amount),item.date||'')).join('')
+      +(run.lastDraw>0?row('Unplanned ran out',fullMoney(run.lastDraw),'Automatic','bad'):'');
+    // Transfers: Social Security lands in checking; the 401(k) minimum is one
+    // early-January withdrawal paid straight to savings.
+    const t=raw.template||{},k401=(t.income||[]).find(i=>i.autoType==='rmd'||i.id==='401k'),monthly=sum((t.income||[]).filter(i=>i!==k401));
+    const fixed=sum(t.fixed||[]),keep=momVariable(raw,'discretionary',key)+unplannedBudget,toSavings=momCents(monthly-fixed-keep);
+    let transfers='';
+    if(fundBudget>0){
+      transfers=row('Social Security into checking',fullMoney(monthly),'','good')+row('Pay Fair Share',fullMoney(fixed))
+        +row('Leave in checking',fullMoney(keep),`${fullMoney(momVariable(raw,'discretionary',key))} discretionary + ${fullMoney(unplannedBudget)} unplanned`)
+        +row('Move to savings',fullMoney(toSavings),'',toSavings<0?'bad':'good');
+      if(key.slice(5)==='01'){
+        const prior=String(Number(year)-1);
+        if(k401)transfers+=row('401(k) yearly withdrawal to savings',fullMoney(n(k401.amount)*12),'Early January, after withholding (about)');
+        transfers+=row(`Unplanned left over from ${prior}`,fullMoney(momUnplannedRun(raw,`${prior}-12`).balance),'Checking to savings on Jan 1');
+      }
+    }
+    return card('Unplanned',unplanned,label)+card('Emergency Fund',emergency,label)+(transfers?card('Transfers',transfers,label):'');
+  }
   function renderMom(){
     const raw=state.data.mom||{},now=new Date(),todayMonth=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`,current=todayMonth<MOM_TRACKING_START_MONTH?MOM_TRACKING_START_MONTH:todayMonth,keys=[...new Set([...Object.keys(raw.months||{}),MOM_TRACKING_START_MONTH,current])].filter(key=>/^\d{4}-(0[1-9]|1[0-2])$/.test(key)&&key>=MOM_TRACKING_START_MONTH&&key<=current).sort();
     if(!state.momMonth||!keys.includes(state.momMonth))state.momMonth=current;const key=state.momMonth,index=keys.indexOf(key),x=momMonth(raw,key),date=new Date(`${key}-01T12:00:00`),label=new Intl.DateTimeFormat('en-US',{month:'long',year:'numeric'}).format(date),month=momTrackedMonth(raw,key),fixed=raw.template?.fixed||[];
     const fixedRows=fixed.map(item=>{const expected=momExpected(item,key);if(item.auto)return row(item.name,fullMoney(expected||n(item.amount)),'Set amount each month','');const paid=!!month.fixedPaid?.[item.id],actual=paid?(n(month.fixedActual?.[item.id])||expected||n(item.amount)):0;return row(item.name,paid?fullMoney(actual):(expected?fullMoney(expected):'—'),paid?'Paid':expected?'Due / budgeted':'Not due',paid?'good':'')}).join('');
+    const over=momOverflow(raw,key);
     const discretionaryRows=(month.discretionary||[]).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))).map(item=>momDiscretionaryRow(item,key)).join('');
     const otherRows=(month.otherExpenses||[]).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))).map(item=>row(item.name||'Other expense',fullMoney(item.amount),`${item.date||''} · Overage`,'bad')).join('');
     return `<div class="month-switch"><button data-mom-month="${esc(keys[index-1]||'')}" ${index===0?'disabled':''} aria-label="Previous month">‹</button><div class="month-label">${esc(label)}</div><button data-mom-month="${esc(keys[index+1]||'')}" ${index===keys.length-1?'disabled':''} aria-label="Next month">›</button></div>
-      <div class="hero"><div class="hero-label">Left to spend this month</div><div class="hero-value">${money(x.left)}</div><div class="hero-note">${money(x.budget)} discretionary budget minus ${money(x.spent)} spending and ${money(x.overages)} overages</div></div>
+      <div class="hero"><div class="hero-label">Left to spend this month</div><div class="hero-value">${money(over>0?0:x.left)}</div><div class="hero-note">${money(x.budget)} discretionary budget minus ${money(x.spent)} spending and ${money(x.overages)} overages${over>0?` · ${fullMoney(over)} over, taken from Unplanned`:''}</div></div>
       ${card('Fixed monthly spending',fixedRows,label)}
       ${momAddDiscretionaryCard(key,todayMonth)}
       ${card('Discretionary spending',discretionaryRows,label)}
+      ${momBucketCards(raw,key,label)}
       ${otherRows?card('Other expense overages',otherRows,label):''}`;
   }
 

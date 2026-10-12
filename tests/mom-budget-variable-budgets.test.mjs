@@ -221,12 +221,13 @@ test('the mobile snapshot mirrors the split, including for a record saved before
   const c = mobile(raw, '2026-10');
   assert.equal(c.momVariable(raw, 'discretionary', '2026-09'), 500);
   assert.equal(c.momVariable(raw, 'discretionary', '2026-10'), 400);
-  // Emergencies / unplanned is tracked on the desktop only: the snapshot's
-  // "left to spend" is the discretionary budget alone.
+  // "Left to spend" is the discretionary budget alone; the Unplanned and
+  // Emergency Fund buckets get their own read-only cards.
   const october = c.momMonth(raw, '2026-10');
   assert.equal(october.budget, 400);
   assert.equal(october.left, 400 - 88.12);
-  assert.doesNotMatch(c.renderMom(), /emergenc/i);
+  assert.match(c.renderMom(), /Unplanned/);
+  assert.match(c.renderMom(), /Emergency Fund/);
   // A record the desktop has already re-saved uses its stored schedule instead.
   const edited = legacyRecord();
   edited.template.variableSchedule = { discretionary: [{ from: '2026-10', amount: 425 }], emergency: [{ from: '2026-10', amount: 200 }] };
@@ -443,4 +444,31 @@ test('when Unplanned runs out the shortfall comes out of the Emergency Fund', ()
   assert.equal(a.mbUnplannedRun('2026-11').balance, 200);
   assert.equal(a.mbUnplannedRun('2026-11').lastDraw, 0);
   assert.equal(a.state.momBudget.months['2026-10'].safetyNet.length, 0);   // nothing stored
+});
+
+test('the mobile snapshot mirrors the bucket cascade and fund balances', () => {
+  const a = app();
+  const raw = legacyRecord();
+  raw.months['2026-11'] = { discretionary: [{ id: 'n', date: '2026-11-04', amount: 455, name: 'Gifts' }], emergency: [{ id: 'u', date: '2026-11-09', amount: 180, name: 'Repair' }] };
+  raw.months['2026-12'] = { safetyNet: [{ id: 's', date: '2026-12-02', amount: 75, name: 'ER copay' }] };
+  a.state.momBudget = a.mbNormalize(raw);
+  a.state.momBudget.template.fundOpening = { safetyNet: 2001.52 };
+  a.mbSetVariableAmount('safetyNet', '2026-11', 759.15);
+  const saved = plain(a.state.momBudget);
+  const c = mobile(saved, '2027-01');
+  for (const key of ['2026-09', '2026-10', '2026-11', '2026-12', '2027-01']) {
+    vm.runInContext(`_mbMonth = '${key}'`, a);
+    assert.equal(c.momOverflow(saved, key), a.mbDiscretionaryOverflow(key), `overflow ${key}`);
+    const run = a.mbUnplannedRun(key), mine = c.momUnplannedRun(saved, key);
+    assert.equal(mine.balance, run.balance, `unplanned balance ${key}`);
+    assert.equal(mine.lastDraw, run.lastDraw, `unplanned draw ${key}`);
+    const fund = a.mbLedgerFundStat('safetyNet', 'safetyNet');
+    assert.equal(c.momFund(saved, key).balance, Math.round(fund.diff * 100) / 100, `fund ${key}`);
+    assert.equal(c.momFund(saved, key).swept, fund.swept, `swept ${key}`);
+  }
+  // November: $55 discretionary overage + $180 unplanned against $200 -> $35 short.
+  assert.equal(c.momUnplannedRun(saved, '2026-11').lastDraw, 35);
+  const html = c.momBucketCards(saved, '2027-01', 'January 2027');
+  assert.match(html, /Unplanned left over from 2026/);
+  assert.match(html, /Move to savings/);
 });

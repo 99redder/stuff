@@ -846,6 +846,12 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ## Recent Updates
 
+### 2026-10-11 — Mobile Snapshot Mom tab mirrors the three buckets
+
+- `mobile/index.html` now mirrors the desktop bucket logic: `momOverflow` (↔ `mbDiscretionaryOverflow`), `momUnplannedRun` (↔ `mbUnplannedRun`) and `momFund` (↔ `mbLedgerFundStat('safetyNet', …)`, incl. the starting balance, shortfall draws and the Jan 1 sweep). **Change one, change the other** — `tests/mom-budget-variable-budgets.test.mjs` pins them month by month.
+- The Mom tab shows read-only **Unplanned**, **Emergency Fund** and **Transfers** cards under Discretionary (`momBucketCards`), and the hero reads $0 with `over, taken from Unplanned` when Discretionary is overspent. Only Discretionary can still be added/edited there. This reverses the 2026-10-01 "discretionary only" note for the Snapshot app; **her own Money Left phone app is unchanged and still shows discretionary only.**
+- The January Transfers line for the 401(k) is `income line × 12` and labelled "about" (the Snapshot app has no RMD table). `mobile/sw.js` `CACHE_NAME` → `v49`. No worker change.
+
 ### 2026-10-11 — Mom Budget: three buckets (Discretionary, Unplanned, Emergency Fund)
 
 - **Three variable budgets:** Discretionary ($400), **Unplanned** ($200) and **Emergency Fund** (the remainder). `MB_TRACKED_VARIABLE_KEYS = ['discretionary', 'emergency', 'safetyNet']`.
