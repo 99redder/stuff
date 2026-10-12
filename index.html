@@ -8911,10 +8911,10 @@ function mbRmdCard() {
     }
     withdrawalBlock = `
       <div style="padding:1rem;background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(37,99,235,.06));border:2px solid var(--success);border-radius:var(--radius)">
-        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${w.rmdMode ? `Gross Jan 1 withdrawal for ${c.year}: the required minimum` : 'Gross Jan 1 withdrawal to fund the year'}</div>
+        <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">${w.rmdMode ? `Gross withdrawal for ${c.year}: the required minimum` : 'Gross Jan 1 withdrawal to fund the year'}</div>
         <div style="font-size:2rem;font-weight:800;line-height:1.1;margin:.15rem 0;color:var(--success)">${fmt(w.grossAnnual)}<span style="font-size:.9rem;font-weight:600;color:var(--text-muted)"> / year</span></div>
         <div style="font-size:.82rem;color:var(--text-muted)">${w.rmdMode
-          ? `the least the IRS lets her take out, in one lump on Jan 1. After 20% withholding she receives <strong>${fmt(w.netAnnual)}/yr</strong> (${fmt(w.netMonthly)}/mo), which is the &ldquo;${escHtml(w.name)}&rdquo; income line in the monthly template. Nothing more is withdrawn.`
+          ? `the least the IRS lets her take out, in one withdrawal in early January, paid straight to savings. After 20% withholding she receives <strong>${fmt(w.netAnnual)}/yr</strong> (${fmt(w.netMonthly)}/mo), which is the &ldquo;${escHtml(w.name)}&rdquo; income line in the monthly template. Nothing more is withdrawn.`
           : `one lump on Jan 1 so 20% withholding still leaves the <strong>${fmt(w.netAnnual)}/yr</strong> (${fmt(w.netMonthly)}/mo) budgeted from &ldquo;${escHtml(w.name)}&rdquo; · gross-up ${fmt(w.netAnnual)} ÷ 0.80 = <strong>${fmt(w.grossAnnual)}</strong>`}</div>
         <div style="margin-top:.65rem;padding:.65rem .75rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:.5rem 1rem;font-size:.82rem">
           <div><span style="display:block;color:var(--text-muted);font-size:.72rem">${w.rmdMode ? 'Net received / year' : 'Budgeted net / year'}</span><strong>${fmt(w.netAnnual)}</strong></div>
@@ -8922,9 +8922,12 @@ function mbRmdCard() {
           <div><span style="display:block;color:var(--text-muted);font-size:.72rem">Gross withdrawal / year</span><strong style="color:var(--success)">${fmt(w.grossAnnual)}</strong></div>
         </div>
         <div style="margin-top:.6rem;padding-top:.5rem;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:.25rem 1.25rem;font-size:.78rem;color:var(--text-muted)">
-          <span>Monthly equivalent: net ${fmt(w.netMonthly)} · gross ${fmt(w.grossMonthly)}</span>
+          <span>Monthly equivalent: net ${fmt(w.netMonthly)} · gross ${fmt(w.grossMonthly)}</span>${w.rmdMode ? `
+          <span>Age in ${c.year}: <strong>${c.age}</strong></span>
+          <span>IRS factor: <strong>${c.factor}</strong></span>
+          <span>${fmt(c.balance)} ÷ ${c.factor} = <strong>${fmt(c.rmd)}</strong></span>` : ''}
         </div>
-        ${rmdNote}
+        ${w.rmdMode ? '' : rmdNote}
       </div>`;
   } else {
     withdrawalBlock = `<div style="padding:.85rem 1rem;background:var(--surface);border:1px dashed var(--border);border-radius:var(--radius);color:var(--text-muted);font-size:.85rem">
@@ -8943,31 +8946,7 @@ function mbRmdCard() {
   const toggle = (open, onClick) => `<button class="btn btn-ghost btn-sm" type="button" style="margin-left:auto" onclick="${onClick}" aria-expanded="${open ? 'true' : 'false'}">${open ? 'Minimize' : 'Expand'}</button>`;
   const note = text => `<span style="font-size:.78rem;font-weight:600;color:var(--text-muted)">${escHtml(text)}</span>`;
 
-  // Three cards: the yearly withdrawal (always open), then the balance tracker
-  // and the RMD details, which both start minimized.
-  return `
-    <div class="card tp-card" id="mb-sec-401k-budget">
-      <div class="card-header"><div class="card-title">${w.rmdMode ? '401(k) Yearly Withdrawal: Required Minimum Only' : '401(k) Withdrawal to Fund the Monthly Budget'}</div></div>
-      <div class="card-body">
-        ${withdrawalBlock}
-      </div>
-    </div>
-    <div class="card tp-card" id="mb-sec-401k">
-      <div class="card-header" style="gap:.75rem;flex-wrap:wrap">
-        <div class="card-title">401(k) Balance Tracker</div>
-        ${trackerOpen ? '' : note(trackerNote)}
-        ${toggle(trackerOpen, 'mbToggle401kTracker()')}
-      </div>
-      ${trackerOpen ? `<div class="card-body">${mb401kTrackerHtml(est, w)}</div>` : ''}
-    </div>
-    <div class="card tp-card" id="mb-sec-rmd">
-      <div class="card-header" style="gap:.75rem;flex-wrap:wrap">
-        <div class="card-title">Traditional 401(k) Minimum Distribution (RMD)</div>
-        ${rmdOpen ? '' : note(rmdNoteText)}
-        ${toggle(rmdOpen, 'mbToggleRmd()')}
-      </div>
-      <div class="card-body${rmdOpen ? '' : ' hidden'}">
-        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.85rem">
+  const rmdInputs = `        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.85rem">
           <div style="flex:0 1 130px;min-width:120px">
             <label style="display:block;font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Distribution year</label>
             <input type="number" class="form-input" min="${CURRENT_YEAR}" max="${MOM_RMD_MAX_PROJECTION_YEAR}" step="1"
@@ -8985,17 +8964,57 @@ function mbRmdCard() {
             <div style="font-size:.74rem;font-weight:600;color:var(--text-muted);margin-bottom:.25rem">Date of birth</div>
             <div style="padding:.45rem .6rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);font-weight:600">${MOM_RMD_BIRTH_LABEL}</div>
           </div>
-        </div>
-        ${result}
-        ${c.balanceSource === 'estimate' ? `<div style="font-size:.76rem;color:var(--text-muted);margin-top:.4rem">Using the tracker's estimated Dec 31, ${priorYear} balance. Type the statement figure above to replace it.</div>`
-          : c.balanceSource === 'projected' ? `<div style="font-size:.76rem;color:var(--text-muted);margin-top:.4rem">Projection: Dec 31, ${priorYear} hasn't closed yet, so this uses today's estimated balance and will move with the market until then.</div>` : ''}
-        <div style="font-size:.72rem;color:var(--text-muted);margin-top:.6rem;line-height:1.5">
-          This figure is the IRS <strong>required minimum</strong> she must withdraw. ${w.rmdMode
-            ? `The yearly withdrawal above is set to exactly this amount, taken as a single <strong>Jan 1 lump</strong>; after the plan's automatic <strong>20% tax withholding</strong> she receives <strong>${fmt(w.netAnnual)}/yr</strong> (${fmt(w.netMonthly)}/mo), which is her 401(k) income line in the monthly template. Enter the real Dec 31 balance each January so the minimum is exact, since taking less than the minimum is penalized.`
+        </div>`;
+  const rmdSource = `        ${c.balanceSource === 'estimate' ? `<div style="font-size:.76rem;color:var(--text-muted);margin-top:.4rem">Using the tracker's estimated Dec 31, ${priorYear} balance. Type the statement figure above to replace it.</div>`
+          : c.balanceSource === 'projected' ? `<div style="font-size:.76rem;color:var(--text-muted);margin-top:.4rem">Projection: Dec 31, ${priorYear} hasn't closed yet, so this uses today's estimated balance and will move with the market until then.</div>` : ''}`;
+  const rmdFoot = `        <div style="font-size:.72rem;color:var(--text-muted);margin-top:.6rem;line-height:1.5">
+          ${w.rmdMode ? '' : 'This figure is the IRS <strong>required minimum</strong> she must withdraw. '}${w.rmdMode
+            ? `Enter the real Dec 31 balance each January so the minimum is exact; taking less than the minimum is penalized.`
             : `The budget withdrawal above works the other way: it grosses up the <strong>${fmt(w.netAnnual)}/yr</strong> (${fmt(w.netMonthly)}/mo) budgeted from her 401(k) in the monthly template into a single <strong>Jan 1 lump withdrawal</strong> so that, after the plan's automatic <strong>20% tax withholding</strong>, she still nets the budgeted amount for the year (net ÷ 0.80).`} Both use the full pre-tax balance and assume she's <strong>retired</strong> with <strong>no spouse</strong>, so the IRS <strong>Uniform Lifetime Table</strong> applies. Future-year RMDs are projections. Estimate only — actual tax owed may differ from the amount withheld; confirm with her plan administrator or CPA.
-        </div>
+        </div>`;
+  // When the withdrawal IS the required minimum there is one calculation, so it
+  // is shown once: the first card carries the balance inputs and the math, and
+  // the separate RMD card is dropped.
+  const rmdMerged = !w.rmdMode ? '' : `
+        <div id="mb-sec-rmd" style="margin-top:1rem;padding-top:.85rem;border-top:1px solid var(--border)">
+          <div style="font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin-bottom:.5rem">Balance the minimum is based on</div>
+          ${rmdInputs}
+          ${c.balance && c.required ? '' : result}
+          ${rmdSource}
+          ${rmdFoot}
+        </div>`;
+  // Cards: the yearly withdrawal (always open), then the balance tracker, then
+  // (only when the withdrawal is not simply the minimum) the RMD details.
+  return `
+    <div class="card tp-card" id="mb-sec-401k-budget">
+      <div class="card-header"><div class="card-title">${w.rmdMode ? '401(k) Yearly Withdrawal: Required Minimum Only' : '401(k) Withdrawal to Fund the Monthly Budget'}</div></div>
+      <div class="card-body">
+        ${withdrawalBlock}
+        ${rmdMerged}
       </div>
-    </div>`;
+    </div>
+    <div class="card tp-card" id="mb-sec-401k">
+      <div class="card-header" style="gap:.75rem;flex-wrap:wrap">
+        <div class="card-title">401(k) Balance Tracker</div>
+        ${trackerOpen ? '' : note(trackerNote)}
+        ${toggle(trackerOpen, 'mbToggle401kTracker()')}
+      </div>
+      ${trackerOpen ? `<div class="card-body">${mb401kTrackerHtml(est, w)}</div>` : ''}
+    </div>
+${w.rmdMode ? '' : `
+    <div class="card tp-card" id="mb-sec-rmd">
+      <div class="card-header" style="gap:.75rem;flex-wrap:wrap">
+        <div class="card-title">Traditional 401(k) Minimum Distribution (RMD)</div>
+        ${rmdOpen ? '' : note(rmdNoteText)}
+        ${toggle(rmdOpen, 'mbToggleRmd()')}
+      </div>
+      <div class="card-body${rmdOpen ? '' : ' hidden'}">
+        ${rmdInputs}
+        ${result}
+        ${rmdSource}
+        ${rmdFoot}
+      </div>
+    </div>`}`;
 }
 
 function mb401kTrackerHtml(est, w) {
