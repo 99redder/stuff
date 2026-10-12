@@ -7651,7 +7651,7 @@ const MB_VARIABLE_META = {
     label: 'Discretionary',
     icon: '\u{1F6CD}\u{FE0F}',
     account: 'Checking',
-    ledgerNote: 'Discretionary includes non-grocery purchase items, prescription copays, and overages from other budget areas. Paid from her checking account.'
+    ledgerNote: 'Discretionary includes non-grocery purchase items, prescription copays, and overages from other budget areas. Paid from her checking account. Anything spent over the budget comes out of Unplanned automatically.'
   },
   emergency: {
     label: 'Unplanned',
@@ -8698,7 +8698,7 @@ function _renderMomBudgetHtml() {
           note: MB_VARIABLE_META.discretionary.ledgerNote
         })}
 
-        ${mbLedgerCard('Unplanned', 'emergency', m.emergency || [], 'Description', 'name', {
+        ${mbLedgerCard('Unplanned', 'emergency', mbUnplannedEntries(_mbMonth), 'Description', 'name', {
           budgetKey: 'emergency',
           history: true,
           icon: MB_VARIABLE_META.emergency.icon,
@@ -9356,9 +9356,32 @@ function mbTrackedMonthsThrough(monthKey = _mbMonth) {
 function mbLedgerMonthStat(section, budgetKey, monthKey) {
   const rows = state.momBudget.months?.[monthKey]?.[section];
   const entries = Array.isArray(rows) ? rows : [];
-  const spent = entries.reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
+  // Unplanned also absorbs whatever Discretionary ran over by that month.
+  const overflow = budgetKey === 'emergency' ? mbDiscretionaryOverflow(monthKey) : 0;
+  const spent = entries.reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0) + overflow;
   const budget = mbVariableAmount(budgetKey, monthKey);
-  return { monthKey, count: entries.length, spent, budget, diff: budget - spent };
+  return { monthKey, count: entries.length + (overflow > 0 ? 1 : 0), spent, budget, diff: budget - spent, overflow };
+}
+
+// Discretionary spending beyond its budget comes out of Unplanned automatically.
+// It is computed, never stored: the purchases stay in the Discretionary ledger
+// and the overage shows as one automatic line in Unplanned for that month.
+// Nothing overflows in a month that had no Unplanned budget (September 2026).
+function mbDiscretionaryOverflow(monthKey) {
+  if (!(mbVariableAmount('emergency', monthKey) > 0)) return 0;
+  const over = -mbCalcMonth(monthKey).discretionaryRemaining;
+  return over > 0.004 ? Math.round(over * 100) / 100 : 0;
+}
+
+// The Unplanned ledger for a month as shown: its own entries plus the automatic
+// Discretionary-overage line, dated with the latest Discretionary purchase.
+function mbUnplannedEntries(monthKey) {
+  const month = state.momBudget.months?.[monthKey] || {};
+  const own = Array.isArray(month.emergency) ? month.emergency : [];
+  const overflow = mbDiscretionaryOverflow(monthKey);
+  if (!(overflow > 0)) return own;
+  const dates = (month.discretionary || []).map(e => String(e.date || '')).filter(Boolean).sort();
+  return [...own, { id: 'auto-discretionary-over', date: dates[dates.length - 1] || `${monthKey}-01`, name: 'Discretionary over budget', amount: overflow, auto: true }];
 }
 
 // Year to date: every tracked month of `year` up to and including the month on
@@ -9499,15 +9522,18 @@ function mbLedgerTotalHtml(section, entries, budgetKey) {
     </div>`;
   }
   // The headline is what is left to spend; the running total sits beside it.
+  // A Discretionary overage is covered by Unplanned, so it reads $0 left.
+  const covered = budgetKey === 'discretionary' && left < 0 && mbDiscretionaryOverflow(_mbMonth) > 0;
   return `
     <div class="mb-ledger-total">
       <div>
-        <div class="mb-ledger-total-label">${left < 0 ? 'Over budget' : 'Left to spend'} · ${escHtml(mbMonthLabel(_mbMonth, 'long'))}</div>
-        <div class="mb-ledger-total-value" style="color:${left < 0 ? 'var(--danger)' : 'var(--success)'}">${left < 0 ? '−' : ''}${fmt(Math.abs(left))}</div>
+        <div class="mb-ledger-total-label">${left < 0 && !covered ? 'Over budget' : 'Left to spend'} · ${escHtml(mbMonthLabel(_mbMonth, 'long'))}</div>
+        <div class="mb-ledger-total-value" style="color:${left < 0 ? 'var(--danger)' : 'var(--success)'}">${covered ? fmt(0) : `${left < 0 ? '−' : ''}${fmt(Math.abs(left))}`}</div>
       </div>
       <div class="mb-ledger-total-meta">
         <div><strong>${fmt(spent)}</strong> spent</div>
         <div>of <strong>${fmt(budget)}</strong> budget</div>
+        ${covered ? `<div style="color:var(--danger)"><strong>${fmt(-left)}</strong> over, taken from Unplanned</div>` : ''}
       </div>
     </div>`;
 }

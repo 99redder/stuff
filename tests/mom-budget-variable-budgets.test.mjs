@@ -123,11 +123,11 @@ test('each month gets its own ledgers, so a new month starts empty and earlier o
   assert.equal(a.mbCalcMonth('2026-11').discretionarySpent, 0);
   assert.equal(a.mbCalcMonth('2026-11').emergencySpent, 0);
   assert.deepEqual(plain(['2026-10', '2026-09'].map(key => a.mbLedgerMonthStat('discretionary', 'discretionary', key))), [
-    { monthKey: '2026-10', count: 1, spent: 88.12, budget: 400, diff: 311.88 },
-    { monthKey: '2026-09', count: 1, spent: 212.4, budget: 800, diff: 587.6 },
+    { monthKey: '2026-10', count: 1, spent: 88.12, budget: 400, diff: 311.88, overflow: 0 },
+    { monthKey: '2026-09', count: 1, spent: 212.4, budget: 800, diff: 587.6, overflow: 0 },
   ]);
   assert.deepEqual(plain(a.mbLedgerMonthStat('emergency', 'emergency', '2026-10')),
-    { monthKey: '2026-10', count: 1, spent: 240, budget: 200, diff: -40 });
+    { monthKey: '2026-10', count: 1, spent: 240, budget: 200, diff: -40, overflow: 0 });
   // The history only looks backwards from the month on screen.
   vm.runInContext("_mbMonth = '2026-09'", a);
   assert.equal(a.mbTrackedMonthsThrough().filter(key => key < '2026-09').length, 0);
@@ -394,4 +394,31 @@ test('a starting balance counts toward the Emergency Fund but not the yearly Unp
   assert.equal(fund.diff, 1500.25 + 700);
   assert.match(a.mbLedgerTotalHtml('safetyNet', [], 'safetyNet'), /starting balance/);
   assert.equal(a.mbLedgerYearStat('emergency', 'emergency', '2026').opening, undefined);
+});
+
+test('Discretionary spending over its budget comes out of Unplanned automatically', () => {
+  const a = app();
+  const raw = legacyRecord();
+  raw.months['2026-11'] = { discretionary: [
+    { id: 'n1', date: '2026-11-04', amount: 300, name: 'Gifts' },
+    { id: 'n2', date: '2026-11-19', amount: 155, name: 'More gifts' },
+  ], emergency: [{ id: 'u', date: '2026-11-09', amount: 20, name: 'Card' }] };
+  a.state.momBudget = a.mbNormalize(raw);
+  vm.runInContext("_mbMonth = '2026-11'", a);
+  assert.equal(a.mbDiscretionaryOverflow('2026-11'), 55);            // $455 spent of $400
+  assert.equal(a.mbDiscretionaryOverflow('2026-10'), 0);             // under budget
+  assert.equal(a.mbDiscretionaryOverflow('2026-09'), 0);             // no Unplanned bucket yet
+  const stat = a.mbLedgerMonthStat('emergency', 'emergency', '2026-11');
+  assert.equal(stat.spent, 75);                                       // her $20 + the $55 overage
+  assert.equal(stat.diff, 125);
+  const rows = plain(a.mbUnplannedEntries('2026-11'));
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows[1], { id: 'auto-discretionary-over', date: '2026-11-19', name: 'Discretionary over budget', amount: 55, auto: true });
+  // Nothing is stored: the saved ledger still holds only her own entry, and cash totals are unchanged.
+  assert.equal(a.state.momBudget.months['2026-11'].emergency.length, 1);
+  assert.equal(a.mbCalcMonth('2026-11').emergencySpent, 20);
+  // The Discretionary strip reads $0 left and says where the overage went.
+  const strip = a.mbLedgerTotalHtml('discretionary', a.state.momBudget.months['2026-11'].discretionary, 'discretionary');
+  assert.match(strip, /Left to spend/);
+  assert.match(strip, /\$55\.00<\/strong> over, taken from Unplanned/);
 });
