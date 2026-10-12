@@ -110,7 +110,7 @@ const state = {
   savings: null,                // loaded once, global — { accounts, obligations, payments }
   netWorth: null                // loaded once, global — see Net Worth section
 };
-// Note: budget also carries a `fairShare` sub-object — { householdSize, roundDollar, shared:{[itemId]:bool} } —
+// Note: budget also carries a `fairShare` sub-object — { householdSize, roundDollar, shared, participants, direct, agreement, mortgage, foodBenchmark, housingBenchmark } —
 // for the Fair Share section embedded in the Monthly Budget view (saved inside the `budget` record).
 ```
 `null` means not yet fetched. `ensureLoaded(property, key)` fetches on demand and caches in `state.data`.
@@ -211,7 +211,8 @@ Global view (not per-property) for tracking Red's mother's monthly assistance bu
 {
   template: {
     income: [
-      { id, name, amount, locked }
+      { id, name, amount, locked,
+        auto, autoType }   // autoType 'rmd' on the 401(k) line: read-only, follows the required minimum
     ],
     fixed: [
       {
@@ -227,47 +228,71 @@ Global view (not per-property) for tracking Red's mother's monthly assistance bu
     ],
     variable: {              // amount in effect BEFORE the first variableSchedule entry
       discretionary: 500,
-      emergency: 0
+      emergency: 0,          // key for the UNPLANNED bucket (see "Three buckets")
+      safetyNet: 0           // key for the EMERGENCY FUND
     },
     variableSchedule: {      // effective-dated changes; each entry applies from `from` onward
       discretionary: [{ from: '2026-09', amount: 800 }, { from: '2026-10', amount: 400 }],
-      emergency: [{ from: '2026-10', amount: 200 }]
+      emergency: [{ from: '2026-10', amount: 200 }],
+      safetyNet: [{ from: '2026-11', amount: 759.15 }]   // written by mbSyncAutoPlan
     },
-    variableLocks: {
-      discretionary: false,
-      emergency: false
-    },
+    variableLocks: { discretionary: false, emergency: false },
+    autoPlan: { rmdIncome: true, remainderFrom: '2026-11' },   // the automatic plan (see below)
+    fundOpening: { safetyNet: <dollars> },   // starting balance of a never-resetting fund; never hardcoded
     fairShareMigrated,     // one-time flag — wrapped household bills already removed
     carStreamingTrimmed,   // one-time flag — car/streaming bills already removed
     octoberBudgetV1,       // one-time flag — first pass of the Oct 2026 split (superseded)
-    octoberSplitV2         // one-time flag — Sept $800 lump pinned + Oct split seeded
+    octoberSplitV2,        // one-time flag — Sept $800 lump pinned + Oct split seeded
+    autoPlanV1,            // one-time flag — automatic plan switched on
+    threeBucketsV1         // one-time flag — remainder moved from `emergency` to `safetyNet`
   },
   months: {
     'YYYY-MM': {
       fixedPaid: { [fixedId]: true },
       fixedActual: { [fixedId]: number },
       discretionary: [{ id, date, amount, name }],
-      emergency: [{ id, date, amount, name }],
+      emergency: [{ id, date, amount, name }],    // Unplanned ledger
+      safetyNet: [{ id, date, amount, name }],    // Emergency Fund ledger
       otherExpenses: [{ id, date, amount, name }]
     }
   },
-  rmd: { balance }   // 401(k) RMD calculator input (balance only; birth date is a fixed constant)
+  rmd: { balance, year, balanceYear, tracker }   // 401(k) inputs (birth date is a fixed constant)
 }
 ```
-Now that the mother lives with the family, her household bills are wrapped into a single **auto-synced `fair-share` fixed line** whose monthly amount is pulled live from the Monthly Budget's Fair Share section (`mbSyncFairShare()` → `fsCalc().herShare`, run in `renderMomBudget` after `ensureBudgetLoaded()`). Groceries were folded into that household share, and **Gas was removed entirely (she has no car)** — so the only variable budget left is Discretionary. She effectively tracks just **Fair Share, Discretionary, and overages**.
+Now that the mother lives with the family, her household bills are wrapped into a single **auto-synced `fair-share` fixed line** whose monthly amount is pulled live from the Monthly Budget's Fair Share section (`mbSyncFairShare()` → `fsCalc().herShare`, run in `renderMomBudget` after `ensureBudgetLoaded()`). Groceries were folded into that household share, and **Gas was removed entirely (she has no car)**. Her money is now three buckets on top of Fair Share — see **The plan and the three buckets** below.
 
-**Effective-dated variable budgets.** `template.variable[key]` is the amount that applied **before** the first scheduled change; `template.variableSchedule[key]` is a sorted list of `{ from: 'YYYY-MM', amount }` entries, each taking over from that month onward. Resolve with `mbVariableAmount(key, monthKey)`; write with `mbSetVariableAmount(key, monthKey, amount)`, which writes a change effective from that month and drops any entry that merely repeats the amount already in effect. `MB_TRACKED_VARIABLE_KEYS` (`discretionary`, `emergency`) drives the template rows, ledger cards, and the allowance; labels/notes live in `MB_VARIABLE_META`.
+**The plan and the three buckets (from November 2026).** Fair Share dropped to about $1,045 once a property-tax entry error was fixed (see Fair Share), so Social Security alone covers her budget. The plan is automatic (`template.autoPlan`, synced by `mbSyncAutoPlan()` at the top of `_renderMomBudgetHtml`, which sets `_mbMigrationApplied` so the change is saved):
+
+| Bucket | Key | Amount | Account | Carries |
+|---|---|---|---|---|
+| Discretionary | `discretionary` | $400 / month | Checking | Monthly cap; no carry-over |
+| Unplanned | `emergency` | $200 / month | Checking | Rolls month to month within the calendar year, restarts Jan 1 (`carryover: 'year'`) |
+| Emergency Fund | `safetyNet` | the remainder | High-interest savings | Never resets (`carryover: 'always'`) |
+
+- **Mind the keys.** `emergency` is the $200 bucket that began in October 2026 as "Emergencies / Unplanned" and is now labelled **Unplanned**; the key was kept so its schedule, ledger and history carry on. **`safetyNet` is the Emergency Fund.** `MB_TRACKED_VARIABLE_KEYS = ['discretionary', 'emergency', 'safetyNet']`; labels, icons, notes, `account`, `carryover` and `sweepFrom` live in `MB_VARIABLE_META`.
+- **401(k) = the required minimum only** (`autoPlan.rmdIncome`). The `401k` income line is `auto: true, autoType: 'rmd'`: read-only, valued at `mbCalcRmd().netMonthly` (the RMD for the RMD year, less 20% withholding, ÷ 12). `mbCalc401kWithdrawal()` returns `rmdMode: true` with `grossAnnual` equal to the RMD **to the cent** (never grossed back up from the rounded income line), so the Jan 1 auto-withdrawal (`mb401kAutoAmount`) is exactly the minimum. It is one withdrawal a year, in early January, paid straight to savings.
+- **Emergency Fund = the remainder** (`autoPlan.remainderFrom`, `MB_AUTO_PLAN_MONTH = '2026-11'`): `income − fixed (Fair Share) − discretionary − unplanned`, written as an ordinary `variableSchedule.safetyNet` entry effective from the **current** month, so months already tracked keep their budget and the worker / phone / mobile need no formula. Skipped while the Monthly Budget (the Fair Share figure) isn't loaded. `Unallocated after budget` is therefore $0 from November; for earlier months Month Math says the fund `starts November 2026` and labels the remainder `Not yet assigned`.
+- **Starting balance.** `template.fundOpening.safetyNet` is money already in savings before tracking began; `mbLedgerFundStat` adds it as `opening`. Edited under the Emergency Fund row of the Monthly Template card (`mbUpdateFundOpening`). **Never hardcoded (public repo):** it can be loaded into private KV as `mom_fund_opening` = `{ safetyNet: <dollars> }`, which the worker's `applyMomFundOpening()` adopts in `handleGetMomBudget` only while the record has no value of its own for that bucket (a typed value, including 0, wins).
+- **The buckets cascade, all computed and never stored:**
+  - *Discretionary → Unplanned.* `mbDiscretionaryOverflow(monthKey)` (= `−mbCalcMonth().discretionaryRemaining` when positive, only in a month that has an Unplanned budget) is added to Unplanned's `spent` in `mbLedgerMonthStat`, shown as an automatic `Discretionary over budget` line by `mbUnplannedEntries()`, and makes the Discretionary strip read `$0.00` left with `$X over, taken from Unplanned`.
+  - *Unplanned → Emergency Fund.* `mbUnplannedRun(monthKey)` walks Unplanned's balance month by month through the calendar year. It never goes below $0: a month it can't cover is drawn from the Emergency Fund (`lastDraw`), shown as an automatic `Unplanned ran out` line by `mbSafetyNetEntries()` and counted in the fund's `spent`. The next month's $200 is then fully available.
+  - *Jan 1 sweep.* `MB_VARIABLE_META.safetyNet.sweepFrom = 'emergency'`: for every calendar year that has ended before the month on screen, `mbLedgerFundStat` adds that year's Dec 31 Unplanned balance (`mbUnplannedRun('<year>-12').balance`) as `swept` / `sweeps[]`. In real life that is a checking → savings transfer.
+  - The saved ledgers and `mbCalcMonth`'s cash totals are untouched by all three, so the worker and her phone are unaffected.
+- **Transfers card** (`mbTransfersCard`, `#mb-sec-transfers`, under Month Math, from `MB_AUTO_PLAN_MONTH`): the real cash moves for the month on screen — Social Security into checking, Fair Share out, the $600 left in checking, the rest moved to savings — plus, in January, the 401(k) net withdrawal to savings and the prior year's Unplanned leftover. The monthly transfer ($447.50) is smaller than the Emergency Fund's monthly budget because the 401(k) pays once a year. Savings interest is not modelled; true it up by editing the starting balance.
+- **Planning context.** The prepaid funeral plan is intended to be bought later out of the Emergency Fund (record it as an Emergency Fund expense). A local scheduled task (`update-mom-401k-balance`, every Jan 1, outside this repo) reminds the owner to enter the real Dec 31 401(k) balance.
+
+**Effective-dated variable budgets.** `template.variable[key]` is the amount that applied **before** the first scheduled change; `template.variableSchedule[key]` is a sorted list of `{ from: 'YYYY-MM', amount }` entries, each taking over from that month onward. Resolve with `mbVariableAmount(key, monthKey)`; write with `mbSetVariableAmount(key, monthKey, amount)`, which writes a change effective from that month and drops any entry that merely repeats the amount already in effect. `MB_TRACKED_VARIABLE_KEYS` (`discretionary`, `emergency`, `safetyNet`) drives the template rows, ledger cards, and the allowance; labels/notes live in `MB_VARIABLE_META`.
 
 Editing a budget input in the Monthly Template card applies **from the month currently on screen forward**, so a month that has already been tracked is never restated. Scheduled changes are listed under the input with a `×` to remove one (`mbRemoveVariableChange`).
 
-**Spending allowance.** `mbTrackingAllowance(monthKey)` is **always** the sum of the itemized variable budgets in effect for that month. (The old flat `MB_MONTHLY_TRACKING_ALLOWANCE = 800` constant is gone — it contradicted the budget rows once the budgets were itemized.) It is **not printed as its own Month Math row** — a subtotal sitting among the budget rows read as just another line item rather than their sum — but it still drives the phone's headline figure, the year roll-up, and every remaining/percent calculation. `trackingUsed` counts paid fixed bills (excluding Fair Share) plus the discretionary, emergency, and other-overage ledgers, and the year summary adds up each month's own allowance.
+**Spending allowance.** `mbTrackingAllowance(monthKey)` is **always** the sum of the itemized variable budgets in effect for that month. (The old flat `MB_MONTHLY_TRACKING_ALLOWANCE = 800` constant is gone — it contradicted the budget rows once the budgets were itemized.) It is **not printed as its own Month Math row** — a subtotal sitting among the budget rows read as just another line item rather than their sum — but it still drives the phone's headline figure, the year roll-up, and every remaining/percent calculation. `trackingUsed` counts paid fixed bills (excluding Fair Share) plus the discretionary, unplanned (`emergency`), emergency-fund (`safetyNet`), and other-overage ledgers, and the year summary adds up each month's own allowance.
 
 **September 2026 is a one-off.** It ran as a single **$800 lump** allowance and is the only month that will. Rather than special-case it in the math, it is pinned as an `$800` **discretionary** budget with `$0` emergency (`MB_SEPT_LUMP_MONTH` / `MB_SEPT_LUMP_AMOUNT`), so its rows add up to the $800 it was actually tracked against. From `MB_BUDGET_SPLIT_MONTH` (`'2026-10'`) it is `MB_SPLIT_DISCRETIONARY` ($400) + `MB_SPLIT_EMERGENCY` ($200) = $600.
 
 **Current default template:**
-- Income: Social Security, 401k Distribution
+- Income: Social Security, 401k Distribution (auto: the required minimum)
 - Fixed/reserve list: **Fair Share (household)** (auto-synced), CoPays / Prescriptions
-- Variable budgets: Discretionary, **Emergencies / Unplanned** (Gas removed — she has no car; Cell Phone removed — she's on the family plan)
+- Variable budgets: Discretionary, **Unplanned**, **Emergency Fund** (Gas removed — she has no car; Cell Phone removed — she's on the family plan)
 - The wrapped-away household bills (Rent, Internet, Water / Sewer / Trash, Electric, Nat Gas / Heat) and the Groceries budget were removed when she moved in with the family — their cost is represented by the single Fair Share line. Car Insurance / Car Repairs / Car Registration / Netflix / BritBox were also dropped (no longer tracked).
 
 **Fixed bill kinds:**
@@ -288,17 +313,19 @@ Editing a budget input in the Monthly Template card applies **from the month cur
 
 **Mom Budget tab layout:**
 - Header row: back button, `Mom Budget` title, month input, existing-month dropdown
-- **Shortcut bar** under the header (`MB_SHORTCUTS` / `mbJumpTo(target)`): task-named buttons that scroll to a section by its `mb-sec-*` id — add a purchase / emergency (also focuses that ledger's description box), yearly 401(k) withdrawal, 401(k) balance, 401(k) withdrawals, RMD, budget amounts. Jumping to the balance tracker or the RMD card opens it first.
+- **Shortcut bar** under the header (`MB_SHORTCUTS` / `mbJumpTo(target)`): task-named buttons that scroll to a section by its `mb-sec-*` id — add a purchase / an unplanned cost / an emergency (each also focuses that ledger's description box), yearly 401(k) withdrawal, 401(k) balance, 401(k) withdrawals, RMD (jumps to the balance inputs inside the withdrawal card), budget amounts. Jumping to the balance tracker opens it first.
 - **Default month** (`mbDefaultMonth()`): the current month, but never earlier than `MB_BUDGET_SPLIT_MONTH` — so the tab opens on the $400 + $200 setup rather than September's one-off lump, and tracks the calendar normally from October on.
 - **No stat rows at all.** Both were removed: every tile duplicated something else on the page. `Monthly Income` and `Overall Spending Left` live in the Month Math card, `Spending Used` repeated the Overall card's own sub-line, and `Discretionary Left` / `Emergency Left` repeat the total strip at the top of each ledger card. The phone PWA keeps `Overall Spending Left` as her headline.
 - Annual summary: collapsed by default behind an Expand/Minimize button; open state persists in `localStorage` key `rentals_mom_budget_year_stats_open`
 - Main layout:
-  - Left column cards: **Discretionary**, **Emergencies / Unplanned** (the two spending ledgers sit together at the top), **Fair Share** (display-only: the `auto` line's name and monthly amount — no paid checkbox, badges, or sort; it is a set amount, so `mbCalcMonth` always counts it in `fixedPaid` / `cashLeft`), a **Fixed Bills** card with paid-tracking rows *only if* a non-auto fixed bill exists (none by default; the sort dropdown is gone), then the three 401(k) cards
-  - Right sticky column: Month Math and Monthly Template
+  - Left column cards: **Discretionary**, **Unplanned**, **Emergency Fund** (the three ledgers sit together at the top), **Fair Share** (display-only: the `auto` line's name and monthly amount — no paid checkbox, badges, or sort; it is a set amount, so `mbCalcMonth` always counts it in `fixedPaid` / `cashLeft`), a **Fixed Bills** card with paid-tracking rows *only if* a non-auto fixed bill exists (none by default; the sort dropdown is gone), then the 401(k) cards
+  - Right sticky column: Month Math, Transfers, and Monthly Template
 
 **401(k) RMD calculator** (`mbRmdCard()` / `mbCalcRmd()` / `mbUpdateRmd()`): card at the bottom of the left column. It is **collapsible and starts minimized** (`mbRmdOpen()` / `mbToggleRmd()`, `localStorage` key `rentals_mom_budget_rmd_open`, default closed) — reference material rather than a daily input. While closed the header still carries the headline figure (`2026 minimum $X`, `Not required yet`, or `Balance not entered`). The same card also shows a **"Withdrawal to fund the monthly budget"** section (`mb401kIncomeItem()` / `mbCalc401kWithdrawal()`): it treats the monthly-template 401(k) income line (id `401k`, else name match) as the desired **net** and grosses it up for the 20% withholding (`gross = net ÷ 0.80`), showing monthly/annual gross, withheld, and net, plus a note comparing the annualized gross against the RMD minimum (met vs. shortfall). Live-syncs from the template amount; app-only (not on the phone PWA). Her birth date is a **fixed constant** (`MOM_RMD_BIRTH_YEAR = 1952`, born Aug 12, 1952; retired, no spouse → IRS Uniform Lifetime Table applies), so the **only editable input is the prior Dec 31 balance**, stored in `state.momBudget.rmd.balance` and saved with the record. `RMD = balance ÷ RMD_UNIFORM_LIFETIME[ageThisYear]` (IRS Uniform Lifetime Table, 2022+); shows yearly minimum + monthly equivalent. `mbRmdStartAge(birthYear)` applies SECURE Act 2.0 start ages (73 for 1951–1959, 75 for 1960+) and the card shows a "not required yet" note if below it. App-only — not surfaced on the phone PWA.
 
-**Three cards, in this order** (all returned by `mbRmdCard()`): **401(k) Withdrawal to Fund the Monthly Budget** (`#mb-sec-401k-budget`, always open; carries a one-line note stating the RMD and a green ✓ / amber ⚠️ on whether the withdrawal covers it) → **401(k) Balance Tracker** (`#mb-sec-401k`, `_mb401kTrackerOpen` / `mbToggle401kTracker()`, header shows `≈ $X today` while closed) → **Traditional 401(k) Minimum Distribution (RMD)** (`#mb-sec-rmd`, `mbRmdOpen()` / `mbToggleRmd()`, header shows the minimum while closed). The last two **start minimized on every load** — module flags, not `localStorage` (the old `rentals_mom_budget_rmd_open` key is gone). Inside the tracker, the statement date/balance inputs are tucked behind their own Expand button (`_mb401kStatementOpen`).
+**In the automatic plan (`rmdMode`) there are two cards, not three:** the withdrawal card is titled `401(k) Yearly Withdrawal: Required Minimum Only` and shows the RMD calculation **once** — the gross / net / withheld figures, a math line (age, IRS factor, balance ÷ factor), and, under `Balance the minimum is based on` (`#mb-sec-rmd`), the distribution-year and Dec 31 balance inputs — followed by the balance tracker. The separate RMD card and the "meets the minimum" note only render when the withdrawal is *not* simply the minimum. **Each January, enter the real Dec 31 balance:** the saved balance is a projection until then, and under-withdrawing is penalized. The paragraphs below describe the pre-plan layout, which the code still supports.
+
+**Three cards, in this order** (when not in `rmdMode`; all returned by `mbRmdCard()`): **401(k) Withdrawal to Fund the Monthly Budget** (`#mb-sec-401k-budget`, always open; carries a one-line note stating the RMD and a green ✓ / amber ⚠️ on whether the withdrawal covers it) → **401(k) Balance Tracker** (`#mb-sec-401k`, `_mb401kTrackerOpen` / `mbToggle401kTracker()`, header shows `≈ $X today` while closed) → **Traditional 401(k) Minimum Distribution (RMD)** (`#mb-sec-rmd`, `mbRmdOpen()` / `mbToggleRmd()`, header shows the minimum while closed). The last two **start minimized on every load** — module flags, not `localStorage` (the old `rentals_mom_budget_rmd_open` key is gone). Inside the tracker, the statement date/balance inputs are tucked behind their own Expand button (`_mb401kStatementOpen`).
 
 **401(k) balance tracker** (its own card — `mb401kTrackerHtml()` / `mbCalc401kEstimate()` / `mbLoad401kProxy()`): estimates today's balance without logging in to the plan. Her plan (Lincoln) holds a single fund, **State Street Target Retirement Income (NL)** — a collective trust with no public price — so the last quarterly statement balance is rolled forward with the dividend-adjusted daily closes of its public twin, `MOM_401K_PROXY_SYMBOL = 'SSFOX'` (validated on Q3 2026: SSFOX −0.58% vs. statement −0.59%). Inputs live in `state.momBudget.rmd.tracker = { asOf, balance, withdrawals:[{id,date,amount}] }` (normalized by `mbNormalize401kTracker`, saved with the record): the statement closing date + balance, re-entered each quarter, plus any gross withdrawals since. `estimate = balance × P(latest)/P(asOf) − Σ withdrawal × P(latest)/P(withdrawal date)`; withdrawals dated on/before `asOf` are ignored (already in the statement). Prices come from the authenticated worker action `get_fund_proxy_history` (module cache `_mb401kProxy`, loaded un-awaited from `renderMomBudget`). **Future withdrawals are automatic:** `mbApply401kAutoWithdrawals()` (run in `renderMomBudget`) records a gross withdrawal dated each Jan 1 once that date arrives — `tracker.autoAmount` if set, else the budget's `mbCalc401kWithdrawal().grossAnnual` — as an ordinary `auto: true` withdrawal entry, and advances `tracker.autoThrough` so a year is never recorded twice (or re-created after being removed) and a later budget change never restates a past year. The card's single **Withdrawals** list shows the next scheduled Jan 1 row (with **Change**) above the recorded ones; both edits go through `#mom-401k-modal` (`mbOpen401kModal('record' | 'yearly')` / `mbSave401kModal()`), where a recorded amount can be entered as what left the account or as what she received (grossed up ÷ 0.80). So no statement re-entry is needed; a newer statement is only an optional drift reset. **The RMD falls back to the tracker:** `mbRmdBalance(year)` uses the typed `rmd.balance` only when `rmd.balanceYear === year` (set when typed; old records are tagged with their `rmd.year`), else `mb401kEstimateAt('<year-1>-12-31')` — or today's estimate, labelled a projection, while that Dec 31 is still ahead. `mbCalcRmd()` returns `balanceSource` (`manual` / `estimate` / `projected` / `none`). The block also shows next year's RMD if the year ended at today's estimate, and how many years of budget withdrawals the balance covers; the collapsed card header carries `≈ $X today`. **The statement balance is never hardcoded — this repo is public.** It is either typed in the app or loaded into private KV as `mom_401k_statement` = `{ asOf, balance }` (`npx wrangler kv key put --binding RENTALS --remote mom_401k_statement '{…}'` from `cloudflare/`); `applyMom401kStatement()` in `handleGetMomBudget` adopts it whenever it is newer than the tracker's own statement, and the app persists it on its next save. App-only (not on either phone PWA).
 
@@ -318,15 +345,16 @@ discretionaryAdjusted =
 
 **Ledger cards:**
 - Every ledger is stored per month under `months['YYYY-MM']`, so a new month starts empty on its own and earlier months are kept intact.
-- Discretionary (🛍️) and Emergencies / Unplanned (🚨) carry an `icon` from `MB_VARIABLE_META` in the card title so the two spending sections stand apart at a glance.
-- Discretionary and Emergencies / Unplanned pass `budgetKey` and `history: true` to `mbLedgerCard` (both are required for the history block, which measures against a budget):
-  - `budgetKey` renders `mbLedgerTotalHtml()` — a strip at the top of the card with the **running total for the month on screen**, that month's budget, and the amount left (red when over). It re-renders with every entry added or deleted.
+- Discretionary (🛍️), Unplanned (🚨) and Emergency Fund (🛟) carry an `icon` from `MB_VARIABLE_META` in the card title so the sections stand apart at a glance.
+- All three pass `budgetKey` and `history: true` to `mbLedgerCard` (both are required for the history block, which measures against a budget). The Unplanned and Emergency Fund cards are fed `mbUnplannedEntries()` / `mbSafetyNetEntries()`, which append the automatic cascade line (`auto: true`, no delete).
+  - `budgetKey` renders `mbLedgerTotalHtml()` — a strip at the top of the card that **leads with what is left**: Discretionary shows `Left to spend · <month>` (green; `$0.00` plus `over, taken from Unplanned` when overspent) with spent / budget beside it; Unplanned shows `YYYY funds available` (`mbUnplannedRun`), what was carried in, and a red `short, taken from the Emergency Fund` line when it ran out; the Emergency Fund shows `Emergency Fund balance · built up since <month>` (`mbLedgerFundStat`), naming the starting balance and anything moved from Unplanned. It re-renders with every entry added or deleted.
   - `history: true` renders `mbLedgerHistoryHtml(section, budgetKey)` — a collapsed **History & year to date** panel whose summary line carries the YTD figure even while closed. Inside: one row per earlier tracked month (entry count, that month's budget, spend, and an over/under/on-budget pill), then a **year-to-date roll-up** row. Clicking a month row calls `mbSetMonth()` to open it.
-  - Stats helpers: `mbTrackedMonthsThrough(monthKey)` walks `MB_TRACKING_START_MONTH` → the month on screen; `mbLedgerMonthStat(section, budgetKey, monthKey)` returns `{count, spent, budget, diff}`; `mbLedgerYearStat(section, budgetKey, year)` rolls up that year's tracked months. **Budgets come from the schedule, not from saved months**, so a month the owner never opened still counts toward YTD. Rows for months with neither a budget nor spending are dropped (the emergency bucket didn't exist before October). `mbOverUnderHtml(diff)` renders the pill.
+  - Stats helpers: `mbTrackedMonthsThrough(monthKey)` walks `MB_TRACKING_START_MONTH` → the month on screen; `mbLedgerMonthStat(section, budgetKey, monthKey)` returns `{count, spent, budget, diff, overflow}` (`spent` includes the cascade amount for Unplanned and the Emergency Fund); `mbLedgerYearStat(section, budgetKey, year)` rolls up that year's tracked months; `mbLedgerFundStat(section, budgetKey)` is the never-resetting running balance (`opening + budget + swept − spent`), shown as a `Fund balance` row in the Emergency Fund's history. **Budgets come from the schedule, not from saved months**, so a month the owner never opened still counts toward YTD. Rows for months with neither a budget nor spending are dropped (the emergency bucket didn't exist before October). `mbOverUnderHtml(diff)` renders the pill.
 - **There is no Other Expense Overages card.** It was removed: no default fixed bill is a variable bill any more, so it never had a row to show, and it had no manual Add. The overage **math survives** — `mbCalcMonth` still computes `fixedOver` / `otherOverages` from `MB_VARIABLE_FIXED_BILL_IDS` and legacy `month.otherExpenses`, they still reduce `discretionaryAdjusted` and count toward `trackingUsed`, and Month Math still renders its `Other overages` + `Adjusted discretionary` rows whenever the total is non-zero. Only the dead row builder (`mbFixedOverageEntries`) went with the card.
 
 **Monthly Template card:**
-- Income template rows and fixed template rows are edited here.
+- Income template rows and fixed template rows are edited here. The 401(k) income row (`autoType: 'rmd'`) is read-only with an italic `Auto:` line; `mbUpdateTemplateItem` / `mbToggleTemplateLock` / `mbDeleteTemplateItem` refuse it.
+- **Variable Budgets rows** (`mbVariableBudgetRow`): the bucket name with its account on a muted line underneath; an automatic amount (the Emergency Fund) is shown as text, or `starts Nov 2026` before the plan begins, not as a disabled input, and `mbUpdateVariable` / `mbRemoveVariableChange` refuse it; a `Starting balance` sub-row for a never-resetting fund; and past/scheduled amounts tucked behind an `N amount changes` toggle (`<details class="mb-variable-history">`).
 - Add Income/Add Expense use the branded Mom Budget modal, not inline add rows.
 - Template rows have lock/unlock controls.
 - Fixed template rows show compact italic schedule text under the title instead of frequency/month dropdowns.
@@ -338,8 +366,11 @@ discretionaryAdjusted =
 - **One-time `carStreamingTrimmed` migration:** removes `car-insurance`, `car-repairs`, `registration`, `netflix`, `britbox` from `template.fixed` (no longer tracked).
 - **One-time `cellTrimmed` migration:** removes `cell` (she's on the family cell plan). Default fixed list is now just `fair-share`, `medical`.
 - **One-time `octoberSplitV2` migration:** pins September as the `$800` lump and starts the split on October 1 — `variableSchedule.discretionary = [{from:'2026-09', amount:800}, {from:'2026-10', amount:400}]`, `variableSchedule.emergency = [{from:'2026-10', amount:200}]`, `variable.emergency = 0`. It also sets `octoberBudgetV1`, which it supersedes (that first pass could leave the emergency budget effective from September if the amount was typed with September on screen). Guarded by the flag, so later owner edits are never overwritten. When it applies it sets the module flag `_mbMigrationApplied`, and `renderMomBudget` saves the corrected record instead of re-deriving it every load. **Mirrored in the worker's `normalizeMomBudget`** so the phone is correct even before the app next saves.
+- **One-time `autoPlanV1` migration:** sets `template.autoPlan = { rmdIncome: true, remainderFrom: '2026-11' }`. The amounts themselves are written by `mbSyncAutoPlan` once Fair Share is loaded.
+- **One-time `threeBucketsV1` migration:** renames a first-pass `autoPlan.emergencyFrom` to `remainderFrom` and strips any `emergency` schedule entry from November 2026 on (the first automatic plan wrote the remainder there), so Unplanned is back to $200 and the remainder goes to `safetyNet`.
+- Normalizes `template.fundOpening` (finite, non-negative, cents) and `variable.safetyNet`.
 - Normalizes `variableSchedule`: valid `YYYY-MM` keys only, numeric amounts, sorted, one entry per month.
-- Ensures each month has an `emergency` ledger array.
+- Ensures each month has `emergency` and `safetyNet` ledger arrays.
 - **Gas removed entirely:** `delete`s `template.variable.gas`; `mbCalcMonth`/`mbTemplateTotals` drop gas from all formulas; Gas Left stat, Gas ledger card, and Gas template row are gone. Old month `gas[]` ledger entries are left in storage but unused.
 - Backfills fixed item `frequency`, `dueMonth`, and `paymentAmount` from defaults.
 - Migrates old fixed Gas into the new monthly `gas` ledger, then removes old fixed Gas paid/actual state.
@@ -368,7 +399,7 @@ The page fetches only `get_mom_budget_public_summary`, a public Worker action th
 
 It shows exactly four cards: **`Overall Spending Left`** (with that month's allowance from `month.trackingAllowance` — **no longer a hardcoded $800**), **Fair Share**, the collapsed year status, and the collapsed transaction list.
 
-**Transaction rows** show `date · group`, except that the `Discretionary` group renders **unlabelled** (date only) — everything she sees there is her own day-to-day spending, so the tag is noise. Any other group (`Fixed bills`, `Other expenses`) still names itself. Emergency / unplanned spending is not tracked on her phone.
+**Transaction rows** show `date · group`, except that the `Discretionary` group renders **unlabelled** (date only) — everything she sees there is her own day-to-day spending, so the tag is noise. Any other group (`Fixed bills`, `Other expenses`) still names itself. **Neither the Unplanned bucket nor the Emergency Fund is shown on her phone:** `momPhoneTracking(c)` subtracts both budgets and both ledgers' spending (rounded to cents) from every figure, and the bucket cascade is not applied there, so a Discretionary overage still reads as over on her phone.
 
 > **Keep it to one spending number.** Per-budget breakdown cards (`Discretionary Left`, `Emergencies / Unplanned`) were built and then deliberately removed: Overall Spending Left already answers her only question, and a second, smaller number next to it reads as a contradiction. The public summary still returns `discretionaryBudget` / `discretionarySpent` / `discretionaryRemaining` / `emergencyBudget` / `emergencySpent` / `emergencyRemaining`; the phone simply ignores them. A test asserts the page never mentions either word.
 
@@ -390,6 +421,8 @@ Separate **authenticated** phone PWA ("Red's Stuff Snapshot") — distinct from 
 - **Future Cash Flow Items** card (planning-only `cashflow.future`, sorted by date then name) sits at the bottom of the tab, below Expenses (desktop keeps it between Income and Expenses), and is never added to any total.
 - **731WO mortgage payoff is live**: `livePropertyValue()` swaps the payoff baked into the saved `propertyAssets` value for the current linked mortgage balance in `net_worth.plaidAccounts` (mirror of desktop `propertyMortgagePayoff`), used by both Cash Flow proceeds and Net Worth — so a balance refresh doesn't drift mobile from desktop before the desktop re-saves Net Worth.
 - **Sold properties** are dropped from Cash Flow auto-income (filtered to those still present in `propertyAssets`) and from Net Worth (relies on the desktop rebuilding+saving `net_worth.propertyAssets`, which excludes closed sales).
+
+- **Mom tab mirrors the three buckets:** `momOverflow` (↔ `mbDiscretionaryOverflow`), `momUnplannedRun` (↔ `mbUnplannedRun`) and `momFund` (↔ `mbLedgerFundStat('safetyNet', …)`, incl. the starting balance, shortfall draws and the Jan 1 sweep). `momBucketCards` renders read-only **Unplanned**, **Emergency Fund** and **Transfers** cards under Discretionary, and the hero reads $0 with `over, taken from Unplanned` when Discretionary is overspent. The January 401(k) transfer line is `income line × 12`, labelled "about" (no RMD table on the phone). `tests/mom-budget-variable-budgets.test.mjs` pins these to the desktop month by month — **change one, change the other.**
 
 **Mom tab can add, edit, and delete Discretionary purchases** (date / description / amount; inline **Edit** form; two-tap `✕` → `Delete?`) via `add_mom_budget_entry` / `update_mom_budget_entry` / `delete_mom_budget_entry` — an atomic server-side append, not a full save, so it never clobbers the desktop editor. Desktop reloads Mom Budget on every visit and on tab re-focus, and `_saveMomBudget` reconciles ledgers before every full save: desktop never edits an existing entry, so for any entry it already knew (`_mbKnownEntryIds`) the server copy wins (phone edits and month moves are kept); on top of that it keeps its own additions and its own deletions. A stale desktop copy therefore can't erase, resurrect, or revert a phone change. Her phone PWA reads the same Durable Object record (5s poll), so it shows the purchase as quickly as a desktop edit.
 
@@ -504,6 +537,8 @@ Set the optional `PLAID_REDIRECT_URI` secret for OAuth institutions (must also b
 
 **Account display names** are built in `refreshNetWorthPlaid`. Robinhood accounts get owner prefixes by subtype (brokerage / ira / crypto), followed by a **catch-all** that prefixes any remaining Robinhood account with the item owner — so a Roth IRA becomes "Chris's Robinhood Roth IRA" without hardcoding a subtype string. Already-prefixed names are skipped and joint accounts stay unprefixed. An explicit `PLAID_ITEM_LABELS` entry overrides everything.
 
+**Treasury bonds.** The holdings are the hardcoded `TREASURY_BONDS` list in `worker.js` (CUSIP, coupon, par, annual interest, maturity). **To record a purchase, edit that list** (add a row, or raise `par` / `annualInterest` on an existing CUSIP) and deploy; `TREASURY_PAR` / `TREASURY_ANNUAL_INTEREST` add up from the list, so no separate total needs changing. `defaultTreasuryPortfolio` keeps each holding's last market value until the daily revaluation, so after raising a par either wait for that or scale the saved `net_worth` holding's `marketValue` by hand. The Monthly Budget's Treasury Bonds income line and coupon calendar follow the list automatically; Tax Planning's `treasury_int` is a manual per-year entry and does not.
+
 ---
 
 ### Fair Share (section inside Monthly Budget)
@@ -518,7 +553,7 @@ A collapsible **section inside the Monthly Budget view** — not a standalone ta
 - Card builder: `fsRenderCard()` — injected into `_renderBudgetHtml()` right after the summary bar
 - Math: `fsCalc()` · per-item check: `fsItemShared(item, cat, fs)` · normalizer: `fsNormalize(raw)`
 - Collapse: `fsToggleSection()` (open state in `localStorage` key `rentals_budget_fairshare_open`)
-- Mutators: `fsToggleShared(itemId)`, `fsUpdateSetting(key, value)` — both persist via `_saveBudget()`
+- Mutators: `fsToggleShared(itemId)`, `fsUpdateParticipants(itemId, n)`, `fsUpdateDirect(itemId, amount)` / `fsClearDirect(itemId)`, `fsUpdateSetting(key, value)` — all persist via `_saveBudget()`
 - **Income line:** `fsSyncBudgetIncome()` (called at the top of `_renderBudgetHtml`) keeps an auto, read-only income item `id: 'mom-fair-share'` ("Mom's Fair Share") in `budget.income`, valued at `fsCalc().herShare`, so her contribution counts as household income. It renders read-only (⚖️ "from Fair Share", no edit/lock/delete); `budgetDelete`/`budgetToggleLock` early-return for `FS_INCOME_ID`. It persists in the budget record but its amount is re-synced every render.
 - **Separate family gift — REMOVED (2026-07-03):** the recurring `$400/mo` gift was dropped because recurring gifts are uncompensated transfers under Medicaid's 5-year lookback and could create an eligibility penalty for her. `fsNormalize()` drops any saved `giftAmount`/migration flags; `ensureBudgetLoaded` strips the legacy `mom-family-gift` income line (id kept as `FS_GIFT_INCOME_ID` for cleanup); `mbNormalize`/worker `normalizeMomBudget` filter the `family-gift` fixed line out of saved `mom_budget` records; the phone PWA's Family Gift card and the worker's `month.giftAmount` field are gone. Her payments are Fair Share expense reimbursement only.
 
@@ -538,13 +573,31 @@ A collapsible **section inside the Monthly Budget view** — not a standalone ta
 ```
 There is **no separate bills list** — the bills are the budget's expense items. An item counts as shared if `fairShare.shared[item.id]` is set (explicit override), else it falls back to `FS_SHARED_CAT_DEFAULTS[category]`. Toggling the Shared/Personal pill writes an explicit override.
 
-**`fsCalc()` math** (iterating all budget expense items across `BUDGET_EXPENSE_CATS`):
+**`fsCalc()` math** (iterating all budget expense items across `BUDGET_EXPENSE_CATS`; her share is the **sum of her portion of each shared item**, not one total ÷ household):
 ```
-totalAll    = Σ item.amount
-totalShared = Σ item.amount where fsItemShared(item, cat)
-perPerson   = totalShared / householdSize
-herShare    = roundDollar ? round(perPerson) : perPerson
+for each shared item (utilities folded into housing are skipped):
+  housing-benchmark item   → carryingCost ÷ participants
+  USDA food-benchmark item → the fixed benchmark amount
+  item with a direct amount → min(effectiveAmount, direct)        // her own itemized charge
+  anything else            → effectiveAmount ÷ participants       // effectiveAmount = amount − mortgage principal, if excluded
+herShare = roundDollar ? round(Σ portions) : Σ portions
 ```
+`participants` defaults to the household size, or the three adults for phone / car items (`fsDefaultParticipants`), and can be overridden per item.
+
+**Direct attribution (`fairShare.direct[itemId]`).** When a bill itemizes her own charge (her Verizon line), that actual amount is used instead of a split. `fsItemDirect(item, fs, effAmt)` returns it **capped at the bill** (never a markup), else `null`. UI: a small **$** button on a shared-bill row switches it to a `Her actual $` input, and **÷** switches back behind a `showBrandedNotice` confirmation (it discards the typed amount). The amount is typed by hand — update it when the carrier's per-line charge changes. Exhibit A marks the row `§` / `Actual §` with a `§ Directly attributed expenses` write-up.
+
+**Guardrails on the housing inputs.** Property tax / insurance / HOA are **monthly** fields; each shows its yearly equivalent underneath (`hYearHint`) and property tax turns red above 3% of the home value a year. This exists because an annual $4,800 tax bill sat in the monthly field for weeks, inflating her share by $880/mo.
+
+**The agreement only claims what the data supports.** `agreement.plannedAddress` / `plannedMove` add a paragraph saying the household plans to move and the housing figures are good-faith estimates for that home; `agreement.effectiveDate` sets the "Effective as of" line (Exhibit A's "as of" is still the generation date). The "below fair market rent" wording renders only when `housingBenchmark.fairMarketRent > 0`, the "maintenance, upkeep, and depreciation" wording only when the reserve is non-zero, and the USDA paragraph says "refreshed periodically". The Fair Share card's own explainer follows the same rules.
+
+**Design decisions and saved settings (2026-10-11; live data, not code):**
+- **No rent.** The owner does not want any of her payment reported as rental income, so housing stays strict cost-sharing: her fifth of real carrying costs (property tax, insurance, HOA, shared utilities). Fair-market room rent, depreciation, and a three-adults housing split were each considered and rejected (rent = Schedule E; depreciation = cash above actual cost; ÷ 3 = she subsidizes the children's housing). With the new house bought for cash there is no mortgage interest to share, which is why her housing share is low.
+- **Reserve:** the flat 1% reserve is off (`reservePct: 0`); the four real savings buckets (House Repair, Pool, Basement, Septic — projected annual costs) are marked Shared ÷ 5 instead, so repairs aren't counted twice.
+- **Food:** USDA benchmark (refreshed to the July 2026 report) plus Uber Eats ÷ 3 adults. **Phone:** direct at $51.50 (the $40 military discount on the account is the owner's and is not passed through).
+- **Projections:** the bills describe the planned 4781 Mohegan Court home while the family still lives at 731 Wye Oak Dr (move expected around the end of January 2027); the agreement says so. Replace with real bills after the move.
+- **Result:** $1,045/month, agreement effective 2026-10-11. September and October 2026 were paid at the old, overstated amount; the owner is refunding the excess separately.
+- Graded roughly B+ (Medicaid lookback) / A− (tax) pending the refund, a signed agreement, and attorney/CPA review. General reasoning, not professional advice.
+
 The card header shows `herShare` (always visible, even collapsed) and a green "Cost-sharing, not income" note when open. Personal items dim and their pill reads **Personal**. No SSI/SSA/FBR/buffer logic. `herShare` is also surfaced as a read-only **"Mom's Fair Share" income line** in the budget's Income section (see `fsSyncBudgetIncome` above) so it rolls into Monthly Income / Net.
 
 **Persistence:** `fairShare` rides inside the `budget` KV record. The budget loader (`renderBudget`) reads it back via `fsNormalize(raw.fairShare)` — like `worksheets`, it must be pulled from `raw` or it's lost on the next save. `fsNormalize` also migrates the original standalone version's `roundUp` → `roundDollar`.
@@ -669,7 +722,7 @@ Maintenance entries use `capitalImprovement: true` when marked **Improvement** i
 #### Mom Budget (global — not per-property)
 | Action | Extra payload | Returns |
 |---|---|---|
-| `get_mom_budget` | — | `{ data: { template, months } }` |
+| `get_mom_budget` | — | `{ data: { template, months, rmd } }` — also adopts the private `mom_401k_statement` and `mom_fund_opening` KV values when the record has none newer / none of its own |
 | `save_mom_budget` | `data: { template, months }` | `{ success: true }` — full overwrite of the Mom Budget record (stored in the `MOM_BUDGET_STORE` Durable Object, backed up to KV `mom_budget`) |
 | `add_mom_budget_entry` | `section: 'discretionary'`, `entry: { date, name, amount }` | `{ success, entry, data }` — atomically appends one ledger entry (month = `date`'s `YYYY-MM`) inside the Durable Object. Used by the mobile Snapshot app's Mom tab. |
 | `delete_mom_budget_entry` | `section: 'discretionary'`, `month: 'YYYY-MM'`, `id` | `{ success, data }` — atomically removes one ledger entry; `404` (with `data`) if already gone. |
@@ -764,8 +817,10 @@ defaults:{property}        →  { rent: X, management: Y, ... }
 depreciation:{property}    →  { costBasis, placedInService, purchaseDate }
 maintenance:{property}     →  Array of maintenance entry objects
 investment:{property}      →  Investment config object
-budget                     →  { income: [...], expenses: {...}, worksheets: {...}, fairShare: { householdSize, roundDollar, shared: { [itemId]: bool } } }
-mom_budget                 →  { template: { income, fixed, variable, variableSchedule, variableLocks }, months: { [YYYY-MM]: {...} } }
+budget                     →  { income: [...], expenses: {...}, worksheets: {...}, fairShare: { householdSize, roundDollar, shared, participants, direct, agreement, mortgage, foodBenchmark, housingBenchmark } }
+mom_budget                 →  { template: { income, fixed, variable, variableSchedule, variableLocks, autoPlan, fundOpening }, months: { [YYYY-MM]: {...} }, rmd } (KV copy is a backup of the Durable Object record)
+mom_401k_statement         →  { asOf, balance } — private 401(k) statement, adopted by the worker (never in the repo)
+mom_fund_opening           →  { safetyNet } — private Emergency Fund starting balance, adopted by the worker (never in the repo)
 solar:config               →  Solar system config object
 solar:entries              →  Array of solar entry objects
 solar:summaries            →  { [year]: { ... } }
@@ -846,41 +901,31 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ## Recent Updates
 
-### 2026-10-11 — Mobile Snapshot Mom tab mirrors the three buckets
+### 2026-10-11 — Treasury purchase; totals derive from the bond list
 
-- `mobile/index.html` now mirrors the desktop bucket logic: `momOverflow` (↔ `mbDiscretionaryOverflow`), `momUnplannedRun` (↔ `mbUnplannedRun`) and `momFund` (↔ `mbLedgerFundStat('safetyNet', …)`, incl. the starting balance, shortfall draws and the Jan 1 sweep). **Change one, change the other** — `tests/mom-budget-variable-budgets.test.mjs` pins them month by month.
-- The Mom tab shows read-only **Unplanned**, **Emergency Fund** and **Transfers** cards under Discretionary (`momBucketCards`), and the hero reads $0 with `over, taken from Unplanned` when Discretionary is overspent. Only Discretionary can still be added/edited there. This reverses the 2026-10-01 "discretionary only" note for the Snapshot app; **her own Money Left phone app is unchanged and still shows discretionary only.**
-- The January Transfers line for the 401(k) is `income line × 12` and labelled "about" (the Snapshot app has no RMD table). `mobile/sw.js` `CACHE_NAME` → `v49`. No worker change.
+- Bought $6,000 par of **912810UW6** (5.125%, already held): the holding is now $41,000 par / $2,101.25 a year; portfolio $156,000 par / $7,418.00 a year. `TREASURY_PAR` / `TREASURY_ANNUAL_INTEREST` now add up from `TREASURY_BONDS` instead of being hardcoded twice. The saved `net_worth` and `budget` records were updated to match (Treasury Bonds income $592.54 → $618.17), and `tax_planning:2027` was seeded with `treasury_int: 7418` (locked). 2026 Tax Planning is unchanged — the first coupon is February 2027. **Worker deployed.**
 
-### 2026-10-11 — Mom Budget: three buckets (Discretionary, Unplanned, Emergency Fund)
+### 2026-10-11 — Mom Budget: the automatic plan and three buckets
 
-- **Three variable budgets:** Discretionary ($400), **Unplanned** ($200) and **Emergency Fund** (the remainder). `MB_TRACKED_VARIABLE_KEYS = ['discretionary', 'emergency', 'safetyNet']`.
-- **Mind the keys.** `emergency` is the $200 bucket that began in October 2026 as "Emergencies / Unplanned" and is now labelled **Unplanned** (key kept so its schedule, ledger and history carry on untouched). **`safetyNet` is the Emergency Fund** — new ledger `months['YYYY-MM'].safetyNet`, card id `mb-sec-safetyNet`, icon 🛟.
-- **The remainder goes to `safetyNet`:** `mbSyncAutoPlan` writes `income − fixed − discretionary − emergency` to `variableSchedule.safetyNet` from `autoPlan.remainderFrom` (renamed from `emergencyFrom`). The one-time `threeBucketsV1` migration renames that flag and strips any `emergency` schedule entry from November 2026 on, which the first automatic plan may have written there.
-- **Unplanned is a yearly fund; the Emergency Fund never resets.** `MB_VARIABLE_META[key].carryover` is `'year'` for Unplanned (strip reads `YYYY funds available` from `mbLedgerYearStat`: $200 a month rolling forward within the calendar year, starting over each Jan 1) and `'always'` for the Emergency Fund (`mbLedgerFundStat`, running across years). **Each Jan 1 Unplanned's unspent balance moves to the Emergency Fund:** `MB_VARIABLE_META.safetyNet.sweepFrom = 'emergency'` makes `mbLedgerFundStat` add, for every calendar year that has ended before the month on screen, that year's Unplanned leftover (`max(0, budget − spent)`, never a shortfall) as `swept` / `sweeps[]`. It is computed, not stored. **Discretionary overages come out of Unplanned:** `mbDiscretionaryOverflow(monthKey)` (= `−mbCalcMonth().discretionaryRemaining` when positive, and only in a month that has an Unplanned budget) is added to Unplanned's `spent` in `mbLedgerMonthStat`, shown as one automatic `Discretionary over budget` line by `mbUnplannedEntries()`, and makes the Discretionary strip read `$0.00` left with `$X over, taken from Unplanned`. Also computed, never stored: the saved ledgers and `mbCalcMonth`'s cash totals are untouched, so the worker and her phone are unaffected (her phone still shows a discretionary overage as over). **Unplanned shortfalls come out of the Emergency Fund:** `mbUnplannedRun(monthKey)` walks Unplanned's balance month by month through the calendar year; it never goes below $0 — a month it can't cover is drawn from the Emergency Fund (`lastDraw`), shown as an automatic `Unplanned ran out` line by `mbSafetyNetEntries()` and counted in the fund's `spent` via `mbLedgerMonthStat('safetyNet', …)`. The next month's $200 is then fully available, and the Jan 1 sweep is that run's Dec balance. So the buckets cascade Discretionary → Unplanned → Emergency Fund, all computed and none stored. **Accounts:** Discretionary and Unplanned live in her checking account, the Emergency Fund in her high-interest savings (`MB_VARIABLE_META[key].account`, shown in the notes and template rows); the Jan 1 sweep is a real checking → savings transfer. Savings interest is not modelled. A **Transfers** card under Month Math (`mbTransfersCard`, `#mb-sec-transfers`, from `MB_AUTO_PLAN_MONTH`) shows the real cash moves for the month on screen: Social Security in, Fair Share out, the $600 left in checking, and the rest moved to savings — plus, in January, the 401(k) net lump and the prior year's Unplanned leftover. The monthly transfer is smaller than the Emergency Fund's monthly budget because the 401(k) pays once a year. **Starting balance:** `template.fundOpening[key]` is money already in a never-resetting fund before tracking began; `mbLedgerFundStat` adds it as `opening`. It is edited in the Monthly Template card (`mbUpdateFundOpening`) and is **never hardcoded** (public repo) — it can also be loaded into private KV as `mom_fund_opening` = `{ safetyNet: <dollars> }`, which the worker's `applyMomFundOpening()` adopts in `handleGetMomBudget` only while the record has no value of its own for that bucket. Month Math lists all three budgets; the shortcut bar has `Add an unplanned cost` and `Add an emergency`.
-- **Worker mirrored** (`MB_TRACKED_VARIABLE_KEYS`, month normalisation, `momBudgetTemplateTotals`, `calcMomBudgetMonth`); `momPhoneTracking` subtracts both owner buckets (rounded to cents), so her phone still shows discretionary only. The mobile Snapshot Mom tab already reads discretionary only — no change. **Worker deploy required.**
+Full description in the Mom Budget section ("The plan and the three buckets"). In short:
 
-### 2026-10-11 — Mom Budget: automatic plan (401(k) at the RMD, emergencies = what is left)
+- **401(k) at the required minimum only** (`autoType: 'rmd'` income line, `rmdMode`), one early-January withdrawal paid straight to savings; the RMD calculation is shown once, inside the withdrawal card.
+- **Three buckets:** Discretionary $400 (checking), Unplanned $200 (key `emergency`; checking; yearly roll-over), Emergency Fund (key `safetyNet`; savings; the remainder; never resets; private starting balance).
+- **Cascade, computed not stored:** Discretionary overage → Unplanned; Unplanned shortfall → Emergency Fund; Unplanned's Dec 31 balance → Emergency Fund each Jan 1.
+- **New UI:** Transfers card, Emergency Fund ledger card, tidied Variable Budgets rows, ledger strips that lead with what is left, Month Math rows for all three buckets.
+- **Worker mirrored** for the new key; `momPhoneTracking` keeps both owner buckets off her Money Left phone app, which is unchanged. **The mobile Snapshot Mom tab now mirrors all of it read-only** (`momOverflow` / `momUnplannedRun` / `momFund` / `momBucketCards`), reversing the 2026-10-01 "discretionary only" note for that app; `mobile/sw.js` `CACHE_NAME` → `v49`. **Worker deployed.**
+- Tests: `tests/mom-budget-variable-budgets.test.mjs` grew to cover the buckets, the cascade, the sweep, the starting balance and desktop-vs-mobile parity.
+- Superseded the same day (do not resurrect): an interim version put the remainder in the `emergency` bucket and made Unplanned a never-resetting fund. The `threeBucketsV1` migration cleans that up.
 
-- **Her 401(k) income is the required minimum, nothing more.** With Fair Share down to about $1,045, Social Security alone covers her budget, so the 401(k) only pays out what the IRS requires. The `401k` income line is now `auto: true, autoType: 'rmd'`: read-only, valued at `mbCalcRmd().netMonthly` (the RMD for the RMD card's year, less 20% withholding, ÷ 12). `mbCalc401kWithdrawal()` returns `rmdMode: true` with `grossAnnual` equal to the RMD **to the cent** (never grossed back up from the rounded income line), so the Jan 1 auto-withdrawal (`mb401kAutoAmount`) is exactly the minimum.
-- **The emergency budget is the remainder.** From `MB_AUTO_PLAN_MONTH` (`'2026-11'`) it equals income − fixed bills (Fair Share) − the discretionary budget, so `Unallocated after budget` is $0. `mbSyncAutoPlan()` (run at the top of `_renderMomBudgetHtml`) writes it as an ordinary `variableSchedule.emergency` entry effective from the **current** month, so months already tracked keep the budget they had and **the worker, her phone and the mobile Snapshot need no formula** — they read the schedule as before. It skips while the Monthly Budget (the Fair Share figure) isn't loaded.
-- Both are switched on by `template.autoPlan = { rmdIncome, emergencyFrom }`, seeded by the one-time `autoPlanV1` migration in `mbNormalize`. A sync that changes anything sets `_mbMigrationApplied`; `renderMomBudget`, the 401(k) price load, and any edit's own save persist it (`_saveMomBudget` clears the flag).
-- **One RMD calculation, shown once.** In `rmdMode` `mbRmdCard()` returns two cards, not three: the withdrawal card carries the math line (age, IRS factor, balance ÷ factor) and, under `Balance the minimum is based on` (`#mb-sec-rmd`), the distribution-year / Dec 31 balance inputs. The separate `Traditional 401(k) Minimum Distribution (RMD)` card only renders when the withdrawal is not simply the minimum.
-- UI: the 401(k) income row and the Emergencies / Unplanned budget row are read-only with an italic `Auto:` line (no lock / delete / ×); the withdrawal card is titled `401(k) Yearly Withdrawal: Required Minimum Only`; Month Math tags the emergency row `(what is left)`. `mbUpdateVariable` / `mbRemoveVariableChange` / `mbUpdateTemplateItem` / `mbToggleTemplateLock` / `mbDeleteTemplateItem` refuse the auto lines.
-- **Each January, type the real Dec 31 balance into the RMD card** — the minimum is only as good as that balance, and under-withdrawing is penalized. **The emergency fund no longer resets on Jan 1:** its ledger strip (`Emergency Fund balance`) and a `Fund balance` row in its history use `mbLedgerFundStat()`, which totals every tracked month since the fund began, across calendar years. The year-to-date and `Actual pace` rows are still per calendar year.
+### 2026-10-11 — Fair Share: audit, corrections, and direct attribution
 
-### 2026-10-11 — Fair Share agreement: planned move, effective date, no unsupported claims
+Full description in the Fair Share section. In short:
 
-- **Agreement can describe a planned move.** `fairShare.agreement.plannedAddress` / `plannedMove` (free text) add a paragraph stating the household plans to move and that the housing-related amounts in Exhibit A are good-faith estimates for that home. `agreement.effectiveDate` (`YYYY-MM-DD`, blank = today) sets the "Effective as of" line; Exhibit A's "as of" date is still the day it is generated. All three are editable in `#fs-agreement-modal`.
-- **The agreement only claims what the data supports.** The "below fair market rent" wording renders only when `housingBenchmark.fairMarketRent > 0`; the "maintenance, upkeep, and depreciation" wording only when the reserve is non-zero; the USDA paragraph says "refreshed periodically", not "each time this agreement is regenerated".
-- **Fair Share card wording follows the same rules**, and the housing inputs guard against the unit slip: each monthly field (property tax / insurance / HOA) shows its yearly equivalent underneath (`hYearHint`), and property tax turns red when it exceeds 3% of the home value a year. The quick-math digest names the shared Misc Savings lines and any non-USDA items in Weekly Spending.
-- **Saved settings as of this date (live data, not code):** the flat 1% reserve is off (`reservePct: 0`) and the four real savings buckets (House Repair, Pool, Basement, Septic) are marked Shared instead; Uber Eats ÷ 3 adults; phone direct at $51.50; property tax corrected to $400/mo (an annual $4,800 had been typed into the monthly field).
-
-### 2026-10-11 — Fair Share: direct attribution of an itemized charge
-
-- **A shared bill can carry Mom's actual itemized charge instead of an equal split.** The first full Verizon bill itemizes her line at $51.50, while `bill ÷ 3 adults` charged her for a slice of the other lines (incl. Ellie's iPad). `fairShare.direct[itemId]` holds her actual amount; `fsItemDirect(item, fs, effAmt)` returns it **capped at the bill** (never a markup), else `null` for the normal split. Applies in the plain/mortgage-exclusion branch of `fsCalc` only — the housing and USDA items keep their own valuation. UI: a small **$** button on each shared-bill row switches it to a `Her actual $` input (`fsUpdateDirect`), and **÷** switches back (`fsClearDirect`, behind a `showBrandedNotice` confirmation since it discards the typed amount). The item still counts fully in `totalShared`.
-- **Agreement:** Method clause gains a conditional direct-attribution sentence; Exhibit A marks the row `§`, the Divided-Among column reads `Actual §`, and a boxed `§ Directly attributed expenses` write-up names each one. **The amount is typed by hand — update it when the carrier's per-line charge changes.**
-- **Worker mirrored** in `calcFairShareFromBudget` so the phone PWA's Fair Share matches. **Worker deploy required.**
+- **Data error fixed:** property tax had been entered as $4,800 in a *monthly* field (it is $4,800 a year). Her share fell from about $1,866 to $1,045 after this and the changes below. Monthly housing fields now show their yearly equivalent and flag an implausible tax.
+- **Direct attribution** (`fairShare.direct`, `fsItemDirect`, **$** / **÷** buttons): her phone line is her actual $51.50, not a third of the bill.
+- **Settings changed:** flat 1% reserve replaced by the four real savings buckets; Uber Eats ÷ 3 adults; insurance projection $175/mo; USDA benchmark refreshed to July 2026.
+- **Agreement:** planned-move paragraph, effective date, direct-attribution write-up, and wording that only claims what the data supports. Regenerated effective 2026-10-11 at $1,045/month.
+- **Worker mirrored** in `calcFairShareFromBudget` (direct amounts). **Worker deployed.**
 
 ### 2026-10-05 — Mom Budget: 401(k) balance tracker
 
