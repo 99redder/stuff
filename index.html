@@ -7661,7 +7661,7 @@ const MB_VARIABLE_META = {
     // Emergency Fund (see `sweepFrom` below).
     carryover: 'year',
     account: 'Checking',
-    ledgerNote: 'For costs that were not planned but are not emergencies: a gift, a replacement, a one-off bill. Kept separate so a surprise does not eat the month\u2019s discretionary budget. Unused money stays in her checking account and rolls forward month to month; on January 1 whatever is left is transferred to her savings account (the Emergency Fund) and this starts over.'
+    ledgerNote: 'For costs that were not planned but are not emergencies: a gift, a replacement, a one-off bill. Kept separate so a surprise does not eat the month\u2019s discretionary budget. Unused money stays in her checking account and rolls forward month to month; if it runs out, the shortfall comes out of the Emergency Fund. On January 1 whatever is left is transferred to her savings account (the Emergency Fund) and this starts over.'
   },
   safetyNet: {
     label: 'Emergency Fund',
@@ -8706,7 +8706,7 @@ function _renderMomBudgetHtml() {
           note: MB_VARIABLE_META.emergency.ledgerNote
         })}
 
-        ${mbLedgerCard('Emergency Fund', 'safetyNet', m.safetyNet || [], 'Description', 'name', {
+        ${mbLedgerCard('Emergency Fund', 'safetyNet', mbSafetyNetEntries(_mbMonth), 'Description', 'name', {
           budgetKey: 'safetyNet',
           history: true,
           icon: MB_VARIABLE_META.safetyNet.icon,
@@ -9356,8 +9356,10 @@ function mbTrackedMonthsThrough(monthKey = _mbMonth) {
 function mbLedgerMonthStat(section, budgetKey, monthKey) {
   const rows = state.momBudget.months?.[monthKey]?.[section];
   const entries = Array.isArray(rows) ? rows : [];
-  // Unplanned also absorbs whatever Discretionary ran over by that month.
-  const overflow = budgetKey === 'emergency' ? mbDiscretionaryOverflow(monthKey) : 0;
+  // The buckets cascade: Unplanned absorbs whatever Discretionary ran over by
+  // that month, and the Emergency Fund absorbs whatever Unplanned could not cover.
+  const overflow = budgetKey === 'emergency' ? mbDiscretionaryOverflow(monthKey)
+    : budgetKey === 'safetyNet' ? mbUnplannedRun(monthKey).lastDraw : 0;
   const spent = entries.reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0) + overflow;
   const budget = mbVariableAmount(budgetKey, monthKey);
   return { monthKey, count: entries.length + (overflow > 0 ? 1 : 0), spent, budget, diff: budget - spent, overflow };
@@ -9371,6 +9373,39 @@ function mbDiscretionaryOverflow(monthKey) {
   if (!(mbVariableAmount('emergency', monthKey) > 0)) return 0;
   const over = -mbCalcMonth(monthKey).discretionaryRemaining;
   return over > 0.004 ? Math.round(over * 100) / 100 : 0;
+}
+
+// Unplanned's running balance for the calendar year of `monthKey`, month by
+// month through it. The balance never goes below zero: when a month's spending
+// (its own entries plus any Discretionary overage) is more than the fund holds,
+// the shortfall is drawn from the Emergency Fund and Unplanned sits at $0 until
+// the next month's budget arrives. Computed, never stored.
+function mbUnplannedRun(monthKey) {
+  const year = String(monthKey).slice(0, 4);
+  const run = { balance: 0, carriedIn: 0, lastDraw: 0, drawn: 0 };
+  mbTrackedMonthsThrough(monthKey).filter(key => key.slice(0, 4) === year).forEach(key => {
+    const month = mbLedgerMonthStat('emergency', 'emergency', key);
+    run.carriedIn = run.balance;
+    run.balance = Math.round((run.balance + month.diff) * 100) / 100;
+    run.lastDraw = 0;
+    if (run.balance < 0) {
+      run.lastDraw = -run.balance;
+      run.drawn += run.lastDraw;
+      run.balance = 0;
+    }
+  });
+  return run;
+}
+
+// The Emergency Fund ledger for a month as shown: its own entries plus the
+// automatic line for an Unplanned shortfall it covered that month.
+function mbSafetyNetEntries(monthKey) {
+  const month = state.momBudget.months?.[monthKey] || {};
+  const own = Array.isArray(month.safetyNet) ? month.safetyNet : [];
+  const draw = mbUnplannedRun(monthKey).lastDraw;
+  if (!(draw > 0)) return own;
+  const dates = [...(month.emergency || []), ...(month.discretionary || [])].map(e => String(e.date || '')).filter(Boolean).sort();
+  return [...own, { id: 'auto-unplanned-short', date: dates[dates.length - 1] || `${monthKey}-01`, name: 'Unplanned ran out', amount: draw, auto: true }];
 }
 
 // The Unplanned ledger for a month as shown: its own entries plus the automatic
@@ -9418,13 +9453,11 @@ function mbLedgerFundStat(section, budgetKey) {
   const from = MB_VARIABLE_META[budgetKey]?.sweepFrom;
   if (from) {
     const thisYear = _mbMonth.slice(0, 4);
-    const byYear = {};
-    months.filter(monthKey => monthKey.slice(0, 4) < thisYear).forEach(monthKey => {
-      const month = mbLedgerMonthStat(from, from, monthKey);
-      byYear[monthKey.slice(0, 4)] = (byYear[monthKey.slice(0, 4)] || 0) + month.diff;
-    });
-    Object.keys(byYear).sort().forEach(year => {
-      const amount = Math.round(Math.max(0, byYear[year]) * 100) / 100;
+    const years = [...new Set(months.map(monthKey => monthKey.slice(0, 4)))].filter(year => year < thisYear).sort();
+    years.forEach(year => {
+      // Whatever Unplanned still held on Dec 31 (never negative: a shortfall was
+      // already drawn from this fund in the month it happened).
+      const amount = mbUnplannedRun(`${year}-12`).balance;
       if (amount > 0) { stat.sweeps.push({ year, amount }); stat.swept += amount; }
     });
   }
@@ -9502,8 +9535,9 @@ function mbLedgerTotalHtml(section, entries, budgetKey) {
     // 'always': the same running balance since the fund began, across years.
     const yearly = carry === 'year';
     const year = _mbMonth.slice(0, 4);
-    const fund = yearly ? mbLedgerYearStat(section, budgetKey, year) : mbLedgerFundStat(section, budgetKey);
-    const carriedIn = fund.diff - left;
+    const run = yearly ? mbUnplannedRun(_mbMonth) : null;
+    const fund = yearly ? { diff: run.balance } : mbLedgerFundStat(section, budgetKey);
+    const carriedIn = yearly ? run.carriedIn : fund.diff - left;
     const label = yearly
       ? `${escHtml(year)} funds available`
       : `${escHtml(MB_VARIABLE_META[budgetKey].label)} balance${fund.since ? ` <span style="font-weight:400;text-transform:none">· built up since ${escHtml(mbMonthLabel(fund.since))}</span>` : ''}`;
@@ -9516,7 +9550,7 @@ function mbLedgerTotalHtml(section, entries, budgetKey) {
       <div class="mb-ledger-total-meta">
         <div><strong>${carriedIn < 0 ? '−' : ''}${fmt(Math.abs(carriedIn))}</strong> carried in + <strong>${fmt(budget)}</strong> this month</div>
         <div><strong>${fmt(spent)}</strong> spent in ${escHtml(mbMonthLabel(_mbMonth, 'long'))}</div>
-        ${yearly ? `<div>Resets January 1; anything left moves to the Emergency Fund (savings)</div>`
+        ${yearly ? `${run.lastDraw > 0 ? `<div style="color:var(--danger)"><strong>${fmt(run.lastDraw)}</strong> short, taken from the Emergency Fund</div>` : ''}<div>Resets January 1; anything left moves to the Emergency Fund (savings)</div>`
           : `${fund.opening > 0 ? `<div>Includes the <strong>${fmt(fund.opening)}</strong> starting balance</div>` : ''}${fund.swept > 0 ? `<div>Includes <strong>${fmt(fund.swept)}</strong> moved from Unplanned (${fund.sweeps.map(x => `${fmt(x.amount)} on Jan 1, ${Number(x.year) + 1}`).join(', ')})</div>` : ''}`}
       </div>
     </div>`;

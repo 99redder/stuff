@@ -362,15 +362,17 @@ test('Unplanned resets each Jan 1 and its unspent balance moves to the Emergency
   const a = app();
   a.state.momBudget = a.mbNormalize(legacyRecord());
   a.mbSetVariableAmount('safetyNet', '2026-11', 700);
-  // 2026 Unplanned: $200 x 3 months (Oct-Dec) less the $240 spent in October = $360 left.
+  // 2026 Unplanned: October's $240 against $200 leaves it $40 short, which the
+  // Emergency Fund covers; November and December then add $200 each = $400 left.
   vm.runInContext("_mbMonth = '2027-01'", a);
   const unplanned = a.mbLedgerYearStat('emergency', 'emergency', '2027');
   assert.equal(unplanned.budget, 200);                 // January only: the year started over
   assert.equal(unplanned.diff, 200);
   const fund = a.mbLedgerFundStat('safetyNet', 'safetyNet');
   assert.equal(fund.budget, 700 * 3);                  // Nov, Dec, Jan
-  assert.deepEqual(plain(fund.sweeps), [{ year: '2026', amount: 360 }]);
-  assert.equal(fund.diff, 700 * 3 + 360);
+  assert.deepEqual(plain(fund.sweeps), [{ year: '2026', amount: 400 }]);
+  assert.equal(fund.spent, 40);                        // the October shortfall it covered
+  assert.equal(fund.diff, 700 * 3 + 400 - 40);
   assert.match(a.mbLedgerTotalHtml('safetyNet', [], 'safetyNet'), /moved from Unplanned/);
   // Before the year ends nothing has moved yet.
   vm.runInContext("_mbMonth = '2026-12'", a);
@@ -391,7 +393,7 @@ test('a starting balance counts toward the Emergency Fund but not the yearly Unp
   vm.runInContext("_mbMonth = '2026-11'", a);
   const fund = a.mbLedgerFundStat('safetyNet', 'safetyNet');
   assert.equal(fund.opening, 1500.25);
-  assert.equal(fund.diff, 1500.25 + 700);
+  assert.equal(fund.diff, 1500.25 + 700 - 40);        // less October's Unplanned shortfall
   assert.match(a.mbLedgerTotalHtml('safetyNet', [], 'safetyNet'), /starting balance/);
   assert.equal(a.mbLedgerYearStat('emergency', 'emergency', '2026').opening, undefined);
 });
@@ -421,4 +423,24 @@ test('Discretionary spending over its budget comes out of Unplanned automaticall
   const strip = a.mbLedgerTotalHtml('discretionary', a.state.momBudget.months['2026-11'].discretionary, 'discretionary');
   assert.match(strip, /Left to spend/);
   assert.match(strip, /\$55\.00<\/strong> over, taken from Unplanned/);
+});
+
+test('when Unplanned runs out the shortfall comes out of the Emergency Fund', () => {
+  const a = app();
+  a.state.momBudget = a.mbNormalize(legacyRecord());   // October: $240 spent against $200
+  a.state.momBudget.template.fundOpening = { safetyNet: 1000 };
+  vm.runInContext("_mbMonth = '2026-10'", a);
+  const run = a.mbUnplannedRun('2026-10');
+  assert.equal(run.balance, 0);
+  assert.equal(run.lastDraw, 40);
+  const unplanned = a.mbLedgerTotalHtml('emergency', a.mbUnplannedEntries('2026-10'), 'emergency');
+  assert.match(unplanned, /\$0\.00/);
+  assert.match(unplanned, /\$40\.00<\/strong> short, taken from the Emergency Fund/);
+  const rows = plain(a.mbSafetyNetEntries('2026-10'));
+  assert.deepEqual(rows, [{ id: 'auto-unplanned-short', date: '2026-10-08', name: 'Unplanned ran out', amount: 40, auto: true }]);
+  assert.equal(a.mbLedgerFundStat('safetyNet', 'safetyNet').diff, 1000 - 40);
+  // November starts from $0, not from -$40: the next $200 is all available.
+  assert.equal(a.mbUnplannedRun('2026-11').balance, 200);
+  assert.equal(a.mbUnplannedRun('2026-11').lastDraw, 0);
+  assert.equal(a.state.momBudget.months['2026-10'].safetyNet.length, 0);   // nothing stored
 });
