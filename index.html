@@ -12591,6 +12591,7 @@ async function renderCashFlow() {
   await loadCashFlow();
   await loadSavings();
   void startRobinhoodBalanceRefresh(false);
+  void startRobinhoodBalanceRefreshFor(ROBINHOOD_BALANCE_KINDS.brokerage, false);
   _renderCashFlowHtml();
   void hydrateCashFlowDetails().catch(() => {});
 }
@@ -12650,9 +12651,18 @@ function cfRobinhoodChecking() {
   return tpN(state.savings?.accounts?.robinhoodChecking);
 }
 
+function cfRobinhoodBrokerage() {
+  return tpN(state.savings?.accounts?.robinhoodBrokerage);
+}
+
+// Linked account balances pinned to the top of the income column.
+function cfPinnedBalanceTotal() {
+  return cfRobinhoodChecking() + cfRobinhoodBrokerage();
+}
+
 function cfTotals(autoIncome = [], autoExpenses = []) {
   const active = cfActive();
-  const income = cfRobinhoodChecking() +
+  const income = cfPinnedBalanceTotal() +
     [...autoIncome, ...active.income].reduce((s, item) => s + tpN(item.amount), 0);
   const expenses = [...autoExpenses, ...active.expenses].reduce((s, item) => s + cfItemAmount(item), 0);
   return { income, expenses, excess: income - expenses };
@@ -12984,9 +12994,9 @@ function _renderCashFlowHtml() {
 
 function cfColumnHtml(type, title, color, autoItems = []) {
   const manual = (cfActive()[type] || []).slice();
-  const pinnedTotal = type === 'income' ? cfRobinhoodChecking() : 0;
+  const pinnedTotal = type === 'income' ? cfPinnedBalanceTotal() : 0;
   const total = pinnedTotal + [...autoItems, ...manual].reduce((s, item) => s + cfItemAmount(item), 0);
-  const pinnedRow = type === 'income' ? cfPinnedCheckingRow(color) : '';
+  const pinnedRow = type === 'income' ? cfPinnedCheckingRow(color) + cfPinnedBrokerageRow(color) : '';
   const addRow = (_cfEdit?.type === type && _cfEdit?.id === 'new') ? cfEditRow(type, { id: 'new' }) : '';
   const renderManual = item => (_cfEdit?.type === type && _cfEdit?.id === item.id)
     ? cfEditRow(type, item)
@@ -13057,13 +13067,32 @@ function cfColumnHtml(type, title, color, autoItems = []) {
 }
 
 function cfPinnedCheckingRow(color) {
-  const id = 'pinned-robinhood-checking';
+  return cfPinnedBalanceRow(color, {
+    id: 'pinned-robinhood-checking',
+    label: 'Robinhood Joint Checking Current Balance',
+    amount: cfRobinhoodChecking(),
+    loading: state.robinhoodBalanceLoading,
+    detail: 'Pulled from the Savings tab Robinhood Checking balance via the linked bank connection. Date: Current.'
+  });
+}
+
+function cfPinnedBrokerageRow(color) {
+  return cfPinnedBalanceRow(color, {
+    id: 'pinned-robinhood-brokerage',
+    label: 'Chris\'s Robinhood Individual Brokerage Current Balance',
+    amount: cfRobinhoodBrokerage(),
+    loading: state.robinhoodBrokerageBalanceLoading,
+    detail: 'Pulled from the Savings tab Robinhood Brokerage balance via the linked bank connection. Date: Current.'
+  });
+}
+
+function cfPinnedBalanceRow(color, { id, label, amount, loading, detail }) {
   const expanded = cfIncomeExpanded(id);
   return `<tr style="background:rgba(16,185,129,.08)">
     <td colspan="2" style="padding:.55rem .6rem;border-bottom:${expanded ? 'none' : '1px solid var(--border)'}">
       <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" style="padding:.05rem .25rem;font-size:.75rem;line-height:1" onclick="cfToggleIncomeDetails('${id}')" title="${expanded ? 'Hide details' : 'Show details'}">${expanded ? '▾' : '▸'}</button>
-        <span style="font-weight:700">Robinhood Joint Checking Current Balance</span>
+        <span style="font-weight:700">${escHtml(label)}</span>
         <span style="display:inline-block;padding:.08rem .38rem;border-radius:999px;background:rgba(16,185,129,.14);color:var(--success);font-size:.66rem;font-weight:750;text-transform:uppercase">Pinned</span>
       </div>
     </td>
@@ -13071,14 +13100,14 @@ function cfPinnedCheckingRow(color) {
       <div style="position:relative">
         <span style="position:absolute;left:.55rem;top:50%;transform:translateY(-50%);color:var(--text-muted);font-weight:600">$</span>
         <input type="text" inputmode="decimal" class="form-input"
-               value="${escAttr(moneyInputValue(cfRobinhoodChecking()))}"
+               value="${escAttr(moneyInputValue(amount))}"
                disabled
                style="width:100%;padding-left:1.35rem;text-align:right;font-size:.84rem;font-weight:700;color:${color};background:var(--bg);cursor:not-allowed">
       </div>
     </td>
-    <td style="padding:.55rem .4rem;border-bottom:${expanded ? 'none' : '1px solid var(--border)'};text-align:right;color:var(--text-muted);font-size:.72rem;white-space:nowrap">${state.robinhoodBalanceLoading ? '<span class="spinner" style="width:.8rem;height:.8rem;border-width:2px;vertical-align:-.15rem;margin-right:.25rem"></span> updating balance' : 'Linked'}</td>
+    <td style="padding:.55rem .4rem;border-bottom:${expanded ? 'none' : '1px solid var(--border)'};text-align:right;color:var(--text-muted);font-size:.72rem;white-space:nowrap">${loading ? '<span class="spinner" style="width:.8rem;height:.8rem;border-width:2px;vertical-align:-.15rem;margin-right:.25rem"></span> updating balance' : 'Linked'}</td>
   </tr>
-  ${expanded ? `<tr style="background:rgba(16,185,129,.08)"><td colspan="4" style="padding:0 .6rem .65rem 2.25rem;border-bottom:1px solid var(--border);font-size:.72rem;color:var(--text-muted)">Pulled from the Savings tab Robinhood Checking balance via the linked bank connection. Date: Current.</td></tr>` : ''}`;
+  ${expanded ? `<tr style="background:rgba(16,185,129,.08)"><td colspan="4" style="padding:0 .6rem .65rem 2.25rem;border-bottom:1px solid var(--border);font-size:.72rem;color:var(--text-muted)">${escHtml(detail)}</td></tr>` : ''}`;
 }
 
 function cfAutoRow(item, color) {
@@ -14111,7 +14140,7 @@ const ROBINHOOD_BALANCE_KINDS = {
     loadingKey: 'robinhoodBrokerageBalanceLoading',
     errorKey: 'robinhoodBrokerageBalanceError',
     reconnectKey: 'robinhoodBrokerageReconnect',
-    rerenderCashFlow: false,
+    rerenderCashFlow: true,
   },
 };
 

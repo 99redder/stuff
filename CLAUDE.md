@@ -901,6 +901,11 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ## Recent Updates
 
+### 2026-10-13 — Cash Flow: Robinhood Individual Brokerage pinned as income
+
+- **Cash Flow's income column now pins two linked balances**: the Robinhood Joint Checking balance and **Chris's Robinhood Individual Brokerage** balance (`state.savings.accounts.robinhoodBrokerage`, the same live-synced value the Savings tab shows). `cfPinnedBalanceTotal()` (= `cfRobinhoodChecking() + cfRobinhoodBrokerage()`) feeds `cfTotals` and the income column total; both rows render through the shared `cfPinnedBalanceRow()`. `renderCashFlow` kicks off the brokerage refresh alongside checking, and `ROBINHOOD_BALANCE_KINDS.brokerage.rerenderCashFlow` is now `true` so the row updates when the pull lands. Tax Planning's checking-interest projection still uses checking only.
+- **Mirrored in the mobile Snapshot** Cash Flow tab (`brokerage` in `renderCashFlow`); `mobile/sw.js` `CACHE_NAME` → `v50`. No worker change.
+
 ### 2026-10-11 — Treasury purchase; totals derive from the bond list
 
 - Bought $6,000 par of **912810UW6** (5.125%, already held): the holding is now $41,000 par / $2,101.25 a year; portfolio $156,000 par / $7,418.00 a year. `TREASURY_PAR` / `TREASURY_ANNUAL_INTEREST` now add up from `TREASURY_BONDS` instead of being hardcoded twice. The saved `net_worth` and `budget` records were updated to match (Treasury Bonds income $592.54 → $618.17), and `tax_planning:2027` was seeded with `treasury_int: 7418` (locked). 2026 Tax Planning is unchanged — the first coupon is February 2027. **Worker deployed.**
