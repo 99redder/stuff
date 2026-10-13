@@ -904,7 +904,9 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ### 2026-10-13 — Cash Flow: Robinhood Individual Brokerage pinned as income
 
 - **Cash Flow's income column now pins two linked balances**: the Robinhood Joint Checking balance and **Chris's Robinhood Individual Brokerage** balance (`state.savings.accounts.robinhoodBrokerage`, the same live-synced value the Savings tab shows). `cfPinnedBalanceTotal()` (= `cfRobinhoodChecking() + cfRobinhoodBrokerage()`) feeds `cfTotals` and the income column total; both rows render through the shared `cfPinnedBalanceRow()`. `renderCashFlow` kicks off the brokerage refresh alongside checking, and `ROBINHOOD_BALANCE_KINDS.brokerage.rerenderCashFlow` is now `true` so the row updates when the pull lands. Tax Planning's checking-interest projection still uses checking only.
-- **Mirrored in the mobile Snapshot** Cash Flow tab (`brokerage` in `renderCashFlow`); `mobile/sw.js` `CACHE_NAME` → `v50`. No worker change.
+- **Megan's Robinhood Individual Brokerage is pinned too** (`cfMeganBrokerage()` / `cfPinnedMeganBrokerageRow`). It has no Savings field, so it is read from `state.netWorth.plaidAccounts` (Robinhood, `subtype: brokerage`, name starting "Megan"), which Cash Flow already loads and refreshes when stale via `ensureNetWorthLoaded(true)`.
+- The pinned rows have no details arrow / dropdown note.
+- **Mirrored in the mobile Snapshot** Cash Flow tab (`brokerage` / `meganBrokerage` in `renderCashFlow`); `mobile/sw.js` `CACHE_NAME` → `v51`. No worker change.
 
 ### 2026-10-11 — Treasury purchase; totals derive from the bond list
 

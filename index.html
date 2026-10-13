@@ -12655,9 +12655,21 @@ function cfRobinhoodBrokerage() {
   return tpN(state.savings?.accounts?.robinhoodBrokerage);
 }
 
+// Megan's Robinhood Individual Account has no Savings field of its own, so it is
+// read from the linked accounts Net Worth already keeps fresh.
+function cfMeganBrokerageAccount() {
+  return (state.netWorth?.plaidAccounts || []).find(item =>
+    item.side !== 'liability' && item.subtype === 'brokerage' &&
+    /robinhood/i.test(`${item.institution || ''} ${item.name || ''}`) && /^megan/i.test(item.name || '')) || null;
+}
+
+function cfMeganBrokerage() {
+  return tpN(cfMeganBrokerageAccount()?.value);
+}
+
 // Linked account balances pinned to the top of the income column.
 function cfPinnedBalanceTotal() {
-  return cfRobinhoodChecking() + cfRobinhoodBrokerage();
+  return cfRobinhoodChecking() + cfRobinhoodBrokerage() + cfMeganBrokerage();
 }
 
 function cfTotals(autoIncome = [], autoExpenses = []) {
@@ -12996,7 +13008,7 @@ function cfColumnHtml(type, title, color, autoItems = []) {
   const manual = (cfActive()[type] || []).slice();
   const pinnedTotal = type === 'income' ? cfPinnedBalanceTotal() : 0;
   const total = pinnedTotal + [...autoItems, ...manual].reduce((s, item) => s + cfItemAmount(item), 0);
-  const pinnedRow = type === 'income' ? cfPinnedCheckingRow(color) + cfPinnedBrokerageRow(color) : '';
+  const pinnedRow = type === 'income' ? cfPinnedCheckingRow(color) + cfPinnedBrokerageRow(color) + cfPinnedMeganBrokerageRow(color) : '';
   const addRow = (_cfEdit?.type === type && _cfEdit?.id === 'new') ? cfEditRow(type, { id: 'new' }) : '';
   const renderManual = item => (_cfEdit?.type === type && _cfEdit?.id === item.id)
     ? cfEditRow(type, item)
@@ -13079,6 +13091,14 @@ function cfPinnedBrokerageRow(color) {
     label: 'Chris\'s Robinhood Individual Brokerage Current Balance',
     amount: cfRobinhoodBrokerage(),
     loading: state.robinhoodBrokerageBalanceLoading
+  });
+}
+
+function cfPinnedMeganBrokerageRow(color) {
+  return cfPinnedBalanceRow(color, {
+    label: 'Megan\'s Robinhood Individual Brokerage Current Balance',
+    amount: cfMeganBrokerage(),
+    loading: !state.netWorth || !!_nwRefreshPromise
   });
 }
 

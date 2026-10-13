@@ -375,6 +375,8 @@
     const cf=state.data.cashflow||{};
     const checking=n(state.data.savings?.accounts?.robinhoodChecking);
     const brokerage=n(state.data.savings?.accounts?.robinhoodBrokerage);
+    // Mirror of desktop cfMeganBrokerage(): read from the linked Net Worth accounts.
+    const meganBrokerage=n((state.data.netWorth?.plaidAccounts||[]).find(a=>a.side!=='liability'&&a.subtype==='brokerage'&&/robinhood/i.test(`${a.institution||''} ${a.name||''}`)&&/^megan/i.test(a.name||''))?.value);
     const properties=state.data.netWorth?.propertyAssets||[];
     // Only unsold properties project proceeds — a sold property's proceeds already
     // sit in the checking balance, and it is dropped from propertyAssets.
@@ -388,12 +390,13 @@
     const autoExpenses=cfAutoExpenses();
     const manualIncome=Array.isArray(cf.income)?cf.income:[];
     const expenses=Array.isArray(cf.expenses)?cf.expenses:[];
-    const totalIncome=checking+brokerage+sum(autoIncome)+sum(manualIncome);
+    const totalIncome=checking+brokerage+meganBrokerage+sum(autoIncome)+sum(manualIncome);
     const totalExpenses=sum(autoExpenses)+sum(expenses,cfExpenseAmount);
     const excess=totalIncome-totalExpenses;
     const dateNote=item=>[item.date||'Unscheduled',item.note||''].filter(Boolean).join(' · ');
     const incomeRows=row('Robinhood Joint Checking Current Balance',money(checking),'Pinned · Plaid','good')
       +row('Chris\'s Robinhood Individual Brokerage Current Balance',money(brokerage),'Pinned · Plaid','good')
+      +row('Megan\'s Robinhood Individual Brokerage Current Balance',money(meganBrokerage),'Pinned · Plaid','good')
       +autoIncome.map(item=>row(item.name,money(item.amount),`${item.note} · Auto`,item.amount?'good':'')).join('')
       +manualIncome.slice().sort((a,b)=>String(a.date||'9999').localeCompare(String(b.date||'9999'))).map(item=>row(item.name||'Untitled',money(item.amount),`${dateNote(item)} · Manual`,'good')).join('');
     // Auto + manual expense lines sort together, soonest date first.
