@@ -16,6 +16,7 @@ import {
   isRecognizedExternalFlow,
   mergeStockStickiesTransactions,
   modifiedDietzPerformance,
+  reconcilePendingExternalFlows,
   stockStickiesAccountValues,
   stockStickiesBenchmarkReturn,
   stockStickiesCloseDateForTimestamp,
@@ -71,6 +72,7 @@ const STOCK_STICKIES_PERFORMANCE_SNAPSHOT_PREFIX = 'stock_stickies:plaid:robinho
 const STOCK_STICKIES_PERFORMANCE_TRANSACTION_PREFIX = 'stock_stickies:plaid:robinhood:performance:transactions:';
 // End-of-day account values for Sharpe / drawdown / beta. Seeded from
 // Robinhood activity CSVs, then extended from post-close holdings snapshots.
+const STOCK_STICKIES_PERFORMANCE_PENDING_FLOWS_KEY = 'stock_stickies:plaid:robinhood:performance:pending-flows';
 const STOCK_STICKIES_PERFORMANCE_DAILY_PREFIX = 'stock_stickies:plaid:robinhood:performance:daily:';
 
 const CORS_HEADERS = {
@@ -3565,6 +3567,28 @@ async function buildStockStickiesPerformance(env, year, snapshot, options = {}) 
   const refreshConsistency = snapshot
     ? assessStockStickiesRefreshConsistency(previousSnapshot, snapshot, performanceTransactions)
     : { status: 'not-comparable', provisionalAccounts: [], discrepancies: [] };
+  // The comparison above only covers the last two snapshots, so an unexplained
+  // deposit or withdrawal is kept here until its transaction is published.
+  const pendingFlowStore = await env.RENTALS.get(STOCK_STICKIES_PERFORMANCE_PENDING_FLOWS_KEY, 'json');
+  const storedPendingFlows = Array.isArray(pendingFlowStore?.flows) ? pendingFlowStore.flows : [];
+  const pendingFlows = transactionResult.data
+    ? reconcilePendingExternalFlows(
+        storedPendingFlows,
+        refreshConsistency.discrepancies,
+        performanceTransactions,
+        snapshot?.fetchedAt
+      )
+    : storedPendingFlows;
+  if (JSON.stringify(pendingFlows) !== JSON.stringify(storedPendingFlows)) {
+    await env.RENTALS.put(
+      STOCK_STICKIES_PERFORMANCE_PENDING_FLOWS_KEY,
+      JSON.stringify({ flows: pendingFlows, updatedAt: new Date().toISOString() })
+    );
+  }
+  const provisionalAccounts = STOCK_STICKIES_ACCOUNT_IDS.filter(id =>
+    refreshConsistency.provisionalAccounts.includes(id) ||
+    pendingFlows.some(flow => flow.account === id)
+  );
   const cspLedger = buildStockStickiesCspLedger(
     allTransactions,
     snapshot?.positions,
@@ -3654,7 +3678,7 @@ async function buildStockStickiesPerformance(env, year, snapshot, options = {}) 
             ? 'transactions-unavailable'
             : (!hasCompleteCashFlowHistory
                 ? 'cash-flow-history-incomplete'
-                : (refreshConsistency.provisionalAccounts.includes(id)
+                : (provisionalAccounts.includes(id)
                     ? 'provisional-external-flow'
                     : 'ready'))),
     };
@@ -3765,9 +3789,9 @@ async function buildStockStickiesPerformance(env, year, snapshot, options = {}) 
       'that are no longer available from Plaid.'
     );
   }
-  if (refreshConsistency.status === 'provisional') {
+  if (provisionalAccounts.length) {
     warnings.push(
-      `YTD performance is temporarily hidden for ${refreshConsistency.provisionalAccounts.join(', ')} because ` +
+      `YTD performance is temporarily hidden for ${provisionalAccounts.join(', ')} because ` +
       'brokerage cash and account value changed without a matching deposit or withdrawal transaction. ' +
       'Plaid may still be publishing the investment activity.'
     );
@@ -3796,7 +3820,7 @@ async function buildStockStickiesPerformance(env, year, snapshot, options = {}) 
             ? 'transactions-unavailable'
             : (incompleteCashFlowAccounts.length
                 ? 'cash-flow-history-incomplete'
-                : (refreshConsistency.provisionalAccounts.length
+                : (provisionalAccounts.length
                     ? 'provisional-external-flow'
                     : 'ready'))),
     },

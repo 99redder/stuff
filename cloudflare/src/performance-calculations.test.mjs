@@ -7,6 +7,7 @@ import {
   buildStockStickiesCspLedger,
   mergeStockStickiesTransactions,
   modifiedDietzPerformance,
+  reconcilePendingExternalFlows,
   stockStickiesAccountValues,
   stockStickiesExternalFlow,
   stockStickiesExternalFlowDate,
@@ -851,4 +852,33 @@ test('an unreported deposit (implausible one-day jump) is skipped, not counted a
   assert.equal(series.points[1].accounts.individual, null);
   assert.equal(series.points[1].total, 1);
   assert.equal(series.points[2].accounts.individual, 0.97);
+});
+
+test('an unexplained deposit stays pending across refreshes until its transaction arrives', () => {
+  const discrepancy = { account: 'individual', navChange: 14_986.94 };
+  const detected = reconcilePendingExternalFlows([], [discrepancy], [], '2026-10-13T15:02:54Z');
+  assert.deepEqual(detected.map(flow => [flow.account, flow.amount, flow.date]),
+    [['individual', 14_986.94, '2026-10-13']]);
+
+  // The next refresh sees no new discrepancy; the deposit must not be forgotten.
+  const later = reconcilePendingExternalFlows(detected, [], [], '2026-10-13T15:22:54Z');
+  assert.equal(later.length, 1);
+  // Seeing the same move again does not add a second record.
+  assert.equal(
+    reconcilePendingExternalFlows(detected, [discrepancy], [], '2026-10-13T16:00:00Z').length, 1
+  );
+
+  const unrelated = [
+    { stockStickiesAccount: 'individual', date: '2026-10-06', subtype: 'deposit', amount: -15_000 },
+    { stockStickiesAccount: 'roth', date: '2026-10-14', subtype: 'deposit', amount: -15_000 },
+    { stockStickiesAccount: 'individual', date: '2026-10-14', subtype: 'withdrawal', amount: 15_000 },
+  ];
+  assert.equal(reconcilePendingExternalFlows(later, [], unrelated, '2026-10-14T15:00:00Z').length, 1);
+
+  const published = [...unrelated, {
+    stockStickiesAccount: 'individual', date: '2026-10-15', type: 'transfer', subtype: 'transfer',
+    name: 'ACH deposit of $15000 into Robinhood Brokerage account ending in 9903 - TRANSFER',
+    amount: -15_000,
+  }];
+  assert.deepEqual(reconcilePendingExternalFlows(later, [], published, '2026-10-15T15:00:00Z'), []);
 });

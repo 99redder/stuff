@@ -315,6 +315,58 @@ export function assessStockStickiesRefreshConsistency(
   };
 }
 
+const PENDING_FLOW_LOOKBACK_MS = 3 * 86_400_000;
+
+/**
+ * Carries an unexplained cash/NAV move forward until its deposit or withdrawal
+ * shows up. assessStockStickiesRefreshConsistency only compares the last two
+ * snapshots, and every page load takes a new one, so on its own the account
+ * went back to "ready" one refresh later and the deposit was booked as gain
+ * for the days Plaid takes to publish the transfer.
+ *
+ * A pending move is dropped once same-direction external flows (Plaid or
+ * manual) dated from shortly before it add up to it, or one of them matches it.
+ */
+export function reconcilePendingExternalFlows(pendingFlows, discrepancies, transactions, detectedAt) {
+  const detectedMs = Date.parse(String(detectedAt || ''));
+  const pending = (Array.isArray(pendingFlows) ? pendingFlows : []).filter(flow =>
+    STOCK_STICKIES_ACCOUNT_IDS.includes(flow?.account) &&
+    Number.isFinite(Number(flow?.amount)) && Number(flow.amount) !== 0 &&
+    Number.isFinite(Date.parse(`${flow?.date}T12:00:00Z`))
+  );
+  for (const discrepancy of Array.isArray(discrepancies) ? discrepancies : []) {
+    const amount = Number(discrepancy?.navChange);
+    if (!STOCK_STICKIES_ACCOUNT_IDS.includes(discrepancy?.account) ||
+        !Number.isFinite(amount) || amount === 0 || !Number.isFinite(detectedMs)) continue;
+    const date = new Date(detectedMs).toISOString().slice(0, 10);
+    if (pending.some(flow =>
+      flow.account === discrepancy.account && flow.date === date &&
+      Math.abs(Number(flow.amount) - amount) <= Math.max(250, Math.abs(amount) * 0.2)
+    )) continue;
+    pending.push({
+      account: discrepancy.account,
+      amount: roundMoney(amount),
+      date,
+      detectedAt: new Date(detectedMs).toISOString(),
+    });
+  }
+  return pending.filter(flow => {
+    const amount = Number(flow.amount);
+    const tolerance = Math.max(250, Math.abs(amount) * 0.2);
+    const fromMs = Date.parse(`${flow.date}T12:00:00Z`) - PENDING_FLOW_LOOKBACK_MS;
+    const flows = (Array.isArray(transactions) ? transactions : [])
+      .filter(transaction =>
+        transaction?.stockStickiesAccount === flow.account &&
+        Date.parse(`${stockStickiesExternalFlowDate(transaction)}T12:00:00Z`) >= fromMs
+      )
+      .map(stockStickiesExternalFlow)
+      .filter(value => value !== null && Math.sign(value) === Math.sign(amount));
+    const total = flows.reduce((sum, value) => sum + value, 0);
+    return Math.abs(amount - total) > tolerance &&
+      !flows.some(value => Math.abs(amount - value) <= tolerance);
+  });
+}
+
 function finiteNumber(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
