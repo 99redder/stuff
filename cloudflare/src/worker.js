@@ -26,6 +26,7 @@ import {
   stockStickiesYtdSeries,
 } from './performance-calculations.js';
 import { requestRobinhoodInvestmentsRefresh } from './stock-stickies-plaid-refresh.js';
+import { stockStickiesRecentSales } from './stock-stickies-sales.js';
 
 const VALID_PROPERTIES = ['6AL', '95EB', '446BB', '731WO', '4781MC'];
 const MOVE_IN_PURCHASE_PROPERTY = '4781MC';
@@ -203,6 +204,9 @@ async function handleStockStickiesApi(request, env, url, origin) {
   if (url.pathname === '/api/stock-stickies/plaid/refresh' && request.method === 'POST') {
     return handleStockStickiesPlaidRefresh(env, corsHeaders);
   }
+  if (url.pathname === '/api/stock-stickies/plaid/sales' && request.method === 'GET') {
+    return handleStockStickiesPlaidSales(url, env, corsHeaders);
+  }
   if (url.pathname === '/api/stock-stickies/plaid/performance' && request.method === 'GET') {
     return handleStockStickiesPlaidPerformance(env, corsHeaders);
   }
@@ -210,6 +214,26 @@ async function handleStockStickiesApi(request, env, url, origin) {
     return handleSaveStockStickiesPerformanceReconciliation(request, env, corsHeaders);
   }
   return jsonResponse({ ok: false, error: 'Not found' }, 404, corsHeaders);
+}
+
+// The newest stock sales (no options, no SGOV) for the iPad board's Lookback page.
+// Reads the same daily investment-transaction cache the performance code uses (at
+// most one Plaid transactions call per Eastern day); it never triggers the paid
+// holdings refresh.
+async function handleStockStickiesPlaidSales(url, env, corsHeaders) {
+  const limit = Math.max(1, Math.min(200, Math.round(Number(url.searchParams.get('limit')) || 50)));
+  const year = Number(easternDateKey().slice(0, 4));
+  const { data, warning } = await getStockStickiesInvestmentTransactions(env, year);
+  if (!data) {
+    return jsonResponse({ ok: false, error: warning || 'Investment activity is unavailable.' }, 502, corsHeaders);
+  }
+  return jsonResponse({
+    ok: true,
+    limit,
+    fetchedAt: data.fetchedAt || null,
+    warning: warning || '',
+    sales: stockStickiesRecentSales(data.transactions, { limit }),
+  }, 200, corsHeaders);
 }
 
 async function runScheduledRobinhoodRefresh(env, scheduledTime) {
