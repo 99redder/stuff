@@ -13,6 +13,7 @@ export const MOM_PHONE_SESSION_SECONDS = 30 * 24 * 60 * 60;
 const MOM_PHONE_ENROLLMENT_LOCKED = true;
 const FLOW_MS = 5 * 60 * 1000;
 const INVITE_MS = 30 * 60 * 1000;
+const RENEW_AFTER_MS = 24 * 60 * 60 * 1000;
 const encode = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const decode = text => Uint8Array.from(atob(text.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
 const randomToken = () => encode(crypto.getRandomValues(new Uint8Array(32)));
@@ -240,10 +241,18 @@ export class MomPhoneAccess extends DurableObject {
 
   async session(token) {
     if (!tokenValid(token)) return { authenticated: false };
-    const session = this.get('session', await hash(token));
+    const key = await hash(token);
+    const session = this.get('session', key);
     const grant = session && this.get('grant', session.grantId);
     if (!grant) return { authenticated: false };
     if (Date.now() - grant.lastUsedAt > 60 * 60 * 1000) this.put('grant', session.grantId, { ...grant, lastUsedAt: Date.now() });
+    // Sliding expiry: each use pushes the session out to a full lifetime again
+    // (at most once a day), so only 30 days of non-use require a new unlock.
+    const fullExpiry = Date.now() + MOM_PHONE_SESSION_SECONDS * 1000;
+    if (fullExpiry - session.expiresAt > RENEW_AFTER_MS) {
+      this.put('session', key, { ...session, expiresAt: fullExpiry }, fullExpiry);
+      return { authenticated: true, expiresAt: fullExpiry, renewed: true };
+    }
     return { authenticated: true, expiresAt: session.expiresAt };
   }
 

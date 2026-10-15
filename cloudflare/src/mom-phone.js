@@ -77,7 +77,10 @@ export async function handleMomPhone(request, env, { readJson, summary }) {
     const result = await summary(request, env, body.month);
     if (!result.ok) return json({ error: (await result.json()).error || 'Please try again.' }, result.status);
     const info = await store.call('private-info');
-    return json({ ...await result.json(), privateInfo: info.data, sessionExpiresAt: session.expiresAt });
+    const response = json({ ...await result.json(), privateInfo: info.data, sessionExpiresAt: session.expiresAt });
+    // The cookie carries its own Max-Age, so re-issue it whenever the session slides forward.
+    if (session.renewed) response.headers.append('Set-Cookie', `${SESSION}=${token}; Max-Age=${MOM_PHONE_SESSION_SECONDS}; ${COOKIE_FLAGS}`);
+    return response;
   } catch {
     // Fail closed if access storage, verification or the rate limiter is down.
     return json({ error: 'Could not connect securely. Please try again shortly.' }, 503);

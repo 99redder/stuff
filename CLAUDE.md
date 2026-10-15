@@ -901,6 +901,10 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 
 ## Recent Updates
 
+### 2026-10-15 — Mom phone app: sessions renew on use
+
+- **Her "Money Left" phone sessions now slide.** They were a fixed 30 days from unlock, so she was asked for her passkey on day 30 even with daily use. `MomPhoneAccess.session()` now pushes `expiresAt` back to a full 30 days (at most once a day, `RENEW_AFTER_MS`) and returns `renewed`. On that response `handleMomPhone` sends the `__Host-mom_session` cookie again with a fresh `Max-Age`. Only 30 days without opening the app needs a passkey unlock now. **Worker deployed.**
+
 ### 2026-10-13 — Cash Flow: Robinhood Individual Brokerage pinned as income
 
 - **Cash Flow's income column now pins two linked balances**: the Robinhood Joint Checking balance and **Chris's Robinhood Individual Brokerage** balance (`state.savings.accounts.robinhoodBrokerage`, the same live-synced value the Savings tab shows). `cfPinnedBalanceTotal()` (= `cfRobinhoodChecking() + cfRobinhoodBrokerage()`) feeds `cfTotals` and the income column total; both rows render through the shared `cfPinnedBalanceRow()`. `renderCashFlow` kicks off the brokerage refresh alongside checking, and `ROBINHOOD_BALANCE_KINDS.brokerage.rerenderCashFlow` is now `true` so the row updates when the pull lands. Tax Planning's checking-interest projection still uses checking only.
