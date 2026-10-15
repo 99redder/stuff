@@ -661,7 +661,7 @@ Access-Control-Allow-Credentials: true
 `OPTIONS` preflight returns 204. **If you add a new request header on the frontend, add it to `Access-Control-Allow-Headers` in the worker or browsers will block it.**
 
 ### Authentication
-- There is **no sign-out** in either app (single user) — the main-API `logout` action and both Sign Out / lock buttons were removed. Sessions simply expire; a 401 returns to login. (Mom's phone app keeps its own separate sign-out in `mom-phone.js`.)
+- There is **no sign-out** in any app (single user) — the main-API `logout` action, both Sign Out / lock buttons, and Mom's phone app's Sign Out + `/mom/api/logout` route were removed. Sessions simply expire; a 401 returns to login (her phone instead re-signs itself in with its device key).
 - `verify_password` rate-limits failed attempts, sets a short-lived HttpOnly session cookie, and returns a session-token fallback.
 - All actions except `verify_password` require either the session cookie or `X-Session` token. `X-Password` is kept only as a temporary legacy fallback.
 - Missing or wrong password → 401 response.
@@ -900,6 +900,14 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ---
 
 ## Recent Updates
+
+### 2026-10-15 — Mom phone app: sign-in codes, device keys, no Sign Out
+
+Her phone has no screen lock, so passkeys can't work for her, and she was locked out twice in one day. Three separate traps, all fixed:
+- **No Sign Out.** The button, the `signOut()`/`mom_logout_pending` flow, the `/mom/api/logout` route and `MomPhoneAccess.logout()` are gone. She is the only user. On boot the page deletes a leftover `mom_logout_pending` flag.
+- **Unlock My Budget never starts a passkey prompt.** `unlock()` just retries `loadSummary()`. A network failure with nothing on screen (common right after the phone wakes) now shows "Connecting…" and retries every 3 s on its own (`retryTimer`) instead of telling her to tap Unlock. Passkey login is a small "Use fingerprint instead" link (`enroll(true)`). Setup links (`#setup=`) still work.
+- **Sign-in codes + device keys.** Desktop **Phone Access → Get a Sign-in Code** (`mbCreatePhoneCode`, admin action `mom_phone_pair_code` → DO `createPairCode`) shows a 6-digit code: one use, 10 minutes, at most 5 open, and 10 wrong guesses in 15 minutes cancel them all (`PAIR_*`). She types it into the app under "Have a code from Chris?" (`useCode()` → `/mom/api/pair` → DO `pair()`, rate-limited like the other sign-in routes). That creates a `device` grant plus a **device key** that the page keeps in `localStorage` (`mom_device_key`) and sends with every summary request. When the cookie or session is missing, `session()` falls back to `restoreSession(deviceKey)`, which opens a fresh session and sets the cookie again. Removing the grant also deletes its `devicekey` rows; the next summary returns `deviceKeyRevoked` and the page forgets the key. Codes don't depend on `MOM_PHONE_ENROLLMENT_LOCKED` (that still governs setup links only), so recovery never needs a deploy.
+- Tests: `cloudflare/src/mom-budget-freshness.test.mjs` (pair, reuse, restore, revoke, no logout), `tests/mom-budget-phone.test.mjs` (wake retry, no passkey prompt, no Sign Out). CSP hash re-pinned; `mom-budget-sw.js` `CACHE_NAME` → `v25`. **Worker deployed.**
 
 ### 2026-10-15 — Mom phone app: sessions renew on use
 

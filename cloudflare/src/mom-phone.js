@@ -48,11 +48,12 @@ export async function handleMomPhone(request, env, { readJson, summary }) {
   const store = env.MOM_PHONE_ACCESS.getByName('mom_phone');
   const action = url.pathname.slice('/mom/api/'.length);
   try {
-    if (['enroll/options', 'enroll/verify', 'login/options', 'login/verify'].includes(action)) {
+    if (['enroll/options', 'enroll/verify', 'login/options', 'login/verify', 'pair'].includes(action)) {
       if (env.AUTH_RATELIMIT) {
         const rate = await env.AUTH_RATELIMIT.limit({ key: `mom:${request.headers.get('CF-Connecting-IP') || 'unknown'}` });
         if (!rate.success) return json({ error: 'Please wait a minute and try again.' }, 429);
       }
+      if (action === 'pair') return finish(await store.call('pair', { code: body.code }));
       const flow = cookie(request, FLOW);
       if (action === 'enroll/options') return finish(await store.call('enroll-options', { token: body.token, oldFlow: flow }));
       if (action === 'enroll/verify') return finish(await store.call('enroll-verify', { flow, response: body.response }));
@@ -60,17 +61,10 @@ export async function handleMomPhone(request, env, { readJson, summary }) {
       return finish(await store.call('login-verify', { flow, response: body.response }));
     }
     const token = cookie(request, SESSION);
-    if (action === 'logout') {
-      await store.call('logout', { token });
-      const response = json({ success: true });
-      response.headers.append('Set-Cookie', `${SESSION}=; Max-Age=0; ${COOKIE_FLAGS}`);
-      response.headers.append('Set-Cookie', `${FLOW}=; Max-Age=0; ${COOKIE_FLAGS}`);
-      return response;
-    }
     if (action !== 'summary') return json({ error: 'Not found.' }, 404);
-    const session = await store.call('session', { token });
+    const session = await store.call('session', { token, deviceKey: body.deviceKey });
     if (!session.authenticated) {
-      const response = json({ error: 'Unlock your budget to continue.' }, 401);
+      const response = json({ error: 'Unlock your budget to continue.', deviceKeyRevoked: Boolean(session.deviceKeyRevoked) }, 401);
       response.headers.append('Set-Cookie', `${SESSION}=; Max-Age=0; ${COOKIE_FLAGS}`);
       return response;
     }
@@ -79,7 +73,7 @@ export async function handleMomPhone(request, env, { readJson, summary }) {
     const info = await store.call('private-info');
     const response = json({ ...await result.json(), privateInfo: info.data, sessionExpiresAt: session.expiresAt });
     // The cookie carries its own Max-Age, so re-issue it whenever the session slides forward.
-    if (session.renewed) response.headers.append('Set-Cookie', `${SESSION}=${token}; Max-Age=${session.sessionSeconds}; ${COOKIE_FLAGS}`);
+    if (session.renewed) response.headers.append('Set-Cookie', `${SESSION}=${session.sessionToken || token}; Max-Age=${session.sessionSeconds}; ${COOKIE_FLAGS}`);
     return response;
   } catch {
     // Fail closed if access storage, verification or the rate limiter is down.

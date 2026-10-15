@@ -8237,6 +8237,12 @@ async function mbOpenPhoneAccess() {
       <button class="btn btn-primary" id="mom-phone-create" onclick="mbCreatePhoneInvite()">Create Setup Link</button>
       <div id="mom-phone-link-box" class="hidden" style="margin-top:.75rem"><label for="mom-phone-link">Open this link on the approved device</label><input id="mom-phone-link" readonly style="width:100%;margin:.4rem 0" onclick="this.select()"><button class="btn btn-ghost btn-sm" onclick="mbCopyPhoneLink()">Copy Link</button><p style="font-size:.8rem;color:var(--text-muted)">This link grants access. Share it only with the person you are approving.</p></div>`
       : `<div style="padding:.8rem 1rem;border:1px solid var(--border);border-radius:10px;background:var(--surface);line-height:1.5">New device setup is closed. Your already-approved devices can continue to sign in, and you can remove access below.</div>`}
+      <div style="margin-top:1rem;padding:.9rem 1rem;border:1px solid var(--border);border-radius:10px;line-height:1.5">
+        <strong>Sign-in code</strong>
+        <div style="font-size:.85rem;color:var(--text-muted);margin:.25rem 0 .6rem">If her budget won’t open, get a code and read it to her. She types it into the Money Left app under “Have a code from Chris?” It works once, for 10 minutes. That phone then stays signed in until you remove it below.</div>
+        <button class="btn btn-primary btn-sm" id="mom-phone-code-btn" onclick="mbCreatePhoneCode()">Get a Sign-in Code</button>
+        <div id="mom-phone-code" class="hidden" style="margin-top:.75rem;font-size:2.2rem;font-weight:800;letter-spacing:.3em;font-variant-numeric:tabular-nums"></div>
+      </div>
       <p id="mom-phone-status" role="status" style="font-size:.85rem;white-space:pre-line"></p>
       <h3 style="font-size:1rem;margin-top:1.5rem">Approved access</h3>
       ${(access.access || []).map(row => `<div style="display:flex;align-items:center;gap:1rem;padding:.65rem 0;border-bottom:1px solid var(--border)"><div style="flex:1"><strong>${escHtml(row.name)}</strong><div style="font-size:.78rem;color:var(--text-muted)">${row.mode === 'passkey' ? 'Passkey' : 'Remembered phone'} · Last used ${escHtml(date(row.lastUsedAt))}</div></div><button class="btn btn-danger btn-sm" onclick="mbRevokePhone('${escAttr(row.id)}')">Remove Access</button></div>`).join('') || '<p>No phones have been set up yet.</p>'}
@@ -8268,6 +8274,21 @@ async function mbCreatePhoneInvite() {
     document.getElementById('mom-phone-link').value = result.url;
     document.getElementById('mom-phone-link-box').classList.remove('hidden');
     document.getElementById('mom-phone-status').textContent = 'Setup link ready. Expires ' + new Date(result.expiresAt).toLocaleTimeString() + '.';
+  } catch (error) { if (request === _mbPhoneRequest) document.getElementById('mom-phone-status').textContent = error.message; }
+  finally { button.disabled = false; }
+}
+async function mbCreatePhoneCode() {
+  const button = document.getElementById('mom-phone-code-btn');
+  if (button.disabled) return;
+  const request = _mbPhoneRequest;
+  button.disabled = true;
+  try {
+    const result = await callApi({ action: 'mom_phone_pair_code', name: 'Mom’s Galaxy' });
+    if (request !== _mbPhoneRequest) return;
+    const box = document.getElementById('mom-phone-code');
+    box.textContent = `${result.code.slice(0, 3)} ${result.code.slice(3)}`;
+    box.classList.remove('hidden');
+    document.getElementById('mom-phone-status').textContent = 'Code ready. It works once and expires at ' + new Date(result.expiresAt).toLocaleTimeString() + '.';
   } catch (error) { if (request === _mbPhoneRequest) document.getElementById('mom-phone-status').textContent = error.message; }
   finally { button.disabled = false; }
 }

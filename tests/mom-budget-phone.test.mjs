@@ -15,7 +15,7 @@ test('phone names Fair Share as what she pays and omits the redundant usage card
 
 function phone() {
   const elements = new Map(), intervals = new Map(), timeouts = new Map(), events = new Map();
-  let id = 0, now = 100000, calls = 0, amount = 500, stall = false;
+  let id = 0, now = 100000, calls = 0, amount = 500, stall = false, mode = 'ok', passkeyPrompts = 0;
   const element = key => {
     if (!elements.has(key)) elements.set(key, {
       textContent: '', innerHTML: '', style: {}, disabled: false, children: [],
@@ -31,7 +31,7 @@ function phone() {
     addEventListener: (event, fn) => events.set(event, fn),
   };
   const context = vm.createContext({
-    document, navigator: {}, window: { addEventListener: (event, fn) => events.set(event, fn) },
+    document, navigator: { credentials: { get: async () => { passkeyPrompts++; return null; } } }, window: { addEventListener: (event, fn) => events.set(event, fn) },
     Date: class extends Date { static now() { return now; } }, AbortController,
     setInterval: (fn, ms) => { intervals.set(++id, { fn, ms }); return id; },
     clearInterval: id => intervals.delete(id),
@@ -41,6 +41,8 @@ function phone() {
       calls++;
       assert.equal(JSON.parse(options.body).action, 'get_mom_budget_public_summary');
       assert.equal(options.cache, 'no-store');
+      if (mode === 'offline') throw new TypeError('Failed to fetch');
+      if (mode === 'unauthorized') return { ok: false, status: 401, json: async () => ({ error: 'Unlock your budget to continue.' }) };
       if (stall) return new Promise((_, reject) => options.signal.addEventListener('abort', () => reject(new Error('timeout'))));
       return { ok: true, json: async () => ({ monthKey: '2026-09', month: { overallSpendingRemaining: amount } }) };
     },
@@ -48,7 +50,7 @@ function phone() {
   vm.runInContext(script, context);
   return {
     document, elements, intervals, timeouts, context,
-    calls: () => calls, spend: () => { amount -= 37.84; }, stall: value => { stall = value; },
+    calls: () => calls, mode: value => { mode = value; }, passkeyPrompts: () => passkeyPrompts, spend: () => { amount -= 37.84; }, stall: value => { stall = value; },
     wake: async visibility => { now += 5000; document.visibilityState = visibility; events.get('visibilitychange')(); await settle(); },
     tick: async () => { now += 5000; for (const { fn } of intervals.values()) fn(); await settle(); },
   };
@@ -146,4 +148,29 @@ test('her transaction rows show the date alone, since everything there is discre
   // Anything that is not her everyday spending still names itself.
   assert.match(html, /Fixed bills/);
   assert.equal(p.elements.get('transactions-total').textContent, '$228.12');
+});
+
+test('a connection that is not back yet retries by itself instead of asking her to unlock', async () => {
+  const p = phone(); await settle();
+  await p.wake('hidden'); p.mode('offline'); await p.wake('visible');
+  assert.match(p.elements.get('auth-status').textContent, /Connecting/);
+  const retry = [...p.timeouts.values()].find(t => t.ms === 3000);
+  assert.ok(retry, 'a retry is scheduled');
+  p.mode('ok'); retry.fn(); await settle();
+  assert.equal(p.elements.get('overall').textContent, '$500.00');
+});
+
+test('Unlock My Budget tries again and never starts a passkey prompt', async () => {
+  const p = phone(); await settle();
+  p.mode('unauthorized'); await p.tick();
+  assert.match(p.elements.get('auth-status').textContent, /6-digit code/);
+  const calls = p.calls();
+  p.mode('ok'); await p.context.unlock(); await settle();
+  assert.equal(p.passkeyPrompts(), 0);
+  assert.equal(p.calls(), calls + 1);
+  assert.equal(p.elements.get('overall').textContent, '$500.00');
+});
+
+test('her app has no Sign Out button', () => {
+  assert.doesNotMatch(html, /Sign Out|signout/i);
 });

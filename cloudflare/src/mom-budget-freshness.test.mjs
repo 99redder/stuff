@@ -53,6 +53,35 @@ test('Mom Budget public details are closed and authoritative data stays private'
   // The separate phone route never returns data without its own session.
   const phone = await mf.dispatchFetch('https://rentals-api.99redder.workers.dev/mom/api/summary', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://99redder.github.io' }, body: '{}' });
   assert.equal(phone.status, 401);
+
+  // Sign-in codes: the owner gets one, the phone pairs with it, and from then on
+  // the device key alone signs the phone back in — no cookie, passkey, or link.
+  const momApi = (action, body) => mf.dispatchFetch(`https://rentals-api.99redder.workers.dev/mom/api/${action}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://99redder.github.io' }, body: JSON.stringify(body),
+  });
+  const codeResponse = await api({ action: 'mom_phone_pair_code', name: 'Test phone' }, sessionToken);
+  assert.equal(codeResponse.status, 200);
+  const { code } = await codeResponse.json();
+  assert.match(code, /^\d{6}$/);
+  const wrong = code === '000000' ? '000001' : '000000';
+  assert.equal((await momApi('pair', { code: wrong })).status, 401);
+  const paired = await momApi('pair', { code });
+  assert.equal(paired.status, 200);
+  const { deviceKey } = await paired.json();
+  assert.match(deviceKey, /^[\w-]{43}$/);
+  assert.match(paired.headers.get('Set-Cookie'), /__Host-mom_session=/);
+  assert.equal((await momApi('pair', { code })).status, 401, 'a code works once');
+  const restored = await momApi('summary', { deviceKey });
+  assert.equal(restored.status, 200, 'the device key restores a lost session');
+  assert.match(restored.headers.get('Set-Cookie'), /__Host-mom_session=/);
+  const { access } = await (await api({ action: 'mom_phone_list' }, sessionToken)).json();
+  const grant = access.find(row => row.name === 'Test phone');
+  assert.equal(grant.mode, 'device');
+  assert.equal((await api({ action: 'mom_phone_revoke', id: grant.id }, sessionToken)).status, 200);
+  const revoked = await momApi('summary', { deviceKey });
+  assert.equal(revoked.status, 401);
+  assert.equal((await revoked.json()).deviceKeyRevoked, true);
+  assert.equal((await momApi('logout', {})).status, 404, 'her app has no sign-out');
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline && JSON.stringify(await kv.get('mom_budget', 'json')) !== JSON.stringify(updated)) await new Promise(resolve => setTimeout(resolve, 100));
   assert.deepEqual(await kv.get('mom_budget', 'json'), updated);

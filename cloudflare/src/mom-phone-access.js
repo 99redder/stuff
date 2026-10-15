@@ -18,6 +18,20 @@ const MOM_PHONE_ENROLLMENT_LOCKED = true;
 const FLOW_MS = 5 * 60 * 1000;
 const INVITE_MS = 30 * 60 * 1000;
 const RENEW_AFTER_MS = 24 * 60 * 60 * 1000;
+// Sign-in codes: six digits read aloud by the owner and typed into the app on the
+// device itself, so no link has to land in the right browser. Short-lived and
+// single-use; too many wrong guesses cancel every open code.
+const PAIR_CODE_MS = 10 * 60 * 1000;
+const PAIR_FAIL_LIMIT = 10;
+const PAIR_FAIL_WINDOW_MS = 15 * 60 * 1000;
+const pairCodeValid = value => typeof value === 'string' && /^\d{6}$/.test(value);
+function randomPairCode() {
+  // Rejection sampling keeps every code equally likely.
+  const limit = Math.floor(0xffffffff / 1000000) * 1000000;
+  let n;
+  do { n = crypto.getRandomValues(new Uint32Array(1))[0]; } while (n >= limit);
+  return String(n % 1000000).padStart(6, '0');
+}
 const encode = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const decode = text => Uint8Array.from(atob(text.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
 const randomToken = () => encode(crypto.getRandomValues(new Uint8Array(32)));
@@ -66,8 +80,9 @@ export class MomPhoneAccess extends DurableObject {
         case 'enroll-verify': return await this.enrollVerify(input.flow, input.response);
         case 'login-options': return await this.loginOptions(input.oldFlow);
         case 'login-verify': return await this.loginVerify(input.flow, input.response);
-        case 'session': return await this.session(input.token);
-        case 'logout': return await this.logout(input.token);
+        case 'pair-code': return await this.createPairCode(input);
+        case 'pair': return await this.pair(input.code);
+        case 'session': return await this.session(input.token, input.deviceKey);
         case 'private-info': return { data: await this.privateInfo() };
         case 'save-private-info': return this.savePrivateInfo(input.data);
         default: reject('Not found.', 404);
@@ -105,7 +120,7 @@ export class MomPhoneAccess extends DurableObject {
     if (typeof id !== 'string' || !this.get('grant', id)) reject('Access no longer exists.', 404);
     this.ctx.storage.transactionSync(() => {
       this.remove('grant', id);
-      for (const kind of ['credential', 'session']) {
+      for (const kind of ['credential', 'session', 'devicekey']) {
         for (const row of this.rows(kind)) if (row.grantId === id) this.remove(kind, row.key);
       }
     });
@@ -245,12 +260,52 @@ export class MomPhoneAccess extends DurableObject {
     return { success: true, sessionToken: session.token, expiresAt: session.expiresAt };
   }
 
-  async session(token) {
-    if (!tokenValid(token)) return { authenticated: false };
-    const key = await hash(token);
-    const session = this.get('session', key);
+  async createPairCode({ name }) {
+    name = typeof name === 'string' && name.trim() ? name.trim().slice(0, 80) : 'Mom’s phone';
+    this.cleanup();
+    const open = this.rows('paircode').sort((a, b) => a.expiresAt - b.expiresAt);
+    while (open.length >= 5) this.remove('paircode', open.shift().key);
+    let code, key;
+    do { code = randomPairCode(); key = await hash(code); } while (this.get('paircode', key));
+    const expiresAt = Date.now() + PAIR_CODE_MS;
+    this.put('paircode', key, { name, expiresAt }, expiresAt);
+    return { code, expiresAt };
+  }
+
+  // Approves this device as a remembered device. The device key is kept by the
+  // app itself, so a lost cookie or ended session never needs a passkey or a code.
+  async pair(code) {
+    this.cleanup();
+    const fails = this.get('pair-fail', 'count') || { count: 0 };
+    if (fails.count >= PAIR_FAIL_LIMIT) reject('Too many tries. Ask Chris for a new code.', 429);
+    const key = pairCodeValid(code) ? await hash(code) : null;
+    const pending = key && this.get('paircode', key);
+    if (!pending) {
+      const count = fails.count + 1;
+      this.put('pair-fail', 'count', { count }, Date.now() + PAIR_FAIL_WINDOW_MS);
+      if (count >= PAIR_FAIL_LIMIT) this.sql.exec("DELETE FROM records WHERE kind = 'paircode'");
+      reject('That code didn’t work. Check the numbers with Chris and try again.', 401);
+    }
+    const grantId = crypto.randomUUID();
+    const deviceKey = randomToken();
+    const deviceKeyHash = await hash(deviceKey);
+    const session = await this.newSession(grantId, 'device');
+    this.ctx.storage.transactionSync(() => {
+      if (!this.get('paircode', key)) reject('That code was already used. Ask Chris for a new one.', 401);
+      if (this.rows('grant').length >= 20) reject('Too many devices are approved. Ask Chris to remove one.');
+      this.remove('paircode', key);
+      this.put('grant', grantId, { name: pending.name, mode: 'device', createdAt: Date.now(), lastUsedAt: Date.now() });
+      this.put('devicekey', deviceKeyHash, { grantId });
+      this.commitSession(session);
+    });
+    return { success: true, deviceKey, sessionToken: session.token, sessionSeconds: session.seconds, expiresAt: session.expiresAt };
+  }
+
+  async session(token, deviceKey) {
+    const key = tokenValid(token) ? await hash(token) : null;
+    const session = key && this.get('session', key);
     const grant = session && this.get('grant', session.grantId);
-    if (!grant) return { authenticated: false };
+    if (!grant) return this.restoreSession(deviceKey);
     if (Date.now() - grant.lastUsedAt > 60 * 60 * 1000) this.put('grant', session.grantId, { ...grant, lastUsedAt: Date.now() });
     // Sliding expiry: each use pushes the session out to a full lifetime again
     // (at most once a day), so only 30 days of non-use require a new unlock.
@@ -263,9 +318,21 @@ export class MomPhoneAccess extends DurableObject {
     return { authenticated: true, expiresAt: session.expiresAt };
   }
 
-  async logout(token) {
-    if (tokenValid(token)) this.remove('session', await hash(token));
-    return { success: true };
+  // A paired device that has lost its cookie (or its session) signs itself back in.
+  async restoreSession(deviceKey) {
+    if (!tokenValid(deviceKey)) return { authenticated: false };
+    const record = this.get('devicekey', await hash(deviceKey));
+    if (!record || !this.get('grant', record.grantId)) return { authenticated: false, deviceKeyRevoked: true };
+    const session = await this.newSession(record.grantId, 'device');
+    const restored = this.ctx.storage.transactionSync(() => {
+      const grant = this.get('grant', record.grantId);
+      if (!grant) return false;
+      this.put('grant', record.grantId, { ...grant, lastUsedAt: Date.now() });
+      this.commitSession(session);
+      return true;
+    });
+    if (!restored) return { authenticated: false, deviceKeyRevoked: true };
+    return { authenticated: true, expiresAt: session.expiresAt, renewed: true, sessionSeconds: session.seconds, sessionToken: session.token };
   }
 
   async privateInfo() {

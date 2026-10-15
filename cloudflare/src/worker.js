@@ -316,7 +316,7 @@ async function handleDataApi(request, env) {
   if (action.startsWith('mom_phone_')) {
     const operations = {
       mom_phone_list: 'list', mom_phone_invite: 'invite', mom_phone_revoke: 'revoke',
-      mom_phone_cancel_invite: 'cancel-invite', mom_phone_get_info: 'private-info', mom_phone_save_info: 'save-private-info',
+      mom_phone_cancel_invite: 'cancel-invite', mom_phone_pair_code: 'pair-code', mom_phone_get_info: 'private-info', mom_phone_save_info: 'save-private-info',
     };
     const operation = operations[action];
     if (!operation) return jsonResponse({ error: 'Unknown phone action' }, 400);
