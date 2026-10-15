@@ -3921,6 +3921,48 @@ async function handleStockStickiesPlaidLinkToken(env, corsHeaders) {
   }
 }
 
+// Plaid sometimes keeps lots that were already sold: an IBIT call held at quantity 2 came
+// back with six lots, and cost_basis summed all six (Oct 15, 2026). When the lots add up to
+// more than the holding, keep the newest lots that make up the quantity held (FIFO sales close
+// the oldest first) and take the basis from those. If they can't be matched, basis is unknown.
+function reconcileStockStickiesOpenLots(costBasis, taxLots, quantity, truncated) {
+  const held = Math.abs(quantity);
+  const lotQuantity = taxLots.reduce((sum, lot) => sum + (lot.quantity > 0 ? lot.quantity : 0), 0);
+  if (truncated || !Number.isFinite(held) || held <= 0 || lotQuantity <= held + 1e-6) {
+    return { costBasis, taxLotCount: taxLots.length, taxLots };
+  }
+  const usable = taxLots.every(lot =>
+    lot.quantity > 0 && lot.costBasis !== null && lot.acquiredAt && Number.isFinite(Date.parse(lot.acquiredAt))
+  );
+  if (!usable) {
+    return { costBasis: null, costBasisNote: 'stale-tax-lots', taxLotCount: taxLots.length, taxLots };
+  }
+  const newestFirst = [...taxLots].sort((a, b) => Date.parse(b.acquiredAt) - Date.parse(a.acquiredAt));
+  const openLots = [];
+  let remaining = held;
+  let basis = 0;
+  for (const lot of newestFirst) {
+    if (remaining <= 1e-9) break;
+    const take = Math.min(lot.quantity, remaining);
+    const share = take / lot.quantity;
+    openLots.push(take === lot.quantity ? lot : {
+      ...lot,
+      quantity: take,
+      costBasis: lot.costBasis * share,
+      currentValue: lot.currentValue === null ? null : lot.currentValue * share,
+    });
+    basis += lot.costBasis * share;
+    remaining -= take;
+  }
+  return {
+    costBasis: Math.round(basis * 100) / 100,
+    costBasisNote: 'open-lots-only',
+    staleTaxLotCount: taxLots.length - openLots.length,
+    taxLotCount: openLots.length,
+    taxLots: openLots,
+  };
+}
+
 function normalizeStockStickiesHoldings(payload, fetchedAt = new Date().toISOString()) {
   const accounts = (Array.isArray(payload.accounts) ? payload.accounts : [])
     .filter(account => account?.type === 'investment')
@@ -4019,10 +4061,13 @@ function normalizeStockStickiesHoldings(payload, fetchedAt = new Date().toISOStr
         quantity: Number.isFinite(Number(holding.quantity)) ? Number(holding.quantity) : null,
         institutionPrice,
         institutionValue: Number.isFinite(Number(holding.institution_value)) ? Number(holding.institution_value) : null,
-        costBasis: hasCostBasis ? Number(holding.cost_basis) : null,
-        taxLotCount: rawTaxLots.length,
+        ...reconcileStockStickiesOpenLots(
+          hasCostBasis ? Number(holding.cost_basis) : null,
+          taxLots,
+          Number(holding.quantity),
+          rawTaxLots.length > taxLots.length
+        ),
         taxLotsTruncated: rawTaxLots.length > taxLots.length,
-        taxLots,
         priceAsOf:
           holding.institution_price_datetime ||
           holding.institution_price_as_of ||
