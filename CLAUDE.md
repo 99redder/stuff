@@ -904,6 +904,7 @@ Entries through April 2026 have been pre-loaded. Historical annual summaries (20
 ### 2026-10-15 — Mom phone app: sessions renew on use
 
 - **Her "Money Left" phone sessions now slide.** They were a fixed 30 days from unlock, so she was asked for her passkey on day 30 even with daily use. `MomPhoneAccess.session()` now pushes `expiresAt` back to a full 30 days (at most once a day, `RENEW_AFTER_MS`) and returns `renewed`. On that response `handleMomPhone` sends the `__Host-mom_session` cookie again with a fresh `Max-Age`. Only 30 days without opening the app needs a passkey unlock now. **Worker deployed.**
+- **Remembered devices (no passkey) last 400 days, renewed on use** (`MOM_PHONE_DEVICE_SESSION_SECONDS`, `sessionSeconds(mode)`). Her Galaxy has no screen lock, so passkeys can't work; it was re-enrolled as a remembered device. To reopen setup: set `MOM_PHONE_ENROLLMENT_LOCKED = false`, deploy, and the desktop **Phone Access** modal shows the setup form (driven by `enrollmentOpen` from `mom_phone_list`). Then set it back to `true` and deploy. **Open the setup link in Chrome itself:** Galaxy phones often open links in Samsung Internet, and the sign-in then lands there instead of in the Chrome-installed app.
 
 ### 2026-10-13 — Cash Flow: Robinhood Individual Brokerage pinned as income
 

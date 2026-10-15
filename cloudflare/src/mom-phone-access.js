@@ -14,7 +14,7 @@ export const sessionSeconds = mode => mode === 'device' ? MOM_PHONE_DEVICE_SESSI
 // Enrollment is deliberately closed after the approved devices are set up.
 // Re-opening it requires an explicit code change and deployment; an old invite
 // or stale admin page cannot add another device.
-const MOM_PHONE_ENROLLMENT_LOCKED = false;
+const MOM_PHONE_ENROLLMENT_LOCKED = true;
 const FLOW_MS = 5 * 60 * 1000;
 const INVITE_MS = 30 * 60 * 1000;
 const RENEW_AFTER_MS = 24 * 60 * 60 * 1000;
