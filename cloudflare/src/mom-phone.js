@@ -20,11 +20,11 @@ function json(data, status = 200) {
 }
 function finish(result) {
   if (result.error) return json({ error: result.error }, result.status || 400);
-  const { flowToken, sessionToken, ...body } = result;
+  const { flowToken, sessionToken, sessionSeconds = MOM_PHONE_SESSION_SECONDS, ...body } = result;
   const response = json(body);
   if (flowToken) response.headers.append('Set-Cookie', `${FLOW}=${flowToken}; Max-Age=300; ${COOKIE_FLAGS}`);
   if (sessionToken) {
-    response.headers.append('Set-Cookie', `${SESSION}=${sessionToken}; Max-Age=${MOM_PHONE_SESSION_SECONDS}; ${COOKIE_FLAGS}`);
+    response.headers.append('Set-Cookie', `${SESSION}=${sessionToken}; Max-Age=${sessionSeconds}; ${COOKIE_FLAGS}`);
     response.headers.append('Set-Cookie', `${FLOW}=; Max-Age=0; ${COOKIE_FLAGS}`);
   }
   return response;
@@ -79,7 +79,7 @@ export async function handleMomPhone(request, env, { readJson, summary }) {
     const info = await store.call('private-info');
     const response = json({ ...await result.json(), privateInfo: info.data, sessionExpiresAt: session.expiresAt });
     // The cookie carries its own Max-Age, so re-issue it whenever the session slides forward.
-    if (session.renewed) response.headers.append('Set-Cookie', `${SESSION}=${token}; Max-Age=${MOM_PHONE_SESSION_SECONDS}; ${COOKIE_FLAGS}`);
+    if (session.renewed) response.headers.append('Set-Cookie', `${SESSION}=${token}; Max-Age=${session.sessionSeconds}; ${COOKIE_FLAGS}`);
     return response;
   } catch {
     // Fail closed if access storage, verification or the rate limiter is down.

@@ -7,10 +7,14 @@ import {
 export const MOM_PHONE_API_ORIGIN = 'https://rentals-api.99redder.workers.dev';
 export const MOM_PHONE_WEB_ORIGIN = 'https://99redder.github.io';
 export const MOM_PHONE_SESSION_SECONDS = 30 * 24 * 60 * 60;
+// A remembered device has no passkey to unlock with once its session lapses,
+// so it gets Chrome's longest cookie lifetime (400 days), renewed on use.
+export const MOM_PHONE_DEVICE_SESSION_SECONDS = 400 * 24 * 60 * 60;
+export const sessionSeconds = mode => mode === 'device' ? MOM_PHONE_DEVICE_SESSION_SECONDS : MOM_PHONE_SESSION_SECONDS;
 // Enrollment is deliberately closed after the approved devices are set up.
 // Re-opening it requires an explicit code change and deployment; an old invite
 // or stale admin page cannot add another device.
-const MOM_PHONE_ENROLLMENT_LOCKED = true;
+const MOM_PHONE_ENROLLMENT_LOCKED = false;
 const FLOW_MS = 5 * 60 * 1000;
 const INVITE_MS = 30 * 60 * 1000;
 const RENEW_AFTER_MS = 24 * 60 * 60 * 1000;
@@ -77,6 +81,7 @@ export class MomPhoneAccess extends DurableObject {
   listAccess() {
     this.cleanup();
     return {
+      enrollmentOpen: !MOM_PHONE_ENROLLMENT_LOCKED,
       access: this.rows('grant').map(({ key, ...grant }) => ({ id: key, ...grant })),
       invites: this.rows('invite').map(({ id, name, mode, expiresAt }) => ({ id, name, mode, expiresAt })),
     };
@@ -153,10 +158,11 @@ export class MomPhoneAccess extends DurableObject {
     return { options, mode: invite.mode, flowToken };
   }
 
-  async newSession(grantId) {
+  async newSession(grantId, mode) {
     const token = randomToken();
     const key = await hash(token);
-    return { token, key, grantId, expiresAt: Date.now() + MOM_PHONE_SESSION_SECONDS * 1000 };
+    const seconds = sessionSeconds(mode);
+    return { token, key, grantId, seconds, expiresAt: Date.now() + seconds * 1000 };
   }
   commitSession(session) {
     // Call only in the transaction that checks the grant still exists.
@@ -187,7 +193,7 @@ export class MomPhoneAccess extends DurableObject {
         userId: flow.options.user.id, grantId: invite.id,
       };
     }
-    const session = await this.newSession(invite.id);
+    const session = await this.newSession(invite.id, invite.mode);
     this.ctx.storage.transactionSync(() => {
       // Crypto awaits allow other requests to run. Recheck inside the commit.
       if (!this.get('invite', flow.inviteKey)) reject('This setup link was used or expired.', 401);
@@ -198,7 +204,7 @@ export class MomPhoneAccess extends DurableObject {
       if (credential) this.put('credential', credential.id, credential);
       this.commitSession(session);
     });
-    return { success: true, sessionToken: session.token, expiresAt: session.expiresAt };
+    return { success: true, sessionToken: session.token, sessionSeconds: session.seconds, expiresAt: session.expiresAt };
   }
 
   async loginOptions(oldFlow) {
@@ -225,7 +231,7 @@ export class MomPhoneAccess extends DurableObject {
       });
     } catch { reject('The phone could not verify this passkey. Please try again.', 401); }
     if (!verification.verified) reject('Passkey verification failed.', 401);
-    const session = await this.newSession(credential.grantId);
+    const session = await this.newSession(credential.grantId, 'passkey');
     this.ctx.storage.transactionSync(() => {
       const current = this.get('credential', credential.id);
       const grant = this.get('grant', credential.grantId);
@@ -248,10 +254,11 @@ export class MomPhoneAccess extends DurableObject {
     if (Date.now() - grant.lastUsedAt > 60 * 60 * 1000) this.put('grant', session.grantId, { ...grant, lastUsedAt: Date.now() });
     // Sliding expiry: each use pushes the session out to a full lifetime again
     // (at most once a day), so only 30 days of non-use require a new unlock.
-    const fullExpiry = Date.now() + MOM_PHONE_SESSION_SECONDS * 1000;
+    const seconds = sessionSeconds(grant.mode);
+    const fullExpiry = Date.now() + seconds * 1000;
     if (fullExpiry - session.expiresAt > RENEW_AFTER_MS) {
       this.put('session', key, { ...session, expiresAt: fullExpiry }, fullExpiry);
-      return { authenticated: true, expiresAt: fullExpiry, renewed: true };
+      return { authenticated: true, expiresAt: fullExpiry, renewed: true, sessionSeconds: seconds };
     }
     return { authenticated: true, expiresAt: session.expiresAt };
   }
